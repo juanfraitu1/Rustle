@@ -51,3 +51,29 @@ genome-wide best, the good pool's rule) instead of "the molecule's primary lies 
 every member locus. A near-tied placement means the molecule's best is a near-identical copy, i.e. a member in practice; the
 share whose primary is on a catalog member of the same family is reported on a sample of the tied-tier chains, not required.
 Tiers are computed per target in 16 worker processes, keeping only the projected chains.
+
+## RESULT (job 4435617, 561 s wall; sixth run, first inside the bar)
+Counts: templates per family as chains; alignments accepted 131,192 (filters: already present 16,330, wrong strand 32,213,
+unspliced at target 66,960, low cov 2,793, low id 1,514); tiers own 2,695 / tied 15,647 / none 112,850.
+- Bar 1 reach: 146 of 201 low-read copies gain >= 1 chain = 0.726 (>= 0.50) PASS.
+- Bar 4 motifs: canonical 63,170 / 173,299 introns = 0.36 (>= 0.95) FAIL.
+- Bar 2 own tier vs base at the same loci (SQANTI vs CAT chr13+chr20): artifact 99.1% vs 91.7%, FSM+ISM 0.3% vs 2.2% FAIL.
+- Bar 3 tied tier: artifact 99.8%, FSM+ISM 0.0% FAIL. Bar 5 none tier: 62,733 models, artifact 97.9%, FSM 6 (descriptive).
+Verdict as registered: FAIL (bars 2, 3, 4). Stays a bench prototype; no Rust port.
+
+### Post hoc breakdown (after the numbers; not a bar)
+130,041 of the 131,192 projections lie in the chr13 13-16 Mb tandem hotspot, where CAT annotates almost nothing (base models there
+are 91.7% "artifact" by the same yardstick) and the canonical rate is 0.351. Outside it the picture inverts:
+| region | projected models | canonical motifs |
+|---|---|---|
+| chr13 13-16 Mb | 130,041 | 0.351 |
+| chr13 elsewhere | 605 | 0.899 |
+| chr20 | 546 | 0.889 |
+chr20 only, SQANTI vs CAT: base 283 models FSM+ISM 16.3% / artifact 39.9%; own tier 27 models FSM+ISM 66.7% / artifact 11.1%
+(bars 2 conditions met, n < 20 rule not triggered); tied tier 23 models FSM+ISM 0% / artifact 26.1%; none tier 823 models
+FSM+ISM 5.5% / artifact 15.1%. Canonical rate by identity band is flat (0.35-0.38), so the hotspot projections are not
+low-identity noise: they are real spliced alignments of templates onto tandem copies whose introns carry mutated motifs, i.e.
+pseudogenised or non-transcribed copies. The mechanism works where the annotation exists; the registered panel put 99% of its
+mass where it does not, so the bars as written cannot pass or fail the idea on this panel.
+Follow-up (v2, to be registered separately): exclude the hotspot from the judged set or require a transcribed signal at the
+target (the tied-seed targets the user asked for), and cut fused base models where both members receive own/tied chains.
