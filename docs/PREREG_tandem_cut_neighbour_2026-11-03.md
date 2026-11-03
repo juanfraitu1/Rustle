@@ -33,3 +33,11 @@ span-only / two-sided).
 PASS all four -> `--mode neighbour` is the opt-in de novo tandem detector (default unchanged; OR6737 replication before any default
 decision). Any FAIL -> recorded; a one-sided cut whose RIGHT block is another gene_id's transcripts stays documented as the
 mechanism either way.
+
+## Amendment 1 (2026-11-03, before arm D ran; from r1516's arm C post hoc)
+`--bridge-units-list` replaces F1's own bridge nomination (arm C: fused 547 -> 667 with only 19 tandem cuts). Arm D's list is
+therefore the UNION of (i) F1's bridge junctions on arm A (`A/x.bridge_junctions.tsv` rows with `bridge` True, every TJ transcript
+cut at that junction: what plain `f1units` nominates) and (ii) Rule T2's cuts. A control arm E = list (i) alone (plain f1units)
+runs in the same job and is reported beside D so the tandem effect is D minus E; the bars stay as written (vs A). Bar 4 is
+already FAILED: the T2 detector on the whole assembly exceeded 30 min (it was still running at 1 h); arm D runs regardless for
+bars 1-3.

@@ -58,3 +58,15 @@ the crosser alone), 7 of the 16 pass HOMOLOGY at identity >= 0.73 (RBMY1A1/B 0.9
 0.879, UGT2B15/17 0.865, ZNF324/324B 0.846; ZNF253/93 0.732 fails the 0.80 floor), 9 get no asm20 hit at all (ZNF pairs whose
 exons are far below 0.80: tandem paralogs, not tandem repeats). 6 of the 69 loci receive a cut, so bar 1 (69 -> <= 34) cannot
 pass whatever arm C returns; arm C still decides bars 2 and 3 (the safety of the 19 cuts) and is run as registered.
+
+## RESULT arm C (2026-11-03, job 4421594; `/anvme/workspace/v138da13-rustle/fusedgw/C`, `bench/annot_compare/cut_audit.py`)
+| arm | loci | fused | shared-exon | pairs pred | hit | precision | recall | cuts | inside one gene |
+|---|---|---|---|---|---|---|---|---|---|
+| A f1v2 | 76,161 | 547 | 502 | 2,228 | 1,617 | 0.7258 | 0.7407 | - | - |
+| C f1units + Rule T list | 75,790 | 667 | 470 | 2,188 | 1,586 | 0.725 | 0.727 | 123 | 18 (14.6%) |
+Tandem-class gene sets still fused in C: 60 of 68 (the 73 minus 5 whose RefSeq pair no longer appears as a locus). Wall 2,777 s.
+**❌ FAIL on bars 1, 2 (recall -0.0137) and 3 (14.6% > 10%)**; bar 4 PASS (35 s).
+Post hoc, descriptive: with `--bridge-units-list` the list REPLACES F1's own bridge nomination, so arm C loses f1v2's 898 bridge
+junctions (6,274 transcripts) and fused loci RISE 547 -> 667; the recall loss is that confound, not the 19 tandem cuts. r1495 B
+carried the same replacement and still fell to 282 because its list held 5,234 cuts. r1517's arm therefore adds F1's own
+bridge junctions to the list (amendment there, before its run).
