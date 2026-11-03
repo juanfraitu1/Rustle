@@ -87,7 +87,7 @@ def main():
                 w.write(f'>{name}\n{fa.fetch(m["chrom"], s0, e0).upper()}\n')
         with open(f'{out}/fam/{f}.templates.fa', 'w') as w:
             for n in tfam[f]: w.write(f'>{n}\n{tseq[n]}\n')
-        jobs.append(f"minimap2 -ax splice:hq -uf --eqx -N {max(2, len(tg))} -p 0.1 --secondary=yes -t {max(1, int(opt['--threads']) // 6)} {out}/fam/{f}.targets.fa {out}/fam/{f}.templates.fa 2>> {out}/fam/{f}.mm2.log | grep -v '^@' > {out}/fam/{f}.sam")
+        jobs.append(f"minimap2 -ax splice:hq -uf --eqx -N {max(2, len(tg))} -p 0.1 --secondary=yes -f 2000 -t {max(1, int(opt['--threads']) // 6)} {out}/fam/{f}.targets.fa {out}/fam/{f}.templates.fa 2>> {out}/fam/{f}.mm2.log | grep -v '^@' > {out}/fam/{f}.sam")
     # the chr13 mega-families take ~2 min and 12 GB each: 6 at a time (the node has 256 GB), biggest first
     from multiprocessing.pool import ThreadPool
     ThreadPool(6).map(lambda c: subprocess.run(c, shell=True, check=True), jobs)

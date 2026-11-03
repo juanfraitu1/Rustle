@@ -38,3 +38,9 @@ Wall <= 30 min on one node.
    means two projectors agree, not that the isoform exists; its truth is expression in another sample (KB3781/HG002 are SPENT for
    families; a new sample is the user's call).
 PASS = bars 1, 2, 4 and (3 when judged). PASS -> genome-wide run, then the Rust port as a layer. FAIL -> stays a bench prototype.
+
+## Wall note (before any arm number; three runs hit the 30-min timeout inside minimap2)
+The chr13 mega-families (1,200 templates x 23 targets of tandem repeats) took 12-14 min each: the repeat minimizers (average
+occurrence 105) make the splice chaining quadratic. `-f 2000` (ignore minimizers occurring > 2,000 times in the family's targets)
+cuts 100 templates of MCL0 from 28.7 s to 2.5 s with the same records and 6% MORE (template, target) pairs at coverage >= 0.9.
+Adopted; the bar stays 30 min.
