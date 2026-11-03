@@ -4,8 +4,15 @@
 //! alike) → one row per molecule:
 //!
 //! ```text
-//! name<TAB>best_as<TAB>second_as<TAB>n_records<TAB>primary_chrom<TAB>primary_as
+//! name<TAB>best_as<TAB>second_as<TAB>n_records<TAB>primary_chrom<TAB>primary_as<TAB>\
+//!   best_ms<TAB>second_ms<TAB>primary_ms<TAB>primary_mapq<TAB>primary_spliced<TAB>\
+//!   rival_as<TAB>rival_ms<TAB>rival_spliced<TAB>rival_chrom
 //! ```
+//!
+//! Columns 7-15 (2026-11-03) size the O2 contested populations: `ms:i` is minimap2's max-scoring-segment score,
+//! the one it ranks primaries and secondaries on, so a near tie must be read on AS AND on ms; `*_spliced` is 1
+//! when the CIGAR has an N (intron) op; the rival is the best-AS non-primary record (`NA` columns when the
+//! molecule has a single placement). Consumers of the first six columns are unchanged.
 //!
 //! which is exactly what `RUSTLE_GTF_SECONDARY_AS_TABLE` consumes (`global_best_as` in
 //! `denovo_assemble.rs` reads the first two columns). A secondary record is then admitted into the
@@ -33,7 +40,8 @@ struct Args {
     /// Input BAM (any order; the whole file is read once).
     #[arg(long)]
     bam: String,
-    /// Output TSV (name, best_as, second_as, n_records, primary_chrom, primary_as), sorted by name.
+    /// Output TSV (name, best_as, second_as, n_records, primary_chrom, primary_as, best_ms, second_ms, primary_ms,
+    /// primary_mapq, primary_spliced, rival_as, rival_ms, rival_spliced, rival_chrom), sorted by name.
     #[arg(long)]
     out: String,
     /// BGZF decompression threads.
@@ -49,6 +57,27 @@ struct Mol {
     /// Reference-sequence index of the PRIMARY record (`u32::MAX` until one is seen).
     primary_ref: u32,
     primary_as: i32,
+    best_ms: i32,
+    second_ms: i32,
+    primary_ms: i32,
+    primary_mapq: u8,
+    primary_spliced: bool,
+    /// Best-AS non-primary record (`rival_ref == u32::MAX` until one is seen).
+    rival_ref: u32,
+    rival_as: i32,
+    rival_ms: i32,
+    rival_spliced: bool,
+}
+
+const MS_TAG: noodles_sam::alignment::record::data::field::Tag =
+    noodles_sam::alignment::record::data::field::Tag::new(b'm', b's');
+
+fn spliced(record: &noodles_bam::Record) -> bool {
+    use noodles_sam::alignment::record::cigar::op::Kind;
+    record
+        .cigar()
+        .iter()
+        .any(|op| matches!(op, Ok(op) if op.kind() == Kind::Skip))
 }
 
 fn main() -> Result<()> {
@@ -72,6 +101,16 @@ fn main() -> Result<()> {
         }
         n_records += 1;
         let as_ = rustle::bam::record_as(&record).unwrap_or(0);
+        let ms = rustle::bam::aux_first(&record, MS_TAG, rustle::bam::value_as_i32)
+            .ok()
+            .flatten()
+            .unwrap_or(0);
+        let is_spliced = spliced(&record);
+        let ref_id = record
+            .reference_sequence_id()
+            .and_then(|r| r.ok())
+            .map(|id| id as u32)
+            .unwrap_or(u32::MAX);
         let name = match record.name() {
             Some(n) => n.to_string(),
             None => continue,
@@ -82,6 +121,15 @@ fn main() -> Result<()> {
             n: 0,
             primary_ref: u32::MAX,
             primary_as: 0,
+            best_ms: -1,
+            second_ms: -1,
+            primary_ms: 0,
+            primary_mapq: 0,
+            primary_spliced: false,
+            rival_ref: u32::MAX,
+            rival_as: -1,
+            rival_ms: -1,
+            rival_spliced: false,
         });
         m.n += 1;
         if as_ > m.best {
@@ -90,13 +138,23 @@ fn main() -> Result<()> {
         } else if as_ > m.second {
             m.second = as_;
         }
+        if ms > m.best_ms {
+            m.second_ms = m.best_ms;
+            m.best_ms = ms;
+        } else if ms > m.second_ms {
+            m.second_ms = ms;
+        }
         if !flags.is_secondary() {
-            m.primary_ref = record
-                .reference_sequence_id()
-                .and_then(|r| r.ok())
-                .map(|id| id as u32)
-                .unwrap_or(u32::MAX);
+            m.primary_ref = ref_id;
             m.primary_as = as_;
+            m.primary_ms = ms;
+            m.primary_mapq = record.mapping_quality().map_or(255, |q| q.get());
+            m.primary_spliced = is_spliced;
+        } else if as_ > m.rival_as {
+            m.rival_ref = ref_id;
+            m.rival_as = as_;
+            m.rival_ms = ms;
+            m.rival_spliced = is_spliced;
         }
         if n_records % 5_000_000 == 0 {
             eprintln!(
@@ -131,10 +189,28 @@ fn main() -> Result<()> {
                 m.primary_as.to_string(),
             )
         };
+        let rival = if m.rival_ref == u32::MAX {
+            "NA\tNA\tNA\tNA".to_string()
+        } else {
+            format!(
+                "{}\t{}\t{}\t{}",
+                m.rival_as,
+                m.rival_ms,
+                u8::from(m.rival_spliced),
+                contigs.get(m.rival_ref as usize).map_or("NA", String::as_str)
+            )
+        };
         writeln!(
             out,
-            "{name}\t{}\t{}\t{}\t{pchrom}\t{pas}",
-            m.best, m.second, m.n
+            "{name}\t{}\t{}\t{}\t{pchrom}\t{pas}\t{}\t{}\t{}\t{}\t{}\t{rival}",
+            m.best,
+            m.second,
+            m.n,
+            m.best_ms,
+            m.second_ms,
+            m.primary_ms,
+            m.primary_mapq,
+            u8::from(m.primary_spliced)
         )?;
     }
     out.flush()?;
