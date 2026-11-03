@@ -34,10 +34,14 @@ def chain_of(rec):
     return tuple(ints)
 
 def tier_target(gn):
-    g = _gmeta[gn]; m = g['m']; want = _want[gn]; d = {}
+    g = _gmeta[gn]; m = g['m']; want = _want.get(gn, ()); d = {}; T = 0
     bam = pysam.AlignmentFile(_bam_path)
     for r in bam.fetch(m['chrom'], g['off'], g['off'] + _glen[gn]):
-        if r.is_unmapped or r.is_supplementary or 'N' not in r.cigarstring: continue
+        if r.is_unmapped or r.is_supplementary: continue
+        if r.reference_start < m['end'] and r.reference_end > m['start']:  # r1522 T: placements at the locus proper
+            b = _best.get(r.query_name)
+            if not r.is_secondary or (b and r.has_tag('AS') and r.get_tag('AS') >= 0.98 * b): T += 1
+        if 'N' not in r.cigarstring: continue
         c = chain_of(r)
         if c not in want: continue
         e = d.setdefault(c, [0, 0])
@@ -45,7 +49,7 @@ def tier_target(gn):
         else:
             b = _best.get(r.query_name)
             if b and r.has_tag('AS') and r.get_tag('AS') >= 0.98 * b: e[1] += 1
-    return gn, {c: tuple(v) for c, v in d.items()}
+    return gn, ({c: tuple(v) for c, v in d.items()}, T)
 
 def main():
     args = sys.argv[1:]; opt = {'--targets': None, '--threads': '16', '--min-cov': '0.9', '--min-id': '0.85', '--as-table': os.path.expanduser('~/runs/human_A119b/a1.molecules.tsv')}
@@ -171,7 +175,12 @@ def main():
     global _bam_path, _want, _gmeta, _glen, _best
     _bam_path, _want, _gmeta, _glen, _best = bam_path, want, gmeta, glen, best_as
     with Pool(16) as pool:
-        tiers = dict(pool.imap_unordered(tier_target, sorted(want), chunksize=1))
+        tiers = dict(pool.imap_unordered(tier_target, sorted(gmeta), chunksize=1))
+    with open(f'{out}/targets.tsv', 'w') as w:  # every target, with its T (r1522 gate); all targets are visited so the arm-G base control can be cut
+        w.write('target\tfamily\tcopy\tchrom\tstart\tend\treads\tT\ttids\n')
+        for gn, g in gmeta.items():
+            m = g['m']; w.write(f"{gn}\t{g['fam']}\t{m['idx']}\t{m['chrom']}\t{m['start']}\t{m['end']}\t{m['reads']}\t{tiers[gn][1]}\t{','.join(m['tx'])}\n")
+    tiers = {gn: v[0] for gn, v in tiers.items()}
     for row in rows:
         gn, introns = row[15], row[16]; n_pri, n_tied = tiers[gn].get(introns, (0, 0))
         tier = 'own' if n_pri else 'tied' if n_tied else 'none'
