@@ -115,9 +115,14 @@ def neighbour_mode():
                 if x[1] < s: up |= overlapping(chrom, strand, x[0], x[1])
                 elif x[0] > e: down |= overlapping(chrom, strand, x[0], x[1])
         cs = set(cross)
-        up = [t for t in up if t not in cs and tx[t]['ex'][-1][1] < s and tx[t]['reads'] is not None]
-        down = [t for t in down if t not in cs and tx[t]['ex'][0][0] > e and tx[t]['reads'] is not None]
+        # Amendment 2 (r1517): a side block may extend past J (the crosser's terminal exon often sits INSIDE the neighbour's
+        # body) but must not touch the crosser's exons on the other side of J
+        up = [t for t in up if t not in cs and t not in down and tx[t]['reads'] is not None]
+        down = [t for t in down if t not in cs and t not in up and tx[t]['reads'] is not None]
         if not up or not down: continue
+        # the two blocks must be genomically disjoint: a block reaching into the other's exons is one gene's isoforms, and
+        # the homology test would be trivially 1.0 on shared sequence
+        if any(x[0] <= y[1] and y[0] <= x[1] for t in up for x in tx[t]['ex'] for u in down for y in tx[u]['ex']): continue
         n_loci_tested += 1
         rl, rr, rc = reads(up), reads(down), reads(cross)
         if not rc < min(rl, rr): continue
