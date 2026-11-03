@@ -50067,10 +50067,20 @@ pub mod denovo_pipeline {
                 fetched,
                 acc,
                 read_home_table(),
+                seed_unspliced_primary_only(),
             )
         }
 
-        /// [`stream_pass1_region`] with the read-home table passed explicitly (tests; `None` = no filter).
+        /// `RUSTLE_SEED_UNSPLICED_PRIMARY=1` (opt-in, r1518): the seeding pool takes UNSPLICED records from primaries only.
+        /// A near-tied unspliced secondary (the good pool admits `AS >= 0.98 x best`) of a tandem-array molecule lands on
+        /// every copy of the array, and `cluster_unspliced`'s span single-linkage chains those placements into one
+        /// array-wide single-exon model (A119b USP17L: 265 kb, 3,567 "reads" over 130 primaries, 227 of 265 1-kb bins
+        /// with no primary). Spliced secondaries are untouched (their chain is the evidence the earlier row measured).
+        pub fn seed_unspliced_primary_only() -> bool {
+            matches!(std::env::var("RUSTLE_SEED_UNSPLICED_PRIMARY"), Ok(v) if v != "0" && !v.is_empty())
+        }
+
+        /// [`stream_pass1_region`] with the read-home table and the unspliced-primary rule passed explicitly (tests).
         #[allow(clippy::too_many_arguments)]
         pub fn stream_pass1_region_with(
             bam_path: &str,
@@ -50082,6 +50092,7 @@ pub mod denovo_pipeline {
             fetched: &[(String, u64, u64)],
             acc: &mut Pass1Acc,
             home: Option<&ReadHomeTable>,
+            unspliced_primary_only: bool,
         ) -> Result<usize> {
             use std::hash::{Hash, Hasher};
             let bai_path = format!("{bam_path}.bai");
@@ -50125,6 +50136,7 @@ pub mod denovo_pipeline {
             };
             let mut n_tie_dropped = 0usize;
             let mut n_tie_unknown = 0usize; // secondaries whose molecule the table does not know (kept; a table from ANOTHER BAM shows here)
+            let mut n_unspliced_sec_dropped = 0usize; // `unspliced_primary_only`
             let mut hc = HomeCounts::default();
             for result in reader.query(&header, &index, &region)? {
                 let record = result?;
@@ -50233,6 +50245,10 @@ pub mod denovo_pipeline {
                 }
                 let ref_end = exons.last().map(|e| e.1).unwrap_or(ref_start);
                 let introns: Vec<(u64, u64)> = exons.windows(2).map(|w| (w[0].1, w[1].0)).collect();
+                if unspliced_primary_only && flags.is_secondary() && introns.is_empty() {
+                    n_unspliced_sec_dropped += 1;
+                    continue;
+                }
                 if fetched
                     .iter()
                     .any(|(c, l, h)| c == chrom && ref_start < *h && ref_end > *l)
@@ -50262,9 +50278,9 @@ pub mod denovo_pipeline {
                     flags.is_reverse_complemented(),
                 );
             }
-            if n_tie_dropped > 0 || n_tie_unknown > 0 {
+            if n_tie_dropped > 0 || n_tie_unknown > 0 || n_unspliced_sec_dropped > 0 {
                 eprintln!(
-                "[stream-pass1] {chrom}:{lo}-{hi}: {n_tie_dropped} secondary record(s) below {tie_ratio} x genome-wide best AS dropped; {n_tie_unknown} kept with NO table entry{}",
+                "[stream-pass1] {chrom}:{lo}-{hi}: {n_tie_dropped} secondary record(s) below {tie_ratio} x genome-wide best AS dropped; {n_tie_unknown} kept with NO table entry{}; {n_unspliced_sec_dropped} unspliced secondary record(s) dropped (RUSTLE_SEED_UNSPLICED_PRIMARY)",
                 if n_tie_unknown > 0 { " — WARNING: the table may come from a different BAM" } else { "" }
             );
             }
@@ -54177,7 +54193,7 @@ pub mod denovo_pipeline {
                 let run = |f: Option<ReadSupportFilter>| {
                     let mut acc = Pass1Acc::new(1, None);
                     acc.read_filter = f;
-                    stream_pass1_region_with(&bam, "c1", 0, 1_000_000, false, false, &[], &mut acc, None).unwrap();
+                    stream_pass1_region_with(&bam, "c1", 0, 1_000_000, false, false, &[], &mut acc, None, false).unwrap();
                     (acc.n_pushed, acc.n_read_filtered)
                 };
                 assert_eq!(run(None), (4, 0));
@@ -54205,9 +54221,29 @@ pub mod denovo_pipeline {
                     &[],
                     &mut acc,
                     home,
+                    false,
                 )
                 .unwrap();
                 (acc.n_pushed, acc.unspliced)
+            }
+
+            #[test]
+            fn unspliced_primary_only_drops_unspliced_secondaries_and_keeps_spliced_ones() {
+                let dir = tempfile::tempdir().unwrap();
+                let n = |l| Op::new(Kind::Skip, l);
+                let recs = vec![
+                    rec("p", Flags::default(), 0, 1_001, vec![m(100)]),
+                    rec("s", Flags::SECONDARY, 0, 5_001, vec![m(100)]),
+                    rec("t", Flags::SECONDARY, 0, 9_001, vec![m(100), n(500), m(100)]),
+                ];
+                let bam = write_indexed_bam(dir.path(), "usp.bam", &recs);
+                let run = |only: bool| {
+                    let mut acc = Pass1Acc::new(1, None);
+                    stream_pass1_region_with(&bam, "c1", 0, 1_000_000, true, false, &[], &mut acc, None, only).unwrap();
+                    (acc.n_pushed, acc.unspliced.len())
+                };
+                assert_eq!(run(false), (3, 2));
+                assert_eq!(run(true), (2, 1)); // the spliced secondary stays
             }
 
             #[test]
@@ -54742,6 +54778,7 @@ pub mod denovo_pipeline {
                     &[],
                     &mut acc,
                     None,
+                    false,
                 )
                 .unwrap();
                 if let Some(rt) = acc.readthrough.as_mut() {
