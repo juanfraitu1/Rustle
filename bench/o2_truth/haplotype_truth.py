@@ -121,6 +121,7 @@ def main(prefix, catalog, bam, windows, mat, pat, out):
     loci = {(k.split("|")[1], k.split("|")[2]): copy_loci(v) for k, v in hits.items() if k.startswith("C|")}
     c = collections.Counter(rows_considered=0)
     ex = {"wrong": [], "right": [], "outside": []}
+    per_read = []  # r1509: one row per decidable (read, family): the per-class scorer joins it to the as_table
     for r in rows:
         q, fam = r["read_name"], r["family_id"]
         if q not in want:
@@ -147,6 +148,9 @@ def main(prefix, catalog, bam, windows, mat, pat, out):
             continue
         in_fam = any(k[0] == fam for k in T)
         c[f"one_locus|{tag}"] += 1
+        per_read.append((q, fam, tag, r["catalog_copy_idx"], ";".join(f"{a}|{b}" for a, b in sorted(T)),
+                         int(any(overlaps(prim[q][1], span[k]) for k in T)),
+                         int(is_assigned and (fam, r["catalog_copy_idx"]) in T), r.get("as_margin", ""), r.get("ms_margin", "")))
         p = prim[q][1]
         al_right = any(overlaps(p, span[k]) for k in T)
         if is_assigned:
@@ -177,6 +181,9 @@ def main(prefix, catalog, bam, windows, mat, pat, out):
                          "aligner_right": c["H3_aligner_right"]},
            "examples": ex}
     json.dump(res, open(f"{out}/haplotype_truth.json", "w"), indent=1, default=str)
+    with open(f"{out}/per_read.tsv", "w") as fh:
+        fh.write("read\tfamily\tstatus\to2_copy\ttruth\taligner_right\to2_right\tas_margin\tms_margin\n")
+        fh.writelines("\t".join(map(str, row)) + "\n" for row in per_read)
     print(json.dumps({k: v for k, v in res.items() if k != "examples"}, indent=1))
 
 
