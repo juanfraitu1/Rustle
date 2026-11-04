@@ -27,3 +27,7 @@ Adoption check: 213 of 213 same-symbol false pairs share an Ensembl source id = 
 215 pairs ignored (213 false + 2 truth pairs that Compara did name under one symbol; hit 1617 -> 1615, recall 0.741 -> 0.740).
 The arms' extra false pairs are untouched by the correction (0 extra same-symbol pairs), as predicted. **r1528 verdict stands.**
 Scorer: `PAIRSCORE_SAME_SYMBOL=ignore` is the figure to report; base catalog pair precision 0.802 / recall 0.740 (primates).
+
+### Correction (labelled, 2026-11-04 late): the clade label is wrong. r1528 ran pairscore.py with no `--level`, i.e. the default
+simiiformes; "(primates)" above is a mislabel. At `--level primates` the same base scores 0.809 / 0.695 (r1536). The figure
+0.802 / 0.740 is at the DEFAULT level; score every catalog that way.
