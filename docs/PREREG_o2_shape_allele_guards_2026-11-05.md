@@ -27,3 +27,9 @@ haplotype-aware version (needs assemblies) stays unregistered.
 Inputs: `<out>.psv_reads.tsv` (read x column base + assignment), `<out>.psv_cols.tsv` (column -> genome position),
 `<out>.star_reads.tsv` (the deciding columns per molecule). Script: `bench/o2_contested/guards.py`.
 Scope limits: post-filters cannot show the PSV-model refit effect r1514 bar 3 found; the truth is slack 0 on one individual.
+
+## RESULT r1540 (2026-11-05): step 0 class empty, FAIL as registered (vacuous)
+Decidable assigned rows going to a single-exon copy: held-out 0 of 151, panel 0 of 419 (spliced reads assigned: held-out 108,
+panel 368, all to multi-exon copies). Across all 2,543 r1514 assignments, 1 goes to any of the 77 single-exon copies. The MCL148
+class (spliced parent-gene reads on an 850-bp retrocopy) was removed entirely by `--primary-on-family` (r1514); nothing is left for
+a shape guard. Bars (>= 2 wrong removed): FAIL. Closed: not ported.
