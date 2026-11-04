@@ -34,11 +34,14 @@ def read_models(path):
     for v in by.values(): v.sort()
     return by
 
+MONO_SPAN = float(os.environ.get('PANEL_MONO_SPAN', '0'))  # r1535 span guard; 0 = off (the r1521 definition)
+
 def overlaps_exons(models, gexons, lo, hi):
     out = []
     for s, e, ex in models:
         if e <= lo: continue
         if s >= hi: break
+        if len(ex) < 2 and MONO_SPAN and e - s > MONO_SPAN * (hi - lo): continue  # r1535: a single-exon model hits only within MONO_SPAN x the gene span
         if any(a < y and x < b for a, b in ex for x, y in gexons): out.append((s, e, ex))
     return out
 
