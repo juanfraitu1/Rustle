@@ -26,3 +26,21 @@ Scoring: family_panel.py base = fusedgw/R1/x.gtf vs arm = base + new models, ful
 - wall: <= 60 min for the whole prototype on the panel's reads
 PASS -> a genome-wide row (all tied reads) with the same bars plus chains kept = 1.0 and the one-chain / r1521 bars; a Rust
 port is only then on the table. FAIL on any bar -> the route is recorded at its measured size (10 of 1,136 at best) and closed.
+
+## RESULT (job 4441399, ~/r1533/run.4441399.out; products /anvme/workspace/v138da13-rustle/thread/)
+Panel: 19 families, 905 tied reads, 3,156 tied placements -> 271 loci in 88 connected groups; 581 reads unassigned (no single
+locus with private nodes covered), 29 loci under 2 reads, **31 models**; prototype 526 s.
+| bar | value | verdict |
+|---|---|---|
+| reach: >= 6 of the 10 strict-reached members gain a model | **1** (MBD3L3) | FAIL |
+| specificity: 0 models at the 18 exon-identical members | **3** (DEFB103B, DEFB105A, TAF11L5) | FAIL |
+| fused <= 49 | 49 | PASS |
+| complete >= 209 | 209 (T), 210 -> 212 (P) | PASS |
+| T-only hit rate >= 0.678 | 0.690 | PASS |
+| new models on a CAT gene same strand >= 0.95 | 25 of 31 = 0.806 | FAIL |
+| wall <= 3600 s | 526 s | PASS |
+**Verdict: FAIL as registered. Route closed at its measured size.** The loci built from tied placements carry "private" nodes
+that are placement artifacts (soft-clipped ends, partial secondaries), so the graph assigns reads to exon-identical siblings
+it cannot really separate (3 models at the 18) while the 10 separable members, whose private nodes are real but 1-33 bp, get
+a model once. Linear placement already encodes the same evidence (the AS tie); the graph adds no information the aligner
+lacked, only a different tie-break.
