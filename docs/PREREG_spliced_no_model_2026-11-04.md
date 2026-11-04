@@ -62,3 +62,9 @@ OR11H2, OCM, TRIM64). Pair hits rise 1,617 -> 1,649 while recall falls, because 
 Labelled: the job script scored pairs with `--level primates` (base 0.809 / 0.695); the registered figure is the r1530 scorer
 at its default level, rescored after the job (pairs_default_level.out). Transcripts 219,503 -> 248,812 (+13%): 30k new chains
 at 3.6% CAT-exact is the r1526 shape (compatible-chain admission: 2.2% CAT) with a smaller fused cost. Not adopted.
+
+### After the numbers (2026-11-04 late, ~/r1536/spanx_check.out): SPANXA2 is not a gate miss
+All 55 reads carrying SPANXA2's junction are AS-tied (second >= 0.98 x best); CHM13 reads TT-AG at SPANXA2 while SPANXA1,
+SPANXB1, SPANXC and SPANXD read GT-AG. The reads are tied copies' transcripts placed at the non-canonical locus; K1's true
+members are FAM86B1 and SIGLEC10 (2). The K1 count of 7 stands as registered; its reading changes. All 53 r1534-B4 members
+are multi-exon truth genes, so the mono layer cannot reach them.
