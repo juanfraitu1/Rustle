@@ -16,3 +16,14 @@ so pairscore counts them as false. This row corrects the measurement; it moves n
 - Prediction written down: corrected base precision ~ 1617 / (2228 - 213) = 0.80; the arms stay below base - 0.01 because their
   extra 197 / 259 false pairs were two-thirds domain-level relatives (r1528 result table), not same-symbol duplicates.
   If an arm passes every bar under the corrected scorer, that is a NEW result for a new row (the gate is not changed here).
+
+## RESULT (~/r1529/r1530_rescore.out)
+Adoption check: 213 of 213 same-symbol false pairs share an Ensembl source id = 1.000 (bar >= 0.90) -> rule adopted.
+| catalog | pred pairs | hit | false | precision as registered | corrected precision | recall | ignored_same_symbol |
+|---|---|---|---|---|---|---|---|
+| 0.60 (base) | 2228 -> 2013 | 1617 -> 1615 | 611 -> 398 | 0.726 | **0.802** | 0.740 | 215 |
+| 0.45 | 2451 -> 2236 | 1643 -> 1641 | 808 -> 595 | 0.670 | 0.734 FAIL (< 0.792) | 0.752 | 215 |
+| 0.30 | 2571 -> 2356 | 1701 -> 1699 | 870 -> 657 | 0.662 | 0.721 FAIL (< 0.792) | 0.778 | 215 |
+215 pairs ignored (213 false + 2 truth pairs that Compara did name under one symbol; hit 1617 -> 1615, recall 0.741 -> 0.740).
+The arms' extra false pairs are untouched by the correction (0 extra same-symbol pairs), as predicted. **r1528 verdict stands.**
+Scorer: `PAIRSCORE_SAME_SYMBOL=ignore` is the figure to report; base catalog pair precision 0.802 / recall 0.740 (primates).

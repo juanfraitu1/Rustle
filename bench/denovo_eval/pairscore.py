@@ -85,7 +85,7 @@ def noncoding_judge(pairs_nc):
     for p in pairs_nc:
         if p not in cov_cache: cov_cache[p] = best.get(p, (0.0, 0.0))
 print(f"# level {level}: truth pairs among expressed protein-coding genes {len(truth)} (universe {len(universe & expressed)})")
-print("run\tpred_pairs\tignored_noncoding\thit\tfalse\tof_which_related\tprecision\trecall" + ("\tnc_pairs\tnc_accepted\tnc_domain_only\tnc_precision" if NONCODING else ""))
+print("run\tpred_pairs\tignored_noncoding\thit\tfalse\tof_which_related\tprecision\trecall" + ("\tignored_same_symbol" if os.environ.get('PAIRSCORE_SAME_SYMBOL') == 'ignore' else "") + ("\tnc_pairs\tnc_accepted\tnc_domain_only\tnc_precision" if NONCODING else ""))
 for p in paths:
     fams, _, _ = F.load_catalog(p, G, idx)
     if UNIVERSE_COPIES:
@@ -95,6 +95,8 @@ for p in paths:
     for v in fams.values():
         for x, y in itertools.combinations(sorted(v), 2): pred.add((x, y))
     coding = {(x, y) for x, y in pred if G[x]['biotype'] == 'protein_coding' and G[y]['biotype'] == 'protein_coding' and x in universe and y in universe}
+    same = {(x, y) for x, y in coding if G[x]['name'] == G[y]['name']} if os.environ.get('PAIRSCORE_SAME_SYMBOL') == 'ignore' else set()
+    coding -= same  # r1530: same-symbol pairs are CAT duplicate ids of one Ensembl gene (213/213 share a source id); Compara cannot name them
     hit = len(coding & truth); false = [(x, y) for x, y in coding if (x, y) not in truth]
     if os.environ.get('PAIRSCORE_FAMDUMP'):  # per-family readout of the CODING truth (2026-10-30, user "how does it do in all the gene families"):
         import re as _re                      # family key = gene symbol with trailing digits/letters stripped; hit / missed truth pairs; false pairs
@@ -126,4 +128,4 @@ for p in paths:
                 for x, y in sorted(nc):
                     c, i = cov_cache[(x, y)]
                     w.write(f"{x}\t{y}\t{G[x]['name']}\t{G[y]['name']}\t{G[x]['biotype']}\t{G[y]['biotype']}\t{c:.2f}\t{i:.3f}\t{'accepted' if c >= 0.5 and i >= 0.85 else 'domain_only'}\n")
-    print(f"{p}\t{len(coding)}\t{len(pred) - len(coding)}\t{hit}\t{len(false)}\t{rel}\t{prec:.3f}\t{rec:.3f}{extra}")
+    print(f"{p}\t{len(coding)}\t{len(pred) - len(coding) - len(same)}\t{hit}\t{len(false)}\t{rel}\t{prec:.3f}\t{rec:.3f}{extra}" + (f"\t{len(same)}" if same else ""))
