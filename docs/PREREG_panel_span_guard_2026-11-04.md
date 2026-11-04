@@ -52,3 +52,8 @@ cluster rule needs a PAS, no internal priming and no multi-exon exon on the stra
 Classes B2 (20) and B4 (53) gain nothing. Guard off (after the numbers): arm T-only 0.678 -> 0.322 and member hit 0.832 ->
 0.805, because the mono layer removes the 113 kb TAF11L single-exon transcript and rebuilds none at those 30 T-only copies;
 class A hits 16. The layered GTF trades the blob hits for 15 real single-exon members.
+After the numbers (~/r1535/classA_miss_why.out): the mono cluster rule's PAS / no-priming tests explain the big misses. FAM47A
+381 same-strand unspliced reads, 365 ending in one 50 bp window, 0 primed, but only 2 reads with a canonical PAS -> no model
+(the rule requires a PAS). EIF5AL1 311 reads, 215 internally primed. NANOGP8 61 / 60 primed, PPIAL4G 19 / 19, H4C3 14 / 14
+(a histone; no poly(A) by biology). TAS2R30 49 / 35 primed. None of the misses overlaps a spliced model's exon. Relaxing the
+PAS test would add FAM47A-type members; relaxing priming would re-admit the r1518 pseudogene fill-in. Not registered here.
