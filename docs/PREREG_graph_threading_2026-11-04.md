@@ -48,3 +48,8 @@ calls, marginal). So threading is sound only for reads whose linear evidence is 
 holds every genomic copy of the family, i.e. O1's catalog: the sketch finds the members, the graph resolves the reads.
 Size of the route before any arm: 10 members of 1,136, with 2-25 tied reads each; the best cases are single-exon OR models.
 The arm is a new row; it adopts the strict rule.
+
+### Gating check for the arm (~/r1532/gate_catalog.out)
+Strict-reached members with a catalog copy at 0.60: **1 of 10** (OR4F17); the siblings the tied reads sit on have a copy in 3
+of 10 (OR4F17, LGALS9, OR4F16), never in the same catalog family as the member. These families have no model on any member,
+so O1 has no locus to sketch from: the arm's first component is LOCUS DISCOVERY, not threading.
