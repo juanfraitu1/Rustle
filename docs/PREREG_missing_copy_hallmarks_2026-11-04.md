@@ -43,16 +43,24 @@ most reads absorbed on a present panel copy (absorbed share 0.39-1.00), at ident
 CHM13 and GRCh38). Depth excess at the absorbing locus: CDY1 6.0, TSPY3 2.5, GOLGA8DP 1.1, the rest < 0.6; a present copy
 (TBC1D3P3) shows 2.8, so depth excess alone does not separate either. Tie and MAPQ0 cannot be hallmarks on this panel: the present
 null is saturated (Y-ampliconic present copies have every read tied), threshold 1.00.
-Gorilla: all 17 separate, but on de gap and clip, i.e. the Kamilah draft diverges from mGorGor1 by 0.003-0.1 per read and three
-copies (LOC129532042, LOC134758753, LOC129529226; 61 reads) are fully unmapped. That is a draft-assembly signal, not the
-collapsed-copy signal human asked about; with gorilla's own present null the gap would be inside the null (its present copies sit
-at -0.0007 to 0.0075).
+Gorilla: all 17 separate on de gap and clip, and still 17 of 17 with gorilla's own present null (hm_own: thresholds de gap
+0.0010, clip 0; present hallmarked 3 of 7). Present Kamilah copies place at mGorGor1 identity (de gap -0.0007 to 0.0010, one at
+0.0075); missing ones form a divergence pile (0.0027-0.097) or are fully unmapped (LOC129532042, LOC134758753, LOC129529226;
+61 reads, all flag-4 records in nt.bam). That is the divergence-pile hallmark of the KB3781 mat/pat study for the ABSENT class.
+Two regimes, then: a copy whose nearest relative is far (absent on a draft) separates on identity; a copy collapsed onto a
+near-identical relative (human GRCh38) does not.
 ### After the numbers (labelled, no bar changed)
-1. Three human missing copies with absorbed share 0 (GOLGA6L9 579 reads, GOLGA8M 171, GOLGA6L17P 80) land at one GRCh38 locus
-   each (chr15 82 Mb, 28 Mb, 82 Mb) that the panel truth does not list as a present copy: GRCh38 has a GOLGA6L / GOLGA8 locus
-   there that no CHM13 panel copy claimed at >= 99% (truth status "collapsed" names a sibling). Their reads place cleanly: no
-   hallmark at all.
+1. Three human "missing" copies with absorbed share 0 are truth mislabels: GOLGA6L9 (579 reads) hits GRCh38 chr15:82430017-82439153
+   at identity 1.000 and its reads sit at 82436415-82438701 inside that hit; GOLGA8M (171) hits chr15:28701953-28738384 at 0.9991,
+   reads at 28668250-28716368; GOLGA6L17P (80) likewise at chr15 82 Mb. The r1504 claim rule gave each locus to a sibling with an
+   equal hit (GOLGA6L11P, the other GOLGA8M gene id) and the claimer's locus span is shorter than the hit, so the reads fall outside
+   it. GRCh38 has these copies; 830 reads sit in the wrong denominator. Excluding them: missing scorable 18, hallmarked 5 (0.28;
+   collapsed 4 of 12, absent 1 of 6): still FAIL, bar unchanged.
+1b. The ambiguous-read drop (a read over two panel copies) removes reads at adjacent near-identical copies, the class this study
+   targets: GOLGA6L16P 750 -> unscored, GOLGA6L9 1,329 -> 579, RBMY1B 221 -> 45, RBMY1A1 209 -> 33, GOLGA8M 303 -> 171; hence 21
+   scorable, not the 23 the PREREG stated. Bias noted; verdict unchanged.
 2. Depth excess is the only feature that singles out the Y copies (CDY1, TSPY3) and it is confounded by present TBC1D3P3 (2.8).
 Verdict: on a same-species near-complete genome (GRCh38) the reads of a missing copy are absorbed at near-identical identity, with
-no read-level signature that the present copies lack: O3 on non-T2T genomes closes on reads too (stop rule). On a draft genome
-(Kamilah) reads separate because the whole genome is divergent, which flags assembly quality, not missing copies.
+no read-level signature that the present copies lack: the COLLAPSED regime closes on reads (stop rule). On a draft genome (Kamilah)
+ABSENT copies separate on identity against both nulls (17/17, 3/7 present false alarms with the gorilla null): that regime has a
+read-level hallmark (the divergence pile), already seen on KB3781 mat/pat; it carries no bar here and would need its own row.
