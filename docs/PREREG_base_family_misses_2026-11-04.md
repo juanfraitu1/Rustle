@@ -21,3 +21,29 @@ User's goal text (2026-11-04), verbatim:
 - Bar 5: spliced intron chains of the arm GTF vs base, identical share >= 0.99 of base chains (bench/seed_unspliced_score.py bar 5).
 - Panel scorer: bench/famcmp/family_panel.py, hit = any model (default), definition T.
 - (2) is a code fix only if its cause is found; the fix must keep the 17 family tests and add one test from the PRAMEF8 reads.
+
+## RESULT (2026-11-04; jobs 4435754 combined arm, 4435820 part (1) alone on the pre-fix binary da6c15ee; ~/r1524/panel.out, panel_rs.out)
+Combined arm (fix + RUSTLE_READ_STRAND=1, layers off), then the catalog cut:
+| bar | base | arm | arm + cut | verdict |
+|---|---|---|---|---|
+| 1: of the 34, same-strand model | 0 | 27 | 27 | PASS |
+| 2: complete families (T) | 204 | 229 | 229 | PASS (>= 212) |
+| 3: fused families | 49 | 55 | 53 | FAIL (<= 40) |
+| 4: ordinary hit rate | 0.819 | 0.861 | 0.861 | PASS |
+| 5: base spliced chains kept | - | 0.9800 | - | FAIL (>= 0.99) |
+T-only hit rate 0.690 -> 0.759. Transcripts 236,004 -> 297,472: 68,749 new spliced chains (59,597 at reads = 2) with an exact
+CAT chain match of 0.010 vs 0.051 for base's own 2-read chains; 4,376 base chains lost to the shifted polish (ISM collapse and
+quantiles). Verdict as registered: FAIL (bars 3, 5). Parts judged alone:
+- (1) strand vote alone (job 4435820): bar 5 1.0000 (every spliced chain identical), complete 204 -> 209, ordinary 0.819 -> 0.829,
+  fused 49 -> 49, T-only 0.690 -> 0.678 (one member), 3 of the 34 (SLC35G3, CENPVL3, GMCL2), transcripts 236,004 -> 233,011
+  (2,686 single-exon models now '-', 2,993 fewer single-exon models). Passes bars 4, 5; fails 1, 2, 3 as written. A clean,
+  cheap gain with no spliced cost; it does not ship under this row's bars.
+- (2) the duplicate rule, by difference (combined minus (1)): +20 complete families and 24 of the 34, bought with 68,749 chains at
+  1% CAT match and bar 5 at 0.98. As implemented (any chain reaching the floor through coordinate duplicates) it is too broad:
+  most coordinate duplicates are duplicates of 1-read chains. FAIL; the PRAMEF8 class needs a narrower admission (e.g. duplicates
+  from different ZMWs only, or the rule confined to catalog-family loci), registered on its own.
+- (3) catalog-family cut alone on base: fused 49 -> 47 (the truth-gene cut gave 36), every hit rate unchanged. FAIL (<= 40):
+  the catalog's copies (n_reads >= 2) cover far fewer fused pairs than the truth genes do.
+Follow-ups: (1) as a registered default-on candidate with its own bars (bar 5 + families + the r1518 single-exon bars);
+(2) narrowed; (3) stays opt-in bench.
+Housekeeping: pre-fix worktree /anvme/workspace/v138da13-rustle/wt_prefix (binary ~/rustle_target_prev) can be removed.
