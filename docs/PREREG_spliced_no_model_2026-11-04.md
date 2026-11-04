@@ -19,3 +19,13 @@ junction (139898565-139899212, exactly the CAT exon boundary) reads TT..AG on CH
 reads. K1 is therefore measured directly, without a run: K1 = the member's best own chain (>= 2 reads) carries a junction whose
 motif on the member's strand is not GT-AG / GC-AG / AT-AC. K2 is moot (PASS1_MIN_READS = 2). K3 (polish) and K4 are classed
 by a window run only for members not in K1. Stop rule unchanged (>= 10 of 52 for one class).
+
+## Step 0 RESULT (~/r1536/step0_k1.py logic in step0_k1.out, step0_k1.tsv)
+| class | members |
+|---|---|
+| K1 non-canonical junction in the best own chain | 7 (SPANXA2 53 reads TT-AG; SIGLEC10, RFPL1, OR2L5, FAM86B1, CHST6, RHD) |
+| K2 best own chain < 2 reads (every chain unique; the exact-chain floor) | **31** |
+| K3/K4 canonical best chain >= 2 reads, no model (window runs pending) | 14 |
+K2 >= 10: stop rule not fired. K2 was called "moot" in Amendment 1 because the floor is 2; it is not moot: the floor is met
+by no single chain when reads spread over distinct chains (the §6m5 defect; the code's own `--read-isoform-k` widening
+admits a chain when every junction has >= k reads). The arm is that knob, measured first on the K2 members' junction support.
