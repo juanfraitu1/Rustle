@@ -54,7 +54,23 @@ heterozygosity, not the missing copy's). Labelled purity shows the signal exists
 GOLGA6L17P all 1.00; NPIPB11 0.87) but blind S and H cannot separate them from null tandem loci: present GOLGA8VP 10.3 sites/kb,
 TBC1D3G/H 8.7, GOLGA8O/N 8.0 set the autosomal threshold (GRCh38 present tandem copies and heterozygosity). The predicted
 outcome (Amendment 1 item 5) held: site density at absorbing loci 0.5-5 per kb, the heterozygosity range.
-Verdict: the collapsed regime closes on sequence data entirely (stop rule): no per-read hallmark (r1537) and no blind population
-hallmark (r1538) separates a collapsed copy from a present tandem locus. Collapsed paralogs need a better assembly, not a read rule.
+Verdict: FAIL as registered; see the after-the-numbers items before reading it as a close (the null contained co-landing copies).
 Note: landing clusters of spliced reads span introns (NPIPB4 580 kb, NPIPB11 400 kb); cov20 is the denominator, so S is per
 covered kb, unaffected.
+
+### After the numbers (2026-11-05, labelled; bar and verdict as registered)
+1. Scorer bug in the X/Y stratum: four null loci with cov20 = 0 gave S = nan and the nan took the 95th percentile, switching S
+   off for the haploid stratum. Excluding empty nulls (16 left): S threshold 0.27/kb, H 0.050; missing hallmarked 2 of 3
+   (RBMY1B 1.76/kb, CDY1 0.47/kb), null hallmarked 2 of 16. With it the registered count is 6 of 16 (0.38): still FAIL.
+2. The autosomal null holds multi-origin loci: TBC1D3G/TBC1D3H, GOLGA8Q/GOLGA8R, GOLGA8O/GOLGA8N have identical rows because
+   two panel copies' reads co-land at one cluster, a collapse by the read-landing definition this row adopted, whatever truth2 says;
+   they are the 8-10 sites/kb loci that set the threshold. Advisor and I put them in the null (right for GRCh38-internal tandems,
+   wrong for co-landing CHM13 copies). Measured, not scored: single-origin null loci (no second copy with >= 10% of the primary
+   pile) 32 autosomal: thresholds S 4.64/kb, H 0.431, null hallmarked 4 of 32 (0.13), missing hallmarked 6 of 13 (GOLGA8DP, NPIPB4,
+   NPIPB1P, NPIPB11, NPIPB15 x2). X/Y single-origin null 1 locus. That 6 of 13 would clear the 0.5 bar; it is a registered next
+   row with the null defined as single-origin loci, not a flip of this one.
+3. Per unique locus: the two NPIPB15 clusters overlap, so autosomal unique loci are 12 with 3 hallmarked. GOLGA6L9 cleared H by
+   0.001 (0.417 vs 0.416).
+4. Verdict wording softened: "closes on sequence data entirely" is not supported. The second haplotype is there and pure at five
+   absorbing loci (purity 1.00 at GOLGA6L9, NPIPB1P, GOLGA8M, GOLGA6L17P; 0.87 at NPIPB11); the blind statistic failed against a
+   null that contained the same phenomenon.

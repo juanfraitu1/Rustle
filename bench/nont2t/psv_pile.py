@@ -104,7 +104,7 @@ with open(out + '.sites.tsv', 'w') as w:
     w.writelines(siterows)
 # thresholds per ploidy stratum from the null loci
 for stratum, pick in (('autosomal', lambda c: c not in ('chrX', 'chrY')), ('XY', lambda c: c in ('chrX', 'chrY'))):
-    nl = [r for r in rows if r[4] == 'null' and pick(r[5])]
+    nl = [r for r in rows if r[4] == 'null' and pick(r[5]) and r[10] > 0]  # empty pile is not a null (after-the-numbers 1)
     if not nl:
         print(f'{stratum}: no null loci')
         continue
