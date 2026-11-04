@@ -43,3 +43,23 @@ HLA-DQ), histones, TAS2R and OR: HG002's tissue, not A119b's misses in PRAMEF/TS
   >= base; T-only hit rate >= base; base spliced chains kept >= 0.95 and new chains' exact CAT match >= 0.05 (chain_cat.py);
   pooled assemble wall <= 7200 s. Info only: step-0 reachable members gaining a same-strand model.
 - PASS -> genome-wide pooled row next vs fusedgw/R1; ship = documented recommended input, not a default. FAIL -> depth closed.
+
+## RESULT (job 4436449, ~/r1531/run.4436449.out; products /anvme/workspace/v138da13-rustle/depth/{A,AH})
+Slices 5 + 27 min, pool (merge) 55 min, A119b slice assemble 14 min (86,119 transcripts), pooled 43 min (116,223).
+| bar (definition T, 142 judged families, 448 expressed members) | base (A119b slice) | pooled | verdict |
+|---|---|---|---|
+| complete >= base + 5 | 93 | 101 | PASS |
+| fused <= base | 24 | 23 | PASS |
+| ordinary hit rate >= base | 0.793 | 0.826 | PASS |
+| T-only hit rate >= base | 0.611 (n=18) | 0.667 | PASS |
+| base spliced chains kept >= 0.95 | | 70,210 of 81,152 = 0.865 | **FAIL** |
+| new chains' exact CAT match >= 0.05 | | 3,453 of 41,169 = 0.084 | PASS |
+| pooled assemble wall <= 7200 s | | 2,582 s | PASS |
+Info: 37 step-0 reachable members on the panel, 16 gain a model in the pooled arm.
+**Verdict: FAIL as registered (bar 5). Depth closed on this panel; no genome-wide pooled row.**
+
+### After the numbers (information, no verdict changed; ~/r1531/lost_support.out)
+The 10,942 lost base chains by read support (2 / 3 / 4 / 5+): 4,621 / 2,013 / 1,037 / 3,271 vs kept 21,603 / 9,863 / 5,989 /
+32,755. The loss is not confined to low-support chains (9% of 5+-read chains disappear): pooling re-collapses chains, the
+r1503 precision drop seen again. The panel gain (+8 complete, 16 of 37 reachable members) is real but bought with the base's
+chain set, which no pre-registered bar accepted. A row that wanted the gain would have to define what a lost chain costs.
