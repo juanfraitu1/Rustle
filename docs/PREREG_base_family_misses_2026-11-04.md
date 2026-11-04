@@ -47,3 +47,7 @@ quantiles). Verdict as registered: FAIL (bars 3, 5). Parts judged alone:
 Follow-ups: (1) as a registered default-on candidate with its own bars (bar 5 + families + the r1518 single-exon bars);
 (2) narrowed; (3) stays opt-in bench.
 Housekeeping: pre-fix worktree /anvme/workspace/v138da13-rustle/wt_prefix (binary ~/rustle_target_prev) can be removed.
+
+### After the numbers (housekeeping, no result changed)
+Part (2) is opt-in from commit 89bb3fe1: `RUSTLE_DUP_ADMIT=1`; unset, pass 1 is byte-identical to the pre-fix binary. The
+default-on version measured above (commit 5674ae49) never reached a shipped run.
