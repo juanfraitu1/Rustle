@@ -29,3 +29,17 @@ by a window run only for members not in K1. Stop rule unchanged (>= 10 of 52 for
 K2 >= 10: stop rule not fired. K2 was called "moot" in Amendment 1 because the floor is 2; it is not moot: the floor is met
 by no single chain when reads spread over distinct chains (the §6m5 defect; the code's own `--read-isoform-k` widening
 admits a chain when every junction has >= k reads). The arm is that knob, measured first on the K2 members' junction support.
+
+### K2 / K3 / K4 measured (~/r1536/k2_junction_support.out, k34_windows.out, k4_duplicates.out)
+- K2 (31): 1-6 spliced own reads each, every chain unique. Per-junction widening would admit a canonical chain at k >= 3 for
+  5 members, at k >= 2 for 11; 20 have no junction carried by 2 reads.
+- K3 (polish): 0 of 14. Windows with `--assembly-polish mono` (ISM / isoform-fraction stages off) change no member.
+- K4 (14): every best chain (2-3 reads) is ONE coordinate set from 2-3 different ZMWs: the r1524/r1525 duplicate class
+  (RUSTLE_DUP_ADMIT, opt-in only after 68k chains at 1% CAT genome-wide). Closed there; not re-registered.
+- One window-only model (PRB2, primaries only, 3 reads) is noted, not pursued.
+
+## Arm (as the step 0 rule obliges: K2 >= 10 -> the widening knob; expected reach <= 5 of 52 at k = 3)
+Genome-wide A119b `assemble` with RUSTLE_READ_ISOFORM_K=3, layers off, same binary and AS table as L1; base = fusedgw/L1/x.gtf
+(the unlayered GTF of the same binary; gate: L1 x.gtf chains kept >= 0.99 vs R1). Bars (goal row): complete >= 209, fused <= 49,
+ordinary hit rate >= 0.829, T-only >= 0.678, catalog pairs precision >= 0.802 and recall >= 0.740 (PAIRSCORE_SAME_SYMBOL=ignore),
+new spliced chains with an exact CAT match >= 0.05 (r1531 bar), wall <= 2 h. K2 members gaining a model are reported.
