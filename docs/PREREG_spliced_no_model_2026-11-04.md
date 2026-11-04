@@ -43,3 +43,22 @@ Genome-wide A119b `assemble` with RUSTLE_READ_ISOFORM_K=3, layers off, same bina
 (the unlayered GTF of the same binary; gate: L1 x.gtf chains kept >= 0.99 vs R1). Bars (goal row): complete >= 209, fused <= 49,
 ordinary hit rate >= 0.829, T-only >= 0.678, catalog pairs precision >= 0.802 and recall >= 0.740 (PAIRSCORE_SAME_SYMBOL=ignore),
 new spliced chains with an exact CAT match >= 0.05 (r1531 bar), wall <= 2 h. K2 members gaining a model are reported.
+
+## Arm RESULT (job 4441874, 70 min; ~/r1536/run.4441874.out, panel.*, pairs_default_level.out)
+| bar | base (L1 x.gtf) | arm (RUSTLE_READ_ISOFORM_K=3) | verdict |
+|---|---|---|---|
+| complete >= 209 | 209 | 216 | PASS |
+| fused <= 49 | 49 | 49 | PASS |
+| ordinary hit rate >= 0.829 | 0.829 | 0.842 | PASS |
+| T-only >= 0.678 | 0.678 | 0.713 | PASS |
+| pairs precision >= 0.802 (r1530 scorer, default level) | 0.804 | 0.812 | PASS |
+| pairs recall >= 0.740 | 0.739 | 0.734 | FAIL |
+| new spliced chains with an exact CAT match >= 0.05 | | 30,149 new, 1,098 exact = 0.036 | FAIL |
+| chains kept >= 0.99 (gate) | | 0.9962 | PASS |
+| wall <= 2 h | | 46 min assemble | PASS |
+**FAIL as registered (2 of 9 bars).** Members gained 18, lost 2: of the 52 B3 members 8 gain (K3/K4 4: TSPY2, AMY2A, ZNF679,
+SIGLEC14; K2 2: OBP2B, OR8B2; K1 2: FAM86B1, RFPL1), 10 gains outside B3 (DEFB103B x2, NAT2, MBD3L2, PPIAL4E/F, RPS4Y2,
+OR11H2, OCM, TRIM64). Pair hits rise 1,617 -> 1,649 while recall falls, because the expressed universe grows with the arm.
+Labelled: the job script scored pairs with `--level primates` (base 0.809 / 0.695); the registered figure is the r1530 scorer
+at its default level, rescored after the job (pairs_default_level.out). Transcripts 219,503 -> 248,812 (+13%): 30k new chains
+at 3.6% CAT-exact is the r1526 shape (compatible-chain admission: 2.2% CAT) with a smaller fused cost. Not adopted.
