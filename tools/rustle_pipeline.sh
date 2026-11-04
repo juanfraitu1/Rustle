@@ -536,10 +536,7 @@ stage_assemble() {
   fi
   # the seeding pool (the SEEDING POOL note above): the three RUSTLE_GTF_SECONDARY* variables the binary reads are set, or
   # unset, for every pool, so a variable exported in the shell cannot change the pool the flag names
-  # r1525 PASS (2026-11-04): single-exon models take their strand from the read-orientation vote (default on here;
-  # RUSTLE_READ_STRAND=0 restores the '+' placeholder). A119b: spliced chains identical, CAT single-exon gene hits 1,465 -> 1,490,
-  # complete truth families 204 -> 209, 3,031 placeholder-strand models now shadowed by their same-strand spliced model.
-  local seed_env=(-u RUSTLE_GTF_SECONDARY -u RUSTLE_GTF_SECONDARY_AS_RATIO -u RUSTLE_GTF_SECONDARY_AS_TABLE "RUSTLE_READ_STRAND=${RUSTLE_READ_STRAND:-1}")
+  local seed_env=(-u RUSTLE_GTF_SECONDARY -u RUSTLE_GTF_SECONDARY_AS_RATIO -u RUSTLE_GTF_SECONDARY_AS_TABLE)
   if [ "$SEED_POOL" = good ]; then
     say "assemble: seeding pool: good (AS >= $SEED_RATIO x the molecule's genome-wide best)"
     local table=${AS_TABLE:-$OUT.molecules.tsv}   # --as-table: one table for many runs on this BAM (built there when absent)
@@ -554,6 +551,11 @@ stage_assemble() {
   else
     say "assemble: seeding pool: primary (primary alignments only)"
   fi
+  # r1525 PASS (2026-11-04): single-exon models take their strand from the read-orientation vote (default on here;
+  # RUSTLE_READ_STRAND=0 restores the '+' placeholder). A119b: spliced chains identical, CAT single-exon gene hits 1,465 -> 1,490,
+  # complete truth families 204 -> 209, 3,031 placeholder-strand models now shadowed by their same-strand spliced model.
+  # After the pool branches on purpose: they reassign seed_env wholesale (the first ship, b8d29f0d, was inert for the good pool).
+  seed_env+=("RUSTLE_READ_STRAND=${RUSTLE_READ_STRAND:-1}")
   # PREFIX.final.gtf (2026-11-02, registers 1487-1491): the assembly with the three end layers (median 5' ends, 3' UTR extension,
   # single-exon models from end clusters), each PASSED on held-out chromosomes, but each changed the families stage when it read
   # them (r1490 / r1491). So the layered assembly is a SECOND run, in parallel, written only as PREFIX.final.gtf: PREFIX.gtf and

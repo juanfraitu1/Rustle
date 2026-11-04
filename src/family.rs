@@ -45971,8 +45971,6 @@ pub mod denovo_pipeline {
             // coordinate-duplicate spliced records per chain (r1524): they count only for chains that would otherwise
             // fall under the floor, so the polish thresholds fitted on de-duplicated counts are untouched
             dups: std::collections::BTreeMap<(String, Vec<(u64, u64)>), u32>,
-            /// coordinate duplicates seen from a different ZMW (counted whether or not `RUSTLE_DUP_ADMIT` is set)
-            pub n_dup_other_zmw: usize,
             /// Unspliced reads, in arrival order, for the position-aware seeding pass.
             pub unspliced: Vec<PrimaryRead>,
             /// `UnsplicedSecondary::Support` (r1520): unspliced SECONDARY records, kept apart so they can add support to a
@@ -45996,15 +45994,6 @@ pub mod denovo_pipeline {
             pub n_read_filtered: usize,
         }
 
-        /// PacBio `movie/zmw/...`: the name up to its second `/` (the whole name when it has fewer), hashed.
-        fn zmw_hash(name: &[u8]) -> u64 {
-            use std::hash::{Hash, Hasher};
-            let mut h = std::collections::hash_map::DefaultHasher::new();
-            let end = name.iter().enumerate().filter(|(_, &c)| c == b'/').nth(1).map(|(i, _)| i).unwrap_or(name.len());
-            name[..end].hash(&mut h);
-            h.finish()
-        }
-
         fn dup_admit_enabled() -> bool {
             matches!(std::env::var("RUSTLE_DUP_ADMIT"), Ok(v) if v == "1")
         }
@@ -46024,7 +46013,6 @@ pub mod denovo_pipeline {
                     groups: std::collections::BTreeMap::new(),
                     allpos: std::collections::BTreeMap::new(),
                     dups: std::collections::BTreeMap::new(),
-                    n_dup_other_zmw: 0,
                     unspliced: Vec::new(),
                     unspliced_sec: Vec::new(),
                     n_pushed: 0,
@@ -46040,17 +46028,13 @@ pub mod denovo_pipeline {
                 self.push(&r.chrom, r.ref_start, r.ref_end, &r.introns, r.reverse);
             }
 
-            /// A spliced record whose (chrom, start, end, chain) duplicates one already pushed: admission support only.
+            /// A spliced record whose (chrom, start, end, chain) duplicates one already pushed: admission support only
+            /// (the caller gates on `RUSTLE_DUP_ADMIT`; genome-wide the rule admitted 68,749 chains at a 1% exact CAT-chain
+            /// match and moved the polish, base chains kept 0.980, so it is opt-in).
             pub fn push_dup(&mut self, chrom: &str, introns: &[(u64, u64)]) {
-                // r1524: opt-in (`RUSTLE_DUP_ADMIT=1`). Genome-wide the blanket rule admitted 68,749 chains at a 1% exact
-                // CAT-chain match and shifted the polish (base chains kept 0.980); unset, pass 1 is byte-identical.
-                if !introns.is_empty() && dup_admit_enabled() {
-                    self.push_dup_unchecked(chrom, introns);
+                if !introns.is_empty() {
+                    *self.dups.entry((chrom.to_string(), introns.to_vec())).or_insert(0) += 1;
                 }
-            }
-
-            fn push_dup_unchecked(&mut self, chrom: &str, introns: &[(u64, u64)]) {
-                *self.dups.entry((chrom.to_string(), introns.to_vec())).or_insert(0) += 1;
             }
 
             /// One read. An unspliced read is retained whole (empty chain would pool chromosome-wide; it is
@@ -50229,8 +50213,10 @@ pub mod denovo_pipeline {
             let header = reader.read_header()?;
             let index = noodles_bam::bai::read(&bai_path)?;
             let region: noodles_core::Region = format!("{chrom}:{}-{}", lo + 1, hi).parse()?;
-            // coordinate key -> hash of the first record's ZMW (r1525: a duplicate counts only from a different ZMW)
-            let mut seen: DetHashMap<u64, u64> = DetHashMap::default();
+            let mut seen: DetHashSet<u64> = DetHashSet::default();
+            // r1524/r1525: coordinate duplicates admit a chain that would fall under the floor, opt-in (`RUSTLE_DUP_ADMIT=1`);
+            // a different-ZMW restriction was measured vacuous (no same-ZMW coordinate duplicates exist in A119b)
+            let dup_admit = dedupe_coords && dup_admit_enabled();
             let mut n_mapped = 0usize;
             let mut ops: Vec<noodles_sam::alignment::record::cigar::Op> = Vec::with_capacity(256);
             // GOOD seeding on the streaming path (r1060/r1100, `docs/archive/2026-09/PREREG_locus_read_pool_2026-09-22.md`): with
@@ -50390,16 +50376,12 @@ pub mod denovo_pipeline {
                 if dedupe_coords {
                     let mut h = std::collections::hash_map::DefaultHasher::new();
                     (chrom, ref_start, ref_end, &introns).hash(&mut h);
-                    let key = h.finish();
-                    let zmw = zmw_hash(record.name().map(|n| n.as_ref()).unwrap_or(b""));
-                    if let Some(first) = seen.get(&key) {
-                        if *first != zmw {
-                            acc.n_dup_other_zmw += 1;
+                    if !seen.insert(h.finish()) {
+                        if dup_admit {
                             acc.push_dup(chrom, &introns);
                         }
                         continue;
                     }
-                    seen.insert(key, zmw);
                 }
                 acc.push(
                     chrom,
@@ -54387,29 +54369,23 @@ pub mod denovo_pipeline {
                 let dir = tempfile::tempdir().unwrap();
                 let n = |l| Op::new(Kind::Skip, l);
                 let recs = vec![
-                    rec("m1/11/ccs/0_1000", Flags::default(), 0, 1_001, vec![m(100), n(500), m(100)]),
-                    rec("m1/22/ccs/0_1000", Flags::default(), 0, 1_001, vec![m(100), n(500), m(100)]),
-                    rec("m1/33/ccs/0_1000", Flags::default(), 0, 5_001, vec![m(100), n(500), m(100)]),
-                    rec("m1/33/ccs/2000_3000", Flags::default(), 0, 5_001, vec![m(100), n(500), m(100)]), // same ZMW
+                    rec("a", Flags::default(), 0, 1_001, vec![m(100), n(500), m(100)]),
+                    rec("b", Flags::default(), 0, 1_001, vec![m(100), n(500), m(100)]),
                 ];
                 let bam = write_indexed_bam(dir.path(), "dup.bam", &recs);
                 let run = |dedupe: bool, admit: bool| {
                     let mut acc = Pass1Acc::new(1, None);
                     stream_pass1_region_with(&bam, "c1", 0, 1_000_000, false, dedupe, &[], &mut acc, None, UnsplicedSecondary::Seed).unwrap();
                     if admit {
-                        acc.push_dup_unchecked("c1", &[(1_100, 1_600)]); // what the stream pushes under RUSTLE_DUP_ADMIT=1
+                        acc.push_dup("c1", &[(1_100, 1_600)]); // what the stream pushes under RUSTLE_DUP_ADMIT=1
                     }
-                    let pushed = acc.n_pushed; let other = acc.n_dup_other_zmw;
+                    let pushed = acc.n_pushed;
                     let sk = acc.finish(2, 0, None);
-                    (pushed, other, sk.len(), sk.iter().map(|s| (s.start, s.n_reads)).collect::<Vec<_>>())
+                    (pushed, sk.len(), sk.first().map(|s| s.n_reads))
                 };
-                assert_eq!(run(false, false), (4, 0, 2, vec![(1_000, 2), (5_000, 2)]));
-                // default: duplicates dropped, both chains under the floor; only the 1_000 duplicate is from another ZMW
-                assert_eq!(run(true, false), (2, 1, 0, vec![]));
-                // opt-in: the different-ZMW duplicate admits its chain with the raw count; the same-ZMW one never does
-                assert_eq!(run(true, true), (2, 1, 1, vec![(1_000, 2)]));
-                assert_eq!(zmw_hash(b"m1/33/ccs/0_1000"), zmw_hash(b"m1/33/ccs/2000_3000"));
-                assert_ne!(zmw_hash(b"m1/33/ccs/0_1000"), zmw_hash(b"m1/34/ccs/0_1000"));
+                assert_eq!(run(false, false), (2, 1, Some(2)));
+                assert_eq!(run(true, false), (1, 0, None)); // default: the duplicate is dropped, the chain stays under the floor
+                assert_eq!(run(true, true), (1, 1, Some(2))); // opt-in: admitted on 1 + 1 duplicate, carrying the raw count
             }
 
             #[test]

@@ -51,3 +51,11 @@ inseparable from the duplicates by read identity alone. The switch acts (region 
 absent with 0). Verdict: FAIL; stays opt-in. A separating signal would have to come from sequence (two duplicates with
 different error profiles are two molecules; identical sequences are one), not from names.
 Row verdict: (1) PASS and shipped; (2) FAIL, opt-in. The fused-family cut is closed as de novo (r1524).
+
+### After the numbers (housekeeping, no result changed)
+- The ship commit b8d29f0d was inert for the default (good) seed pool: the pool branches reassign `seed_env` wholesale. Fixed by
+  appending RUSTLE_READ_STRAND after the branches; verified by a pipeline assemble of chrM+chr21 with the default pool
+  (single-exon models 401 '+' / 58 '-'; all '+' before).
+- The ZMW machinery (name hash per record, seen-map, counter) is removed since it is vacuous here; RUSTLE_DUP_ADMIT stays as the
+  opt-in blanket rule, read once per region. Commit 03ccd245 holds the exact code that produced arm R2.
+- Walls: A 2,462 s (r1524 combined arm), R1 2,425 s, R2 3,284 s; the ZMW map cannot plausibly explain the 800 s, left unattributed.
