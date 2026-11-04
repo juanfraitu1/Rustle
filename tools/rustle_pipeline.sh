@@ -385,6 +385,7 @@ esac
 #   RUSTLE_TRANSFER_CREDIT=full|best copy_assign --transfer-credit full|best (with RUSTLE_DIRECT_TRANSFRAGS)
 #   RUSTLE_READ_JUNCTION_SNAP=W    copy_assign --read-junction-snap W (bp; read junctions snap to better-supported ones)
 #   RUSTLE_MIN_CHAIN_READS=N       copy_assign --min-chain-reads N (1 = single-read spliced chains)
+#   RUSTLE_READ_STRAND=0           assemble: single-exon strand back to the '+' placeholder (default 1 = read-orientation vote, r1525)
 #   RUSTLE_DUP_ADMIT=1             pass 1: coordinate-duplicate spliced records count toward the floor for a chain that would otherwise
 #                                  fall under it (r1524: rescues 2-read family chains; genome-wide too broad, 68,749 chains at 1% CAT match)
 #   RUSTLE_CHECK_SPLICE=1          copy_assign --check-splice (FLAIR --check_splice on each spliced read)
@@ -535,7 +536,10 @@ stage_assemble() {
   fi
   # the seeding pool (the SEEDING POOL note above): the three RUSTLE_GTF_SECONDARY* variables the binary reads are set, or
   # unset, for every pool, so a variable exported in the shell cannot change the pool the flag names
-  local seed_env=(-u RUSTLE_GTF_SECONDARY -u RUSTLE_GTF_SECONDARY_AS_RATIO -u RUSTLE_GTF_SECONDARY_AS_TABLE)
+  # r1525 PASS (2026-11-04): single-exon models take their strand from the read-orientation vote (default on here;
+  # RUSTLE_READ_STRAND=0 restores the '+' placeholder). A119b: spliced chains identical, CAT single-exon gene hits 1,465 -> 1,490,
+  # complete truth families 204 -> 209, 3,031 placeholder-strand models now shadowed by their same-strand spliced model.
+  local seed_env=(-u RUSTLE_GTF_SECONDARY -u RUSTLE_GTF_SECONDARY_AS_RATIO -u RUSTLE_GTF_SECONDARY_AS_TABLE "RUSTLE_READ_STRAND=${RUSTLE_READ_STRAND:-1}")
   if [ "$SEED_POOL" = good ]; then
     say "assemble: seeding pool: good (AS >= $SEED_RATIO x the molecule's genome-wide best)"
     local table=${AS_TABLE:-$OUT.molecules.tsv}   # --as-table: one table for many runs on this BAM (built there when absent)

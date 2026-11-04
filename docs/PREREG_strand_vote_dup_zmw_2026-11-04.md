@@ -23,3 +23,16 @@ User's goal text (2026-11-04), verbatim:
   ZMW = read name up to and including the ZMW hole number (PacBio `movie/zmw/...`); a coordinate duplicate counts only when its
   ZMW differs from the first record's with that key. "New chains" = spliced chains in the arm absent from base; CAT match =
   exact intron chain of a CAT Liftoff transcript (the r1524 proxy). Base chains kept = r1518 bar 5.
+
+## RESULT part (1): strand vote (arm R1 = job 4435820; ~/r1525/sus_R1.out, ~/r1525/mono_drop.out, ~/r1524/panel_rs.out)
+| bar | base | arm | verdict |
+|---|---|---|---|
+| spliced chains identical | - | 219,503 / 219,503 = 1.0000 | PASS |
+| complete families (T) | 204 | 209 | PASS |
+| ordinary-member hit rate | 0.819 | 0.829 | PASS |
+| CAT single-exon genes hit (r1518 bar 4 as registered) | 1,465 | 1,490 (ratio 1.017) | PASS |
+| single-exon drop explained | 16,501 | 13,508 | PASS, see below |
+The 3,088 base single-exon spans absent from the arm (all reads >= 6): 3,031 lie inside a same-strand spliced model of the arm
+(the mono-shadow polish now reaches models whose '+' placeholder had put them on the wrong strand), 49 absent, 8 moved <= 50 bp.
+95 single-exon models gained, all '-'. T-only hit rate 0.690 -> 0.678 (one member), fused 49 -> 49.
+PASS -> shipped: `tools/rustle_pipeline.sh` assemble sets RUSTLE_READ_STRAND=1 unless the caller sets it (0 = placeholder).
