@@ -45,3 +45,15 @@ reads, 53 sharing one intron chain (MAPQ 13-22, unique primaries); SIGLEC10 32; 
    reads; base has only - strand ones), GK3P (3 vs 1). Same at TTC30B (none in both), SIGLEC10, IGFL3 (identical). Files
    /anvme/workspace/v138da13-rustle/r1534/{s,six}/x.gtf, regions.txt. The cause is NOT identified here; a genome-wide run
    loses models that a local run emits at high-read loci. That is the lever to diagnose next, before any emission rule.
+3. Confounds of item 2, cleared (advisor): settings match (both runs strict junctions, same mono-primed rule, binary of
+   05:01 today); the genome-wide AS table (`--as-table a1.molecules.tsv`) changes nothing (s_tab, six_tab identical counts);
+   but with SECONDARIES STRIPPED (`samtools view -F 0x900`) every window-only model vanishes: CTAGE15 6 -> 0, SPANXA2 1 -> 0,
+   PPP1R2B 1 -> 0, ZNF679 20 -> 4 (= R1), GK3P 3 -> 1 (= R1). Item 2 is therefore the window form of the r1518 secondary-seeded
+   blob, not a genome-wide loss. Withdrawn as a lever.
+4. The single-exon truth members (class A) by default form NO model from their own primaries: CTAGE15 1,787 unspliced
+   primaries, 4% internally primed, strand vote on or off -> 0 models; pass 1 yields only 5 single-exon transcripts on the whole
+   chr7 window. With the r1489 opt-in `RUSTLE_MONO_MODEL=cluster` (part of the layered PREFIX.final.gtf, which the panel's
+   base x.gtf does not carry: R1 ran RUSTLE_ASSEMBLY_LAYERS=off) the same primaries-only windows emit single-exon models:
+   CTAGE15 25 models / 350 reads, PPP1R2B 16 / 265, GK3P 8 / 209, TTC30B 8 / 33 (fragmented by the 50 bp start-end window).
+   Two things keep them off the panel: the panel judges the unlayered x.gtf, and its hit rule needs a spliced model.
+   Files /anvme/workspace/v138da13-rustle/r1534/{s_prim,s_tab,s_nostrand,s_mono,six_prim,six_tab,six_mono}/x.gtf.
