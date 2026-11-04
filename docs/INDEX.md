@@ -100,6 +100,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md`](archive/2026-10/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md) | `o3_candidates` re-run on the 53-family held-out (Amendment 13 + 13b-13e): A13-1 PASSES, A13-2 PASSES, A13-3 PASSES — de | 2026-10-07 | — |
 | [`NPIP_READ_SUPPORT_2026-10-03.md`](archive/2026-10/NPIP_READ_SUPPORT_2026-10-03.md) | Do the reads at an NPIP copy support its transcript? Junction-level check of the A119b primaries at the 25 CAT/Liftoff c | 2026-10-07 | — |
 | [`YAG_CHAIN_GORILLA_2026-10-02.md`](archive/2026-10/YAG_CHAIN_GORILLA_2026-10-02.md) | The reference-absent-copy chain on the Y ampliconic genes — HELD-OUT: gorilla OR6737 testis on mGorGor1 `_pri`, 2026-10- | 2026-10-07 | — |
+| [`VAULT_METHODS_AUDIT_2026-11-04.md`](VAULT_METHODS_AUDIT_2026-11-04.md) | ThesisVault methods audit, family-wise assembly miss classes — 2026-11-04 | 2026-11-04 | — |
 | [`VAULT_METHODS_AUDIT_2026-10-02.md`](archive/2026-10/VAULT_METHODS_AUDIT_2026-10-02.md) | ThesisVault methods audit, addendum — 2026-10-02 | 2026-10-07 | — |
 | [`RNA_ALLELE_INHOUSE_CONSENSUS_2026-10-02.md`](archive/2026-10/RNA_ALLELE_INHOUSE_CONSENSUS_2026-10-02.md) | The in-house consensus in place of IsoCon (Amendment 11): FAILS, and why — 2026-10-02 | 2026-10-07 | — |
 | [`O3_CANDIDATES_ACCEPTANCE_2026-10-02.md`](archive/2026-10/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md) | `o3_candidates` on the 53-family held-out (Amendment 12): A12-1 FAILS, A12-2 FAILS, A12-3 PASSES — 2026-10-02 | 2026-10-07 | — |
