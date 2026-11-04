@@ -18,3 +18,19 @@ lever (tools/rustle_pipeline.sh RUSTLE_READ_JUNCTION_SNAP) and never registered.
 - Bars (all must hold): complete families >= 214 (base 209; half the ceiling); fused <= 49; ordinary hit rate >= 0.829;
   base spliced chains kept >= 0.99; new chains' exact CAT match >= 0.05; of the 97, >= 12 gain a same-strand model (half of 23).
 - PASS -> RUSTLE_READ_JUNCTION_SNAP=10 becomes the assemble default; any FAIL -> stays opt-in, row closed.
+
+## RESULT (arm S = job 4435961; ~/r1527/run.4435961.out, panel ~/r1527/panel.*)
+| bar | base R1 | arm S | verdict |
+|---|---|---|---|
+| complete families (T) | 209 | 208 | FAIL (>= 214) |
+| fused families | 49 | 50 | FAIL (<= 49) |
+| ordinary-member hit rate | 0.829 | 0.829 | PASS |
+| base spliced chains kept | - | 198,750 / 219,503 = 0.906 | FAIL (>= 0.99) |
+| new chains' exact CAT match | 0.051 | 313 / 9,717 = 0.032 | FAIL (>= 0.05) |
+| of the 97 gain a same-strand model | 3 | 4 | FAIL (>= 12) |
+| assemble wall | - | 2,403 s | PASS |
+Transcripts 233,011 -> 221,300; T-only hit 0.678 -> 0.667. The snap moves 9.4% of base chains (r1140's 5-7% cost, now on
+reads) and reaches 1 of the 23 members step 0 predicted (OR8B2): the predicted merges did not survive to models, which is
+unexplained here (candidates: the snapped chain still under the floor once the two reads' other junctions differ, or the
+moved junction lands on a neighbouring paralog's site and the model is emitted there). Not pursued: the chain cost alone fails.
+**Verdict: FAIL as registered (5 bars). `RUSTLE_READ_JUNCTION_SNAP` stays opt-in; row closed.**
