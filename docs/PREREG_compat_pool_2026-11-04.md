@@ -36,3 +36,21 @@ Scripts: scratchpad step0.py / step0b.py (copied to ~/r1526/).
   `bench/famcmp/chain_cat.py BASE ARM CAT` (base spliced chains kept; new chains' exact CAT Liftoff chain match, the r1524 proxy);
   `bench/famcmp/score34.py --one-chain` (of the 97, same-strand model overlapping the gene's exons).
 - Bars as in the goal, with "of the 107" read as of the 97.
+
+## RESULT (arm U = job 4435900; ~/r1526/run.4435900.out, panel ~/r1526/panel.*)
+| bar | base R1 | arm U | verdict |
+|---|---|---|---|
+| complete families (T) | 209 | 219 | PASS (>= 219, exactly) |
+| fused families | 49 | 54 | FAIL (<= 49) |
+| ordinary-member hit rate | 0.829 | 0.847 | PASS |
+| base spliced chains kept | - | 187,965 / 219,503 = 0.856 | FAIL (>= 0.99) |
+| new chains' exact CAT match | 0.051 (base 2-read) | 1,264 / 56,551 = 0.022 | FAIL (>= 0.05) |
+| of the 97 gain a same-strand model | 3 | 19 | FAIL (>= 25) |
+| assemble wall | - | 2,881 s | FAIL (<= 2,700 s) |
+T-only hit 0.678 -> 0.701; transcripts 233,011 -> 255,564. The chains-kept loss is the pass-2 collapse: a default chain
+contained in an admitted maximal transfrag is now a sub-chain and dropped (r1498 rule), so "union" does not keep the default's
+chains in the output even though it admits them. The 19 reached are under half of the 40 step-0 ceiling: the transfrag's reads
+must also lie inside its exons (the r1265 containment rule), which the step-0 count did not require.
+**Verdict: FAIL as registered (4 bars + wall). `RUSTLE_DIRECT_TRANSFRAGS=union` stays opt-in; row closed.** Same shape as
+r1266 (gains everywhere, precision cost); on the family panel the cost shows as 5 more fused families and 2% CAT match on the
+new chains.
