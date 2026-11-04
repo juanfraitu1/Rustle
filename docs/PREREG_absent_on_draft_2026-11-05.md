@@ -17,3 +17,17 @@ present copies' loci <= 2 (the rule must not fire on collapsed copies at TAU, el
 Stop rule: PASS -> the rule is the registered absent-copy detector for draft genomes (a `flag` input, not a change to flag);
 FAIL on recall -> absent copies are visible only with labels, close; FAIL on precision -> list the false piles' origin.
 Script: `bench/nont2t/draft_piles.py`.
+
+## Amendment 1 (2026-11-05, before any number)
+1. TAU is on absolute de but was justified from the r1537 de GAP; absolute de adds the read's own HiFi error (~0.001-0.002).
+   Predicted ceiling: the four missing copies with gap <= 0.0033 (LOC134756368, NPIPB11, LOC129523574, LRPAP1) are expected to
+   sit under TAU and be missed, so about 13 of 17 at best. Human control: present GOLGA8 loci sit at gap 0.002-0.003 on GRCh38
+   (another individual's haplotype), absolute de ~0.004-0.005, so the control may fail from haplotype divergence; if it does the
+   finding is "TAU is not transferable between genome pairs", not a collapsed-copy signal.
+2. Clusters are built blind from every primary record of nt.bam (no labels); labels enter only in scoring.
+3. The 392 gorilla ambiguous-origin reads (1,751 human) enter the blind rule and are excluded from the TRUE / FALSE and FOUND
+   denominators.
+4. nt.bam holds panel reads only: the precision here is an upper bound on a whole-sample BAM.
+5. No second draft held-out: the KB3781 maternal-reference alignments are not on disk (only the O2 tables), and this row does
+   not realign.
+6. A pass means "separable at one fixed constant", not a calibrated detector.
