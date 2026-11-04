@@ -36,8 +36,11 @@ CAT chain match of 0.010 vs 0.051 for base's own 2-read chains; 4,376 base chain
 quantiles). Verdict as registered: FAIL (bars 3, 5). Parts judged alone:
 - (1) strand vote alone (job 4435820): bar 5 1.0000 (every spliced chain identical), complete 204 -> 209, ordinary 0.819 -> 0.829,
   fused 49 -> 49, T-only 0.690 -> 0.678 (one member), 3 of the 34 (SLC35G3, CENPVL3, GMCL2), transcripts 236,004 -> 233,011
-  (2,686 single-exon models now '-', 2,993 fewer single-exon models). Passes bars 4, 5; fails 1, 2, 3 as written. A clean,
-  cheap gain with no spliced cost; it does not ship under this row's bars.
+  (single-exon models 16,501 all '+' -> 13,508 = 10,405 '+' / 3,103 '-'; the 2,993 fewer single-exon models are unexplained
+  and the r1518 single-exon bars were not captured for this arm). Passes bars 4, 5; fails 1, 2, 3 as written. A clean, cheap
+  gain with no spliced cost; it does not ship under this row's bars.
+- Wall: two genome-wide runs (2,462 s and 2,425 s), the second required by the FAIL branch to judge (1) alone; the registered
+  bar said one.
 - (2) the duplicate rule, by difference (combined minus (1)): +20 complete families and 24 of the 34, bought with 68,749 chains at
   1% CAT match and bar 5 at 0.98. As implemented (any chain reaching the floor through coordinate duplicates) it is too broad:
   most coordinate duplicates are duplicates of 1-read chains. FAIL; the PRAMEF8 class needs a narrower admission (e.g. duplicates
