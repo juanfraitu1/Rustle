@@ -62,3 +62,9 @@ reads, 53 sharing one intron chain (MAPQ 13-22, unique primaries); SIGLEC10 32; 
    not misses. A scorer row for A or B4 needs a span guard (r1518-style model span <= 2x gene), or the 100 kb blobs hit for free.
    The mono layer was verified in windows only; no genome-wide A119b final.gtf exists to confirm CTAGE15 appears there, and
    the families stage does not consume final.gtf by the SPLIT design; whether the panel should judge final.gtf is the user's call.
+
+### Correction (labelled, 2026-11-04, after the numbers)
+The "panel fact" above is WRONG: since commit 260ac8c9 (r1521 Amendment 2) family_panel.py counts ANY model as a hit;
+FAMPANEL_SPLICED_ONLY is unset in every run. Class A (51 single-exon truth genes) is therefore hittable today and has no model
+because the base emits none: a genuine base-mode miss, not a ruler artifact. Items 4-5 stand with that reading; no single-exon
+hit rule is needed. The docstring of family_panel.py said "spliced"; fixed in this commit.

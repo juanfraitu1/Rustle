@@ -9,7 +9,8 @@ primary-only definition, which would judge primary-only tools on exactly the cop
   P = >= 2 molecules with a PRIMARY record overlapping its exons on its strand (mapq0 share = share of those at MAPQ 0);
   T = >= 2 molecules with ANY placement there (primary, or secondary at AS >= 0.98 x the molecule's genome-wide best, the good
       pool's tie set from AS_TABLE). T is a superset of P; T-only members are the copies no primary-only tool can reach.
-Per tool per gene: hit = >= 1 spliced model (>= 2 exons) on the gene's strand overlapping its exons.
+Per tool per gene: hit = >= 1 model on the gene's strand overlapping its exons (Amendment 2, 260ac8c9: any model; FAMPANEL_SPLICED_ONLY=1
+restores the original spliced-only rule).
 Per tool per family (families with >= 2 expressed members, judged on the expressed members only): complete (every expressed
 member hit) / partial / none; fused = >= 1 model of the tool overlapping exons of >= 2 members of the family on their strand.
 OUT_PREFIX.genes.tsv (one row per expressed truth gene x tool), OUT_PREFIX.families.tsv, summary on stdout."""
