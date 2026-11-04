@@ -6,11 +6,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'
 import famtruth as F
 G = F.load_cat()
 one = '--one-chain' in sys.argv  # r1526: the 97 members with reads but no two identical chains
-rows = [r for r in csv.DictReader(open(sys.argv[1]), delimiter='\t') if r['ours'] == '0' and
+args = [a for a in sys.argv[1:] if a != '--one-chain']
+rows = [r for r in csv.DictReader(open(args[0]), delimiter='\t') if r['ours'] == '0' and
         ((int(r['maxP_chain']) < 2 and int(r['maxT_chain']) < 2 and int(r['n_local_spliced_P']) >= 1) if one else int(r['maxP_chain']) >= 2)]
 bar = 25 if one else 20
-for arg in sys.argv[2:]:
-    if arg == '--one-chain': continue
+for arg in args[1:]:
     name, path = arg.split('=', 1)
     ex = collections.defaultdict(list)
     for l in open(path):
