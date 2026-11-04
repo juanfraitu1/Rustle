@@ -36,3 +36,19 @@ registered, and reported with the guard off after the numbers (labelled). Note: 
 Incident: `assemble --as-table` rebuilt ~/runs/human_A119b/a1.molecules.tsv in place (its header path did not match
 `readlink -f` of the BAM; 6 min, same BAM, same molecule count 21,391,966); a panel run that read the half-written table
 was discarded.
+
+## Arm L1 RESULT (job 4441808, 57 min; ~/r1535/run.4441808.out, panel.*, panel_noguard.*, classA_hits.out)
+Gate: L1 x.gtf = R1 x.gtf chain-for-chain (219,503 kept = 1.000). final.gtf 211,392 transcripts vs x.gtf 233,011.
+| bar (guard on, definition T) | base L1/x.gtf | arm L1/x.final.gtf | verdict |
+|---|---|---|---|
+| (1) class A members with a hit >= 26 of 51 | 0 | **15** | FAIL |
+| (2) fused <= base | 48 | 48 | PASS |
+| (3) complete >= base | 206 | 213 | PASS |
+| (4) ordinary hit rate >= base | 0.822 | 0.829 | PASS |
+| (5) wall <= 4 h | | 57 min | PASS |
+**FAIL as registered (bar 1).** Hits: CTAGE15 (135-read model), PPP1R2B, GK3P, TTC30B, CTAGE6, TAF1L, RTL8B, RAB6D, HCAR2,
+PCDHB10, PRR23C, TAS2R31, DDTL, H3C1, KRTAP9-2. Misses with many own reads: FAM47A 394, EIF5AL1 265, NANOGP8 66 (the mono
+cluster rule needs a PAS, no internal priming and no multi-exon exon on the strand; which of these holds per miss is unchecked).
+Classes B2 (20) and B4 (53) gain nothing. Guard off (after the numbers): arm T-only 0.678 -> 0.322 and member hit 0.832 ->
+0.805, because the mono layer removes the 113 kb TAF11L single-exon transcript and rebuilds none at those 30 T-only copies;
+class A hits 16. The layered GTF trades the blob hits for 15 real single-exon members.
