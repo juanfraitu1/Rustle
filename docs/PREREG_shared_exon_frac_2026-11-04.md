@@ -24,3 +24,19 @@ against Soto's families, kept) is therefore the first limit on member coverage, 
 - PASS -> the lowest fraction that passes becomes the pipeline default and the provenance route (certified-read assembly of
   T-only members) is re-tested on the new catalog as its own row. No arm passes -> the gate stays at 0.60; row closed, and the
   coverage limit is recorded as the family layer's ceiling on this panel.
+
+## RESULT (job 4436270; ~/r1528/run.4436270.out; arms in /anvme/workspace/v138da13-rustle/fam1528/)
+Correction noted AFTER the numbers: "base 831" above was a transcription error; catalog_cov.py on the base catalog gives 631
+covered expressed members (625 hit + 6 miss, the step-0 table's own numbers). The bar is base + 80 as written, i.e. >= 711.
+| bar | 0.60 (base, byte-identical rerun) | 0.45 | 0.30 |
+|---|---|---|---|
+| pair precision (>= 0.716) | 0.726 | 0.670 FAIL | 0.662 FAIL |
+| pair recall (>= 0.771) | 0.741 | 0.753 FAIL | 0.779 PASS |
+| covered expressed members (>= 711 of 1,136) | 631 | 676 FAIL | 713 PASS |
+| largest family (<= 330) | 220 | 220 PASS | 220 PASS |
+| stage wall (<= 900 s) | 309 | 323 PASS | 326 PASS |
+Predicted pairs 2,228 -> 2,451 -> 2,571; false pairs 611 -> 808 -> 870 (related-but-not-truth 524 -> 712 -> 760), so the new
+edges are two thirds domain-level relatives, not Compara paralogs; families 1,565 -> 1,655, copies 7,987 -> 8,554.
+**Verdict: FAIL as registered (both arms fail precision). The gate stays at 0.60; row closed.** Coverage limit of the family
+layer on this panel: 631 of 1,136 expressed members are catalog copies at 0.60; raising it to 713 costs 6.4 points of pair
+precision. The provenance route is not re-tested.
