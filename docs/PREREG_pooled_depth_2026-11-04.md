@@ -24,3 +24,22 @@ whose every gene lies on the chosen contigs (one-line filter in family_panel.py,
 base: complete >= base + N (N fixed from the panel size), fused <= base, ordinary and T-only hit rates >= base, base chains kept
 >= 0.95, new chains' exact CAT match >= 0.05, job wall <= 2 h. PASS -> one genome-wide pooled row vs fusedgw/R1; ship = pooled
 input documented as the recommended family-layer input (not a default). FAIL -> depth closed on this panel.
+
+## Step 0 RESULT (~/r1531/step0_hg002.py -> step0.out, step0_hg002.tsv)
+Members 215 (212 no-model + 3 one-chain not already among them); reachable with >= 2 HG002 primary on-strand exon reads: **59 =
+0.274 (stop rule < 0.25 not fired, narrowly)**; 0 of the one-chain members. Reachable by chromosome: chr6 9, chr19 8, chr12 7,
+chrX 5, chr1 4, chr17 4, chr4 4, then <= 3 each. The reachable genes are immune/blood genes (LILR, SIGLEC, CCL3, APOBEC3B,
+HLA-DQ), histones, TAS2R and OR: HG002's tissue, not A119b's misses in PRAMEF/TSPY/SPANX.
+
+## Amendment 1 (arm fixed BEFORE any assembly; written after step 0, before any run)
+- Contigs: chr1,chr4,chr6,chr12,chr17,chr19,chrX (41 of the 59 reachable members). Panel: 165 families fully on these contigs
+  (genome-wide base complete 102, expressed members 471).
+- Reads on the contigs: A119b 22.1 M, HG002 70.9 M mapped records.
+- Products: slices via `samtools view -b` of both BAMs, `pool` stage on the slices (name-collision check + merge), then
+  `assemble --contig <list>` twice with ~/rustle_target_test/release, layers off, strand vote default, no --as-table (each
+  builds its own from its slice): base = A119b slice (~/.../depth/A/x.gtf), arm = pooled slice (~/.../depth/AH/x.gtf).
+- Panel judged on the FULL A119b BAM + a1.molecules.tsv with PANEL_CONTIGS set (expression truth stays A119b).
+- Bars (all must hold), base = in-job A119b slice: complete >= base + 5 (definition T); fused <= base; ordinary hit rate
+  >= base; T-only hit rate >= base; base spliced chains kept >= 0.95 and new chains' exact CAT match >= 0.05 (chain_cat.py);
+  pooled assemble wall <= 7200 s. Info only: step-0 reachable members gaining a same-strand model.
+- PASS -> genome-wide pooled row next vs fusedgw/R1; ship = documented recommended input, not a default. FAIL -> depth closed.

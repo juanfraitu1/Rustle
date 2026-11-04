@@ -48,6 +48,8 @@ with open(as_table) as fh:
         f = l.rstrip('\n').split('\t')
         if len(f) > 3 and f[0][0] != '#' and f[3].isdigit() and int(f[3]) > 1 and f[1].isdigit(): best[f[0]] = int(f[1])
 G = F.load_cat(); pairs, universe = F.truth_pairs(G, F.PARALOGS, set(F.LEVELS['primates'])); fams = F.components(pairs)
+if os.environ.get('PANEL_CONTIGS'):  # r1531: judge only families whose every gene lies on these contigs (sliced runs)
+    keep = set(os.environ['PANEL_CONTIGS'].split(',')); fams = [f for f in fams if all(G[g]['chrom'] in keep for g in f)]
 bam = pysam.AlignmentFile(bam_path)
 expr = {}
 for f in fams:
