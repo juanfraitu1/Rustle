@@ -23,3 +23,16 @@ and x.final.gtf (--polish-tss-end median, --polish-tes-extend on, --mono-model c
 - Bars: (1) class A members (the 51 of ~/r1534/step0_members.tsv) with a hit >= 26; (2) fused families <= base; (3) complete
   >= base; (4) ordinary-member hit rate (mapq0 share < 0.5) >= base; (5) wall <= 4 h.
 - Whether the panel or the families stage should consume final.gtf is the user's decision, not decided by this row.
+
+## D1 RESULT (~/r1535/panel_R1_guard.out; base = fusedgw/R1/x.gtf, same 1,136 members)
+| definition T | complete | partial | none | fused | member hit | ordinary | T-only (n=87) |
+|---|---|---|---|---|---|---|---|
+| r1521 (guard off) | 209 | 94 | 21 | 49 | 0.832 | 0.829 | 0.678 |
+| D1 guard on | 206 | 94 | 24 | 48 | 0.797 | 0.822 | 0.333 |
+Hits removed 39; 34 of them from single-exon models > 10x the gene span -> share 0.872 < 0.9: **adoption bar FAIL as
+registered**. D1 is not adopted; the r1521 numbers stay the figure. The arm L1 is still judged with the guard on, as
+registered, and reported with the guard off after the numbers (labelled). Note: the T-only hit rate was carried by the
+113 kb TAF11L blob (0.678 -> 0.333 under the guard); 30 of the 87 T-only members are TAF11L copies hit by one model.
+Incident: `assemble --as-table` rebuilt ~/runs/human_A119b/a1.molecules.tsv in place (its header path did not match
+`readlink -f` of the BAM; 6 min, same BAM, same molecule count 21,391,966); a panel run that read the half-written table
+was discarded.
