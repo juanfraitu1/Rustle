@@ -23,3 +23,25 @@ Member classes, assigned in this order:
 Decision rule: the largest of A, B2, B3 names the next row; A -> a scorer-definition row (count a single-exon model as a hit
 for a single-exon gene), registered separately before it is applied; B3 -> an assembly row on those members; B2 -> the
 r1518/r1520 trade, no new row (the user's call). B1 and B4 are recorded, not acted on. No arm in this row; no bars.
+
+## Step 0 RESULT (~/r1534/step0_classes.py -> step0.out, step0_members.tsv; 17 s)
+| class (registered) | members | with a base single-exon model on the exons |
+|---|---|---|
+| A single_exon_truth | 51 | 0 |
+| B1 overlapping_gene | 1 | 0 |
+| B2 unspliced_reads | 20 | 0 |
+| B3 spliced_reads_no_model | 52 | 0 |
+| B4 few_own_reads (own < 2 under the 50% rule; the panel's P counts any exon overlap) | 53 | 0 |
+Decision rule: B3 (52) > A (51) > B2 (20) -> the next row is an assembly row on the B3 members. B3 examples: SPANXA2 58 own
+reads, 53 sharing one intron chain (MAPQ 13-22, unique primaries); SIGLEC10 32; ZNF679 31 (22 distinct chains); FAM86B1 27.
+
+### After the numbers (labelled)
+1. Context of the 177 in the base GTF (~/r1534/check_context.py -> check_context.out): no model of any kind on the span at
+   103 (A 15, B2 12, B3 36, B4 39); only an opposite-strand model at 48; inside a same-strand spliced model's span at 24.
+   Own reads agree with the CAT strand at 6,799 of 7,185 (SIGLEC10 9/32, FAM86B1 2/27 do not).
+2. Region-slice assembly (A119b records in +-200 kb windows, `assemble --contig`, same binary, no other change) EMITS models the
+   genome-wide base lacks at 4 of 7 tried loci: CTAGE15 (1,783 own reads; base: no model touching the exon; slice: 2-3-exon
+   models with 39 / 15 / 8 reads), PPP1R2B (slice 18-read model; base none), ZNF679 (slice adds + strand models of 7, 9, 10
+   reads; base has only - strand ones), GK3P (3 vs 1). Same at TTC30B (none in both), SIGLEC10, IGFL3 (identical). Files
+   /anvme/workspace/v138da13-rustle/r1534/{s,six}/x.gtf, regions.txt. The cause is NOT identified here; a genome-wide run
+   loses models that a local run emits at high-read loci. That is the lever to diagnose next, before any emission rule.
