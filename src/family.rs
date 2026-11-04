@@ -45994,6 +45994,10 @@ pub mod denovo_pipeline {
             pub n_read_filtered: usize,
         }
 
+        fn dup_admit_enabled() -> bool {
+            matches!(std::env::var("RUSTLE_DUP_ADMIT"), Ok(v) if v == "1")
+        }
+
         impl Pass1Acc {
             pub fn new(min_terminal_support: u32, snap: Option<(u64, f64)>) -> Self {
                 // The boundary is the k-th most extreme terminal, k = `min_terminal_support`. A depth-adaptive rank
@@ -46026,9 +46030,15 @@ pub mod denovo_pipeline {
 
             /// A spliced record whose (chrom, start, end, chain) duplicates one already pushed: admission support only.
             pub fn push_dup(&mut self, chrom: &str, introns: &[(u64, u64)]) {
-                if !introns.is_empty() {
-                    *self.dups.entry((chrom.to_string(), introns.to_vec())).or_insert(0) += 1;
+                // r1524: opt-in (`RUSTLE_DUP_ADMIT=1`). Genome-wide the blanket rule admitted 68,749 chains at a 1% exact
+                // CAT-chain match and shifted the polish (base chains kept 0.980); unset, pass 1 is byte-identical.
+                if !introns.is_empty() && dup_admit_enabled() {
+                    self.push_dup_unchecked(chrom, introns);
                 }
+            }
+
+            fn push_dup_unchecked(&mut self, chrom: &str, introns: &[(u64, u64)]) {
+                *self.dups.entry((chrom.to_string(), introns.to_vec())).or_insert(0) += 1;
             }
 
             /// One read. An unspliced read is retained whole (empty chain would pool chromosome-wide; it is
@@ -54362,15 +54372,19 @@ pub mod denovo_pipeline {
                     rec("b", Flags::default(), 0, 1_001, vec![m(100), n(500), m(100)]),
                 ];
                 let bam = write_indexed_bam(dir.path(), "dup.bam", &recs);
-                let run = |dedupe: bool| {
+                let run = |dedupe: bool, admit: bool| {
                     let mut acc = Pass1Acc::new(1, None);
                     stream_pass1_region_with(&bam, "c1", 0, 1_000_000, false, dedupe, &[], &mut acc, None, UnsplicedSecondary::Seed).unwrap();
+                    if admit {
+                        acc.push_dup_unchecked("c1", &[(1_100, 1_600)]); // what the stream pushes under RUSTLE_DUP_ADMIT=1
+                    }
                     let pushed = acc.n_pushed;
                     let sk = acc.finish(2, 0, None);
                     (pushed, sk.len(), sk.first().map(|s| s.n_reads))
                 };
-                assert_eq!(run(false), (2, 1, Some(2)));
-                assert_eq!(run(true), (1, 1, Some(2))); // admitted on 1 + 1 duplicate, carrying the raw count
+                assert_eq!(run(false, false), (2, 1, Some(2)));
+                assert_eq!(run(true, false), (1, 0, None)); // default: the duplicate is dropped, the chain stays under the floor
+                assert_eq!(run(true, true), (1, 1, Some(2))); // opt-in: admitted on 1 + 1 duplicate, carrying the raw count
             }
 
             #[test]
