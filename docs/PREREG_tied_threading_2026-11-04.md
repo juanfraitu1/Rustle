@@ -39,8 +39,14 @@ locus with private nodes covered), 29 loci under 2 reads, **31 models**; prototy
 | T-only hit rate >= 0.678 | 0.690 | PASS |
 | new models on a CAT gene same strand >= 0.95 | 25 of 31 = 0.806 | FAIL |
 | wall <= 3600 s | 526 s | PASS |
-**Verdict: FAIL as registered. Route closed at its measured size.** The loci built from tied placements carry "private" nodes
-that are placement artifacts (soft-clipped ends, partial secondaries), so the graph assigns reads to exon-identical siblings
-it cannot really separate (3 models at the 18) while the 10 separable members, whose private nodes are real but 1-33 bp, get
-a model once. Linear placement already encodes the same evidence (the AS tie); the graph adds no information the aligner
-lacked, only a different tie-break.
+**Verdict: FAIL as registered. Route closed at its measured size.**
+
+### After the numbers (checked; ~/r1533/check_spec.out, check_loci.out)
+- Assignment split over the 905 reads' best alignments: 342 cover private nodes of exactly one locus, 305 cover two or more
+  loci, 250 cover none. The method was confused (305) more than silent (250).
+- Locus construction is the defect: overlap-clustering of placements chains across tandem clusters into mega-loci. Model span
+  median 13.9 kb, 17 of 31 over 10 kb, 7 over 100 kb (chr7:11839-252847, chr1:10799-175488); 13 of 31 models span >= 2 CAT
+  genes. The TAF11L5 (50 kb, 12 kb) and DEFB105A (25 kb) models are such mega-loci; the DEFB103B model (1.4 kb) is a genuine
+  assignment to an exon-identical sibling, i.e. the private node there is not real separating sequence.
+- Not checked: whether a locus definition that does not merge across genes would raise the reach above 1 of 10; the
+  step-0 graphs on truth exon unions (r1532) already bound it at 10, with 2-25 reads each.
