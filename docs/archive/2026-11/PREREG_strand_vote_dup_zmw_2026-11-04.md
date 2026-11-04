@@ -59,3 +59,8 @@ Row verdict: (1) PASS and shipped; (2) FAIL, opt-in. The fused-family cut is clo
 - The ZMW machinery (name hash per record, seen-map, counter) is removed since it is vacuous here; RUSTLE_DUP_ADMIT stays as the
   opt-in blanket rule, read once per region. Commit 03ccd245 holds the exact code that produced arm R2.
 - Walls: A 2,462 s (r1524 combined arm), R1 2,425 s, R2 3,284 s; the ZMW map cannot plausibly explain the 800 s, left unattributed.
+- Sequence lever pre-check (2026-11-04, not registered): coordinate-duplicate pairs vs independent same-chain pairs (different
+  ends), compared over a shared 1.5 kb window by aligned bases + indels, chr20, 400 pairs each: duplicates identical 391/400,
+  independent 397/400; at the 34 misses 146 of 154 duplicate pairs identical. HiFi reads are error-free at this resolution and
+  Iso-Seq molecules of one isoform share TSS/TES, so sequence carries no PCR-duplicate signal (the earlier "0 mismatches" came
+  from NM being all indels). The sequence rule is closed without a row; RUSTLE_DUP_ADMIT stays the opt-in blanket rule.

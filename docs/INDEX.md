@@ -1,4 +1,4 @@
-# docs/ index — every document, one line each (generated 2026-11-03)
+# docs/ index — every document, one line each (generated 2026-11-04)
 
 Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or archiving a document. Archived files keep their names; only the directory changed, so grepping a filename still finds it. Verdicts of archived studies are in the register rows that cite them; pre-registrations are kept verbatim (the commit that introduced each one is the proof it preceded the result).
 
@@ -9,11 +9,11 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`ADVISOR_QUESTIONS.md`](ADVISOR_QUESTIONS.md) | The advisor's standing questions — and what the codebase can answer | 2026-11-03 | — |
 | [`DATA.md`](DATA.md) | Datasets — what they are, where they came from, how to rebuild them | 2026-11-03 | — |
 | [`LEDGER_GENERAL.md`](LEDGER_GENERAL.md) | Ledger: general (handoffs, pending lists, register drafts, overviews) | 2026-11-03 | — |
-| [`LEDGER_O1.md`](LEDGER_O1.md) | Ledger: O1 (family definition, assembler, locus units) | 2026-11-03 | — |
+| [`LEDGER_O1.md`](LEDGER_O1.md) | Ledger: O1 (family definition, assembler, locus units) | 2026-11-04 | — |
 | [`LEDGER_O2.md`](LEDGER_O2.md) | Ledger: O2 (copy assignment of tied reads) | 2026-11-03 | — |
 | [`LEDGER_O3.md`](LEDGER_O3.md) | Ledger: O3 (copies the reference lacks) | 2026-11-03 | — |
 | [`MODULE_STATUS.md`](MODULE_STATUS.md) | Module status — what is SHIPPED vs what was TRIED | 2026-10-25 | — |
-| [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) | REGISTER OF NEGATIVE RESULTS (full: archive/2026-11/NEGATIVE_RESULTS_REGISTER.md:1) | 2026-11-03 | — |
+| [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) | REGISTER OF NEGATIVE RESULTS (full: archive/2026-11/NEGATIVE_RESULTS_REGISTER.md:1) | 2026-11-04 | — |
 | [`PERFORMANCE.md`](PERFORMANCE.md) | Pipeline performance: where the time goes and the switches that change it | 2026-11-03 | — |
 | [`README.md`](README.md) | docs/ — what is where | 2026-11-03 | — |
 | [`REFERENCE.md`](REFERENCE.md) | REFERENCE — glossary, data locations, and a worked example | 2026-11-03 | — |
@@ -22,39 +22,44 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-03 | — |
 | [`seeded_family_definition.md`](seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-03 | — |
 
-## Open studies and current handoff (7)
+## Open studies and current handoff (0)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
-| [`PREREG_family_panel_tools_2026-11-03.md`](PREREG_family_panel_tools_2026-11-03.md) | PREREG FAMILY PANEL ACROSS TOOLS (register 1521, 2026-11-03; descriptive, predictions stated) | 2026-11-03 | register ×1 |
-| [`PREREG_isocon_only_2026-11-03.md`](PREREG_isocon_only_2026-11-03.md) | PREREG ISOCON-ONLY TRANSCRIPTS (register 1515, 2026-11-03) | 2026-11-03 | register ×1 |
-| [`PREREG_project_models_2026-11-03.md`](PREREG_project_models_2026-11-03.md) | PREREG PROJECTED MODELS, MULTI-COPY LAYER (register 1519, 2026-11-03) | 2026-11-03 | register ×1 |
-| [`PREREG_seed_unspliced_primary_2026-11-03.md`](PREREG_seed_unspliced_primary_2026-11-03.md) | PREREG SEED UNSPLICED FROM PRIMARIES (register 1518, 2026-11-03) | 2026-11-03 | register ×1 |
-| [`PREREG_seed_unspliced_support_2026-11-03.md`](PREREG_seed_unspliced_support_2026-11-03.md) | PREREG UNSPLICED SECONDARIES AS SUPPORT ONLY (register 1520, 2026-11-03) | 2026-11-03 | register ×1 |
-| [`PREREG_tandem_cut_2026-11-03.md`](PREREG_tandem_cut_2026-11-03.md) | PREREG TANDEM CUT (register 1516, 2026-11-03) | 2026-11-03 | register ×1 |
-| [`PREREG_tandem_cut_neighbour_2026-11-03.md`](PREREG_tandem_cut_neighbour_2026-11-03.md) | PREREG TANDEM CUT, NEIGHBOUR BLOCKS (register 1517, 2026-11-03) | 2026-11-03 | register ×1 |
 
-## `archive/2026-11/` — 39 closed documents
+
+## `archive/2026-11/` — 50 closed documents
 
 | file | title | last commit | cited by |
 |---|---|---|---|
+| [`PREREG_strand_vote_dup_zmw_2026-11-04.md`](archive/2026-11/PREREG_strand_vote_dup_zmw_2026-11-04.md) | PREREG r1525: ship the strand vote; narrow the duplicate rule to different ZMWs | 2026-11-04 | register ×1 |
+| [`PREREG_family_mode_tied_seed_2026-11-04.md`](archive/2026-11/PREREG_family_mode_tied_seed_2026-11-04.md) | PREREG r1523: family-wide assembly mode (tied-seed members + fused-model cuts), judged on the r1521 panel | 2026-11-04 | register ×1 |
+| [`PREREG_base_family_misses_2026-11-04.md`](archive/2026-11/PREREG_base_family_misses_2026-11-04.md) | PREREG r1524: recover the base-mode family misses (strand vote, pass-1 drop, catalog-family cut) | 2026-11-04 | register ×1 |
+| [`NEGATIVE_RESULTS_REGISTER.md`](archive/2026-11/NEGATIVE_RESULTS_REGISTER.md) | REGISTER OF NEGATIVE RESULTS | 2026-11-04 | — |
+| [`LEDGER_O1.md`](archive/2026-11/LEDGER_O1.md) | Ledger: O1 (family definition, assembler, locus units) | 2026-11-04 | — |
 | [`seeded_family_definition.md`](archive/2026-11/seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-03 | — |
 | [`o1_ledger.md`](archive/2026-11/o1_ledger.md) | O1 LEDGER — what has and has not worked | 2026-11-03 | — |
 | [`copy_assignment_definition.md`](archive/2026-11/copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-03 | — |
 | [`THESIS_OBJECTIVES.md`](archive/2026-11/THESIS_OBJECTIVES.md) | Thesis objectives — the current three | 2026-11-03 | — |
 | [`REFERENCE.md`](archive/2026-11/REFERENCE.md) | REFERENCE — glossary, data locations, and a worked example | 2026-11-03 | — |
+| [`PREREG_tandem_cut_neighbour_2026-11-03.md`](archive/2026-11/PREREG_tandem_cut_neighbour_2026-11-03.md) | PREREG TANDEM CUT, NEIGHBOUR BLOCKS (register 1517, 2026-11-03) | 2026-11-03 | register ×1 |
+| [`PREREG_tandem_cut_2026-11-03.md`](archive/2026-11/PREREG_tandem_cut_2026-11-03.md) | PREREG TANDEM CUT (register 1516, 2026-11-03) | 2026-11-03 | register ×1 |
+| [`PREREG_seed_unspliced_support_2026-11-03.md`](archive/2026-11/PREREG_seed_unspliced_support_2026-11-03.md) | PREREG UNSPLICED SECONDARIES AS SUPPORT ONLY (register 1520, 2026-11-03) | 2026-11-03 | register ×1 |
+| [`PREREG_seed_unspliced_primary_2026-11-03.md`](archive/2026-11/PREREG_seed_unspliced_primary_2026-11-03.md) | PREREG SEED UNSPLICED FROM PRIMARIES (register 1518, 2026-11-03) | 2026-11-03 | register ×1 |
 | [`PREREG_secondary_usefulness_2026-11-03.md`](archive/2026-11/PREREG_secondary_usefulness_2026-11-03.md) | PREREG SECONDARY USEFULNESS + MULTIMAPPER FAMILY GRAPH (registers 1511-1512, 2026-11-03) | 2026-11-03 | register ×1 |
 | [`PREREG_secondary_pool_2026-11-03.md`](archive/2026-11/PREREG_secondary_pool_2026-11-03.md) | PREREG SECONDARY-POOL CANDIDATE COPIES (register 1513, 2026-11-03) | 2026-11-03 | register ×1 |
+| [`PREREG_project_models_v2_2026-11-03.md`](archive/2026-11/PREREG_project_models_v2_2026-11-03.md) | PREREG r1522: projected models v2, judged set gated (hotspot excluded / transcribed target) | 2026-11-04 | register ×1 |
+| [`PREREG_project_models_2026-11-03.md`](archive/2026-11/PREREG_project_models_2026-11-03.md) | PREREG PROJECTED MODELS, MULTI-COPY LAYER (register 1519, 2026-11-03) | 2026-11-03 | register ×1 |
 | [`PREREG_o2_primary_on_family_2026-11-03.md`](archive/2026-11/PREREG_o2_primary_on_family_2026-11-03.md) | PREREG O2 PRIMARY-ON-FAMILY GUARD (register 1514, 2026-11-03) | 2026-11-03 | register ×1 |
 | [`PREREG_o2_ms_tie_proof_2026-11-03.md`](archive/2026-11/PREREG_o2_ms_tie_proof_2026-11-03.md) | PREREG O2 MS-TIE PROOF (register 1509, 2026-11-03) | 2026-11-03 | register ×1 |
 | [`PREREG_o2_ms_tie_heldout_2026-11-03.md`](archive/2026-11/PREREG_o2_ms_tie_heldout_2026-11-03.md) | PREREG O2 MS-TIE HELD-OUT (register 1510, 2026-11-03) | 2026-11-03 | register ×1 |
 | [`PREREG_o2_contested_census_2026-11-03.md`](archive/2026-11/PREREG_o2_contested_census_2026-11-03.md) | PREREG O2 CONTESTED CENSUS (register 1508, 2026-11-03) | 2026-11-03 | register ×1 |
+| [`PREREG_isocon_only_2026-11-03.md`](archive/2026-11/PREREG_isocon_only_2026-11-03.md) | PREREG ISOCON-ONLY TRANSCRIPTS (register 1515, 2026-11-03) | 2026-11-03 | register ×1 |
+| [`PREREG_family_panel_tools_2026-11-03.md`](archive/2026-11/PREREG_family_panel_tools_2026-11-03.md) | PREREG FAMILY PANEL ACROSS TOOLS (register 1521, 2026-11-03; descriptive, predictions stated) | 2026-11-03 | register ×1 |
 | [`O3_STATUS.md`](archive/2026-11/O3_STATUS.md) | O3 — reference-absent copies: the evidence, and what it does and does not support | 2026-11-03 | — |
-| [`NEGATIVE_RESULTS_REGISTER.md`](archive/2026-11/NEGATIVE_RESULTS_REGISTER.md) | REGISTER OF NEGATIVE RESULTS | 2026-11-03 | — |
 | [`MEMORY_DIGEST.md`](archive/2026-11/MEMORY_DIGEST.md) | Memory digest — the long form of the memory index | 2026-11-03 | — |
 | [`LEDGER_O3.md`](archive/2026-11/LEDGER_O3.md) | Ledger: O3 (copies the reference lacks) | 2026-11-03 | — |
 | [`LEDGER_O2.md`](archive/2026-11/LEDGER_O2.md) | Ledger: O2 (copy assignment of tied reads) | 2026-11-03 | — |
-| [`LEDGER_O1.md`](archive/2026-11/LEDGER_O1.md) | Ledger: O1 (family definition, assembler, locus units) | 2026-11-03 | — |
 | [`LEDGER_GENERAL.md`](archive/2026-11/LEDGER_GENERAL.md) | Ledger: general (handoffs, pending lists, register drafts, overviews) | 2026-11-03 | — |
 | [`CHAPTER_O1_O2_COMPOSITION_DRAFT.md`](archive/2026-11/CHAPTER_O1_O2_COMPOSITION_DRAFT.md) | O1 → O2 by composition: families of transcribed loci, and assignment among exactly those loci (draft, 2026-09-05) | 2026-11-03 | — |
 | [`ADVISOR_QUESTIONS.md`](archive/2026-11/ADVISOR_QUESTIONS.md) | The advisor's standing questions — and what the codebase can answer | 2026-11-03 | — |
