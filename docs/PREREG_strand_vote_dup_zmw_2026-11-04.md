@@ -36,3 +36,18 @@ The 3,088 base single-exon spans absent from the arm (all reads >= 6): 3,031 lie
 (the mono-shadow polish now reaches models whose '+' placeholder had put them on the wrong strand), 49 absent, 8 moved <= 50 bp.
 95 single-exon models gained, all '-'. T-only hit rate 0.690 -> 0.678 (one member), fused 49 -> 49.
 PASS -> shipped: `tools/rustle_pipeline.sh` assemble sets RUSTLE_READ_STRAND=1 unless the caller sets it (0 = placeholder).
+
+## RESULT part (2): different-ZMW duplicate admission (arm R2 = job 4435861, 3,284 s; ~/r1525/r2_chains.out)
+| bar | value | verdict |
+|---|---|---|
+| new chains' exact CAT match | 676 / 68,749 = 0.010 | FAIL (>= 0.05) |
+| base chains kept | 215,127 / 219,503 = 0.9801 | FAIL (>= 0.99) |
+| of the 34 gain a model | 26 | PASS (>= 15) |
+Transcripts 236,004 -> 300,583. The arm is the r1524 blanket arm to the chain: the ZMW restriction removes nothing, because
+coordinate duplicates from the SAME ZMW do not exist in this BAM (chr20 spliced primaries: 13,519 coordinate duplicates, 0 from the
+same ZMW). Identical (start, end, chain) across distinct ZMWs is therefore the duplicate signature itself, PCR duplicates of
+one cDNA, and those chains match CAT at 1% against 5% for base's own 2-read chains. The PRAMEF8 class (26 of 34) is real but
+inseparable from the duplicates by read identity alone. The switch acts (region run: PRAMEF8 emitted with RUSTLE_DUP_ADMIT=1,
+absent with 0). Verdict: FAIL; stays opt-in. A separating signal would have to come from sequence (two duplicates with
+different error profiles are two molecules; identical sequences are one), not from names.
+Row verdict: (1) PASS and shipped; (2) FAIL, opt-in. The fused-family cut is closed as de novo (r1524).
