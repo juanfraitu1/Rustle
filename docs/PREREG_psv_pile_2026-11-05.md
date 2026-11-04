@@ -20,3 +20,21 @@ Bars (as r1537): PSV-hallmarked >= 50% of scorable missing copies, split collaps
 Stop rule: PASS -> a blind detector (site density + second-haplotype share at family loci) is the registered next row; FAIL -> the
 collapsed regime closes on sequence data entirely (reads and population), and collapsed paralogs need a better assembly.
 Script: `bench/nont2t/psv_pile.py` (loci, bcftools, per-locus table, summary); bcftools from the pixi env `bcftools-*`.
+
+## Amendment 1 (2026-11-05, before any number)
+1. SNV records only; bcftools indel records are ignored (HiFi homopolymer indels would set S at every locus).
+2. Ploidy strata: A119b is male testis, chrX/chrY loci are haploid (no heterozygosity). Thresholds and bars are computed and
+   reported separately for autosomal and X/Y loci; if the X/Y null holds fewer than 5 loci its threshold is the null maximum.
+3. Unit: the bar is per copy as registered; the same count is also reported per unique absorbing locus (several copies share one:
+   NPIPB15 x2, TSPY3 x several, NPIPB7 + NPIPB9).
+4. Floor by construction: the minor allele needs fraction >= 0.10, so a copy whose reads are < ~10% of the pile cannot pass
+   whatever its PSVs (NPIPB11, NPIPB7 at depth excess 0.02); the count of such copies is reported.
+5. Predicted outcome, written now: r1537's de gap bounds the divergence between a missing copy and its absorbing locus at
+   <= 0.002 for 19 of 21, i.e. <= ~2 PSV sites per kb, the human heterozygosity rate. Expected: FAIL on autosomal loci by that
+   bound; the informative parts are the haploid stratum and the labelled purity. The collapsed/absent split is kept as registered
+   but an "absent" copy with de gap ~0 is absorbed on a relative the truth alignment did not credit.
+6. Calling: `bcftools mpileup -a AD,DP` parsed directly, no `bcftools call` (its genotype model is wrong for a pooled pile); every
+   position is kept so the DP >= 20 denominator comes from the same pass. Per-read alleles for H and purity come from pysam
+   pileup with the same filters. Purity is defined on the allele carried by fewer reads and reports which origin carries it
+   (at CDY1 the missing copy is the majority, depth excess 6.0). The 1,751 ambiguous-origin reads enter the blind pileup and are
+   excluded from the purity denominator.
