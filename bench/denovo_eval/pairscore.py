@@ -107,6 +107,9 @@ for p in paths:
         with open(os.environ['PAIRSCORE_FAMDUMP'] + '.' + os.path.basename(p) + '.famdump.tsv', 'w') as fh:
             fh.write('family\thit\tmissed\tfalse\n')
             for k, v in sorted(fam.items(), key=lambda kv: -(kv[1][0] + kv[1][1] + kv[1][2])): fh.write(f"{k}\t{v[0]}\t{v[1]}\t{v[2]}\n")
+    if os.environ.get('PAIRSCORE_FALSEDUMP'):  # the false coding pairs of each run (gene ids + names), r1529 step 0
+        with open(os.environ['PAIRSCORE_FALSEDUMP'] + '.' + os.path.basename(p) + '.false.tsv', 'w') as fh:
+            for x, y in sorted(false): fh.write(f"{x}\t{y}\t{G[x]['name']}\t{G[y]['name']}\n")
     if os.environ.get('PAIRSCORE_HITDUMP'):  # the hit coding truth pairs of each run (gene ids + names), to diff two runs' recall
         with open(os.environ['PAIRSCORE_HITDUMP'] + '.' + os.path.basename(p) + '.hits.tsv', 'w') as fh:
             for x, y in sorted(coding & truth): fh.write(f"{x}\t{y}\t{G[x]['name']}\t{G[y]['name']}\n")
