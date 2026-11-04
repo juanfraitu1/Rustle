@@ -45971,6 +45971,8 @@ pub mod denovo_pipeline {
             // coordinate-duplicate spliced records per chain (r1524): they count only for chains that would otherwise
             // fall under the floor, so the polish thresholds fitted on de-duplicated counts are untouched
             dups: std::collections::BTreeMap<(String, Vec<(u64, u64)>), u32>,
+            /// coordinate duplicates seen from a different ZMW (counted whether or not `RUSTLE_DUP_ADMIT` is set)
+            pub n_dup_other_zmw: usize,
             /// Unspliced reads, in arrival order, for the position-aware seeding pass.
             pub unspliced: Vec<PrimaryRead>,
             /// `UnsplicedSecondary::Support` (r1520): unspliced SECONDARY records, kept apart so they can add support to a
@@ -45994,6 +45996,15 @@ pub mod denovo_pipeline {
             pub n_read_filtered: usize,
         }
 
+        /// PacBio `movie/zmw/...`: the name up to its second `/` (the whole name when it has fewer), hashed.
+        fn zmw_hash(name: &[u8]) -> u64 {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            let end = name.iter().enumerate().filter(|(_, &c)| c == b'/').nth(1).map(|(i, _)| i).unwrap_or(name.len());
+            name[..end].hash(&mut h);
+            h.finish()
+        }
+
         fn dup_admit_enabled() -> bool {
             matches!(std::env::var("RUSTLE_DUP_ADMIT"), Ok(v) if v == "1")
         }
@@ -46013,6 +46024,7 @@ pub mod denovo_pipeline {
                     groups: std::collections::BTreeMap::new(),
                     allpos: std::collections::BTreeMap::new(),
                     dups: std::collections::BTreeMap::new(),
+                    n_dup_other_zmw: 0,
                     unspliced: Vec::new(),
                     unspliced_sec: Vec::new(),
                     n_pushed: 0,
@@ -50217,7 +50229,8 @@ pub mod denovo_pipeline {
             let header = reader.read_header()?;
             let index = noodles_bam::bai::read(&bai_path)?;
             let region: noodles_core::Region = format!("{chrom}:{}-{}", lo + 1, hi).parse()?;
-            let mut seen: DetHashSet<u64> = DetHashSet::default();
+            // coordinate key -> hash of the first record's ZMW (r1525: a duplicate counts only from a different ZMW)
+            let mut seen: DetHashMap<u64, u64> = DetHashMap::default();
             let mut n_mapped = 0usize;
             let mut ops: Vec<noodles_sam::alignment::record::cigar::Op> = Vec::with_capacity(256);
             // GOOD seeding on the streaming path (r1060/r1100, `docs/archive/2026-09/PREREG_locus_read_pool_2026-09-22.md`): with
@@ -50377,10 +50390,16 @@ pub mod denovo_pipeline {
                 if dedupe_coords {
                     let mut h = std::collections::hash_map::DefaultHasher::new();
                     (chrom, ref_start, ref_end, &introns).hash(&mut h);
-                    if !seen.insert(h.finish()) {
-                        acc.push_dup(chrom, &introns);
+                    let key = h.finish();
+                    let zmw = zmw_hash(record.name().map(|n| n.as_ref()).unwrap_or(b""));
+                    if let Some(first) = seen.get(&key) {
+                        if *first != zmw {
+                            acc.n_dup_other_zmw += 1;
+                            acc.push_dup(chrom, &introns);
+                        }
                         continue;
                     }
+                    seen.insert(key, zmw);
                 }
                 acc.push(
                     chrom,
@@ -54368,8 +54387,10 @@ pub mod denovo_pipeline {
                 let dir = tempfile::tempdir().unwrap();
                 let n = |l| Op::new(Kind::Skip, l);
                 let recs = vec![
-                    rec("a", Flags::default(), 0, 1_001, vec![m(100), n(500), m(100)]),
-                    rec("b", Flags::default(), 0, 1_001, vec![m(100), n(500), m(100)]),
+                    rec("m1/11/ccs/0_1000", Flags::default(), 0, 1_001, vec![m(100), n(500), m(100)]),
+                    rec("m1/22/ccs/0_1000", Flags::default(), 0, 1_001, vec![m(100), n(500), m(100)]),
+                    rec("m1/33/ccs/0_1000", Flags::default(), 0, 5_001, vec![m(100), n(500), m(100)]),
+                    rec("m1/33/ccs/2000_3000", Flags::default(), 0, 5_001, vec![m(100), n(500), m(100)]), // same ZMW
                 ];
                 let bam = write_indexed_bam(dir.path(), "dup.bam", &recs);
                 let run = |dedupe: bool, admit: bool| {
@@ -54378,13 +54399,17 @@ pub mod denovo_pipeline {
                     if admit {
                         acc.push_dup_unchecked("c1", &[(1_100, 1_600)]); // what the stream pushes under RUSTLE_DUP_ADMIT=1
                     }
-                    let pushed = acc.n_pushed;
+                    let pushed = acc.n_pushed; let other = acc.n_dup_other_zmw;
                     let sk = acc.finish(2, 0, None);
-                    (pushed, sk.len(), sk.first().map(|s| s.n_reads))
+                    (pushed, other, sk.len(), sk.iter().map(|s| (s.start, s.n_reads)).collect::<Vec<_>>())
                 };
-                assert_eq!(run(false, false), (2, 1, Some(2)));
-                assert_eq!(run(true, false), (1, 0, None)); // default: the duplicate is dropped, the chain stays under the floor
-                assert_eq!(run(true, true), (1, 1, Some(2))); // opt-in: admitted on 1 + 1 duplicate, carrying the raw count
+                assert_eq!(run(false, false), (4, 0, 2, vec![(1_000, 2), (5_000, 2)]));
+                // default: duplicates dropped, both chains under the floor; only the 1_000 duplicate is from another ZMW
+                assert_eq!(run(true, false), (2, 1, 0, vec![]));
+                // opt-in: the different-ZMW duplicate admits its chain with the raw count; the same-ZMW one never does
+                assert_eq!(run(true, true), (2, 1, 1, vec![(1_000, 2)]));
+                assert_eq!(zmw_hash(b"m1/33/ccs/0_1000"), zmw_hash(b"m1/33/ccs/2000_3000"));
+                assert_ne!(zmw_hash(b"m1/33/ccs/0_1000"), zmw_hash(b"m1/34/ccs/0_1000"));
             }
 
             #[test]
