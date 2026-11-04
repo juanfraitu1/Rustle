@@ -64,3 +64,12 @@ Verdict: on a same-species near-complete genome (GRCh38) the reads of a missing 
 no read-level signature that the present copies lack: the COLLAPSED regime closes on reads (stop rule). On a draft genome (Kamilah)
 ABSENT copies separate on identity against both nulls (17/17, 3/7 present false alarms with the gorilla null): that regime has a
 read-level hallmark (the divergence pile), already seen on KB3781 mat/pat; it carries no bar here and would need its own row.
+
+### Correction (2026-11-05, labelled): item 1 is wrong about the truth
+GOLGA6L9 and GOLGA6L11P are two CHM13 genes that both hit the one GRCh38 locus chr15:82430017-82439153 at identity 1.000: that is a
+genuine collapse and truth2 is right. What failed is the absorbed test: it used the claimer's gene span (82430079-82436411, the
+shorter pseudogene) and GOLGA6L9's reads sit in the 3' part of the shared locus (82436415-82438701). Same for GOLGA8M (two gene
+ids, one locus). So the three copies are collapsed, absorbed on the shared locus, and still carry no hallmark; the 5/21 and the
+verdict stand, and the "830 reads in the wrong denominator" sentence is withdrawn. Lesson for the next row: the absorbing locus
+must be defined by where the reads land, not by an annotated span. Best-hit spans also miss: NPIPB4 0.22, NPIPB9 0.07, NPIPA3
+0.01 of reads inside their best-identity hit.
