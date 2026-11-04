@@ -49,11 +49,16 @@ reads, 53 sharing one intron chain (MAPQ 13-22, unique primaries); SIGLEC10 32; 
    05:01 today); the genome-wide AS table (`--as-table a1.molecules.tsv`) changes nothing (s_tab, six_tab identical counts);
    but with SECONDARIES STRIPPED (`samtools view -F 0x900`) every window-only model vanishes: CTAGE15 6 -> 0, SPANXA2 1 -> 0,
    PPP1R2B 1 -> 0, ZNF679 20 -> 4 (= R1), GK3P 3 -> 1 (= R1). Item 2 is therefore the window form of the r1518 secondary-seeded
-   blob, not a genome-wide loss. Withdrawn as a lever.
+   blob, not a loss of the member's own primaries. Withdrawn as a lever.
 4. The single-exon truth members (class A) by default form NO model from their own primaries: CTAGE15 1,787 unspliced
-   primaries, 4% internally primed, strand vote on or off -> 0 models; pass 1 yields only 5 single-exon transcripts on the whole
-   chr7 window. With the r1489 opt-in `RUSTLE_MONO_MODEL=cluster` (part of the layered PREFIX.final.gtf, which the panel's
+   primaries, 4% internally primed, strand vote on or off -> 0 models; no single-exon model survives to the output (the MONO PRIMED line counts 5 on the
+   whole chr7 window). With the r1489 opt-in `RUSTLE_MONO_MODEL=cluster` (part of the layered PREFIX.final.gtf, which the panel's
    base x.gtf does not carry: R1 ran RUSTLE_ASSEMBLY_LAYERS=off) the same primaries-only windows emit single-exon models:
    CTAGE15 25 models / 350 reads, PPP1R2B 16 / 265, GK3P 8 / 209, TTC30B 8 / 33 (fragmented by the 50 bp start-end window).
    Two things keep them off the panel: the panel judges the unlayered x.gtf, and its hit rule needs a spliced model.
    Files /anvme/workspace/v138da13-rustle/r1534/{s_prim,s_tab,s_nostrand,s_mono,six_prim,six_tab,six_mono}/x.gtf.
+5. B4 (53): under the 50% rule IGFL3 has 0 of 315 primaries at its span with half their bases in its exons, ADH1A 1 of 270;
+   the panel's P rule (any exon overlap on the strand) counts them as expressed. Up to 53 of the 177 may be neighbours' reads,
+   not misses. A scorer row for A or B4 needs a span guard (r1518-style model span <= 2x gene), or the 100 kb blobs hit for free.
+   The mono layer was verified in windows only; no genome-wide A119b final.gtf exists to confirm CTAGE15 appears there, and
+   the families stage does not consume final.gtf by the SPLIT design; whether the panel should judge final.gtf is the user's call.
