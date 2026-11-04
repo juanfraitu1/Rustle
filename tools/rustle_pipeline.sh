@@ -640,8 +640,14 @@ stage_families() {
       rep=(--representative "$RUSTLE_REPRESENTATIVE") ;;
     *) echo "[rustle_pipeline] RUSTLE_REPRESENTATIVE must be most-reads or most-junctions (got '$RUSTLE_REPRESENTATIVE')" >&2; exit 2 ;;
   esac
+  # RUSTLE_MIN_SHARED_EXON_FRAC=F (r1528; unset = 0.60, the same command): the shared-exon fraction a locus pair must reach to be
+  # aligned and to become an edge (r903 held-out kept 0.60; the panel's singleton expressed members sit at 0.3-0.6)
+  case "${RUSTLE_MIN_SHARED_EXON_FRAC:-0.60}" in
+    0.[0-9]*|1|1.0) ;;
+    *) echo "[rustle_pipeline] RUSTLE_MIN_SHARED_EXON_FRAC must be a fraction 0-1 (got '$RUSTLE_MIN_SHARED_EXON_FRAC')" >&2; exit 2 ;;
+  esac
   "$BIN/mcl_families" --from-gtf "$FAM_GTF" --fasta "$FASTA" --threads "$THREADS" \
-    --min-exonic-bp 1 --min-shared-exon-frac 0.60 "${copies[@]}" "${FAM_EXTRA[@]}" "${FAM_REL[@]}" "${FAM_COV[@]}" "${rep[@]}" --out "$OUT.fam" > "$OUT.families.log" 2>&1
+    --min-exonic-bp 1 --min-shared-exon-frac "${RUSTLE_MIN_SHARED_EXON_FRAC:-0.60}" "${copies[@]}" "${FAM_EXTRA[@]}" "${FAM_REL[@]}" "${FAM_COV[@]}" "${rep[@]}" --out "$OUT.fam" > "$OUT.families.log" 2>&1
   say "families: $(awk 'NR>1' "$OUT.fam.clusters.tsv" | cut -f1 | sort -u | wc -l) clusters ($OUT.fam.clusters.tsv)"
   if [ ${#copies[@]} -gt 0 ]; then
     say "families: $(awk 'NR>1' "$OUT.fam.copies.tsv" | wc -l) copies (locus representatives) in $(awk 'NR>1' "$OUT.fam.copies.tsv" | cut -f1 | sort -u | wc -l) families ($OUT.fam.copies.tsv)"
