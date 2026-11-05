@@ -100,6 +100,49 @@ class Scan(unittest.TestCase):
         self.assertEqual(d["FAM1"][0][0], 5)
 
 
+RC = str.maketrans("ACGT", "TGCA")
+
+
+class Concord(unittest.TestCase):
+    def test_concord_rows_counts_recovered_extra_top_own(self):
+        # hits: (target, family, start, end, evalue, score); FAM2 outscores FAM1 on the shared locus L2
+        hits = [("L1", "FAM1", 1, 400, 1e-50, 300.0), ("L2", "FAM1", 1, 400, 1e-40, 200.0), ("L2", "FAM2", 1, 400, 1e-45, 250.0),
+                ("L3", "FAM2", 1, 400, 1e-50, 300.0), ("LX", "FAM1", 1, 400, 1e-30, 100.0)]
+        members = {"FAM1": {"L1", "L2"}, "FAM2": {"L3"}}
+        rows = F.concord_rows(hits, members, {"FAM1": 400, "FAM2": 400})
+        self.assertEqual(rows, [
+            {"family": "FAM1", "n_copies": 2, "n_recovered": 2, "n_extra": 1, "n_top_own": 1},
+            {"family": "FAM2", "n_copies": 1, "n_recovered": 1, "n_extra": 1, "n_top_own": 1}])
+
+    def test_concord_rows_cover_filter(self):
+        rows = F.concord_rows([("L1", "FAM1", 1, 100, 1e-50, 300.0)], {"FAM1": {"L1"}}, {"FAM1": 400})
+        self.assertEqual((rows[0]["n_recovered"], rows[0]["n_top_own"]), (0, 0))
+
+    def test_decide_thresholds(self):
+        def rows(rec, top, n=100):
+            return [{"family": "F", "n_copies": n, "n_recovered": rec, "n_extra": 0, "n_top_own": top}]
+        self.assertEqual(F.decide(rows(96, 94))[0], "FAIL")
+        self.assertEqual(F.decide(rows(95, 95))[0], "CONCORDANT")
+        self.assertEqual(F.decide([])[0], "FAIL (no families)")
+
+    @unittest.skipUnless(HAVE_HMMER, "hmmbuild not on PATH")
+    def test_concord_toy_end_to_end(self):
+        tmp = tempfile.mkdtemp()
+        try:
+            prefix, copies = toy_family(tmp)
+            out = os.path.join(tmp, "out")
+            F.build(prefix, out)
+            loci = [(h.split("|")[2], s if i < 2 else s.translate(RC)[::-1]) for i, (h, s) in enumerate(copies)]
+            loci.append(("chrZ:1-300", "".join(random.Random(7).choice("ACGT") for _ in range(300))))
+            F.write_fasta(prefix + ".fam.loci.fa", loci)
+            F.concord(prefix, out, threads=1)
+            txt = open(os.path.join(out, "concordance.tsv")).read()
+            self.assertIn("FAM1\t3\t3\t0\t3", txt)
+            self.assertIn("# rule: CONCORDANT", txt)
+        finally:
+            shutil.rmtree(tmp)
+
+
 class Helpers(unittest.TestCase):
     def test_copies_by_family_groups_on_first_field(self):
         recs = [("MCL0|0|chr1:1-9|+|nexon=1", "A"), ("MCL1|0|chr2:1-9|+|nexon=1", "C"), ("MCL0|1|chr1:20-29|-|nexon=1", "G")]

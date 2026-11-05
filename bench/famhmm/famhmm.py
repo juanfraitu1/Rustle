@@ -190,3 +190,65 @@ def scan(out, pfam, max_evalue=1e-5, threads=1):
             hits = labels.get(fam + "-consensus", [])
             fh.write("%s\t%s\t%s\t%s\n" % (fam, ";".join(h[1] for h in hits),
                                            min((h[2] for h in hits), default="NA"), status))
+
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "unmapped_rescue"))
+from profiles import parse_tblout  # noqa: E402
+
+HIT_EVALUE, MIN_COVER, RULE_RECOVERED, RULE_TOP_OWN = 1e-10, 0.5, 0.95, 0.95
+
+
+def profile_lengths(hmm_path):
+    """{name: LENG} over a concatenated HMMER file"""
+    out, name = {}, None
+    for ln in open(hmm_path):
+        if ln.startswith("NAME "):
+            name = ln.split()[1]
+        elif ln.startswith("LENG "):
+            out[name] = int(ln.split()[1])
+    return out
+
+
+def concord_rows(hits, members, lengths, min_cover=MIN_COVER):
+    """hits = parse_tblout rows (already E-filtered); members = {family: set(locus keys)}; one row per family"""
+    counted = [h for h in hits if h[3] - h[2] + 1 >= min_cover * lengths[h[1]]]
+    by_locus = collections.defaultdict(dict)                       # locus -> {family: best score}
+    for t, fam, _a, _b, _ev, sc in counted:
+        by_locus[t][fam] = max(by_locus[t].get(fam, 0.0), sc)
+    rows = []
+    for fam in sorted(members):
+        own = members[fam]
+        hit_loci = {t for t, fams in by_locus.items() if fam in fams}
+        rows.append({"family": fam, "n_copies": len(own), "n_recovered": len(own & hit_loci),
+                     "n_extra": len(hit_loci - own),
+                     "n_top_own": sum(1 for t in own if t in by_locus and max(by_locus[t], key=by_locus[t].get) == fam)})
+    return rows
+
+
+def decide(rows):
+    """pre-registered rule: ('CONCORDANT'|'FAIL'|'FAIL (no families)', recovered fraction, top-own fraction)"""
+    n = sum(r["n_copies"] for r in rows)
+    if n == 0:
+        return "FAIL (no families)", 0.0, 0.0
+    rec = sum(r["n_recovered"] for r in rows) / n
+    top = sum(r["n_top_own"] for r in rows) / n
+    return ("CONCORDANT" if rec >= RULE_RECOVERED and top >= RULE_TOP_OWN else "FAIL"), rec, top
+
+
+def concord(prefix, out, threads=1):
+    """nhmmer the DNA profiles against PREFIX.fam.loci.fa -> out/concordance.tsv with the rule in the footer"""
+    db = os.path.join(out, "families.dna.hmm")
+    tbl = os.path.join(out, "loci.tblout")
+    _run(["nhmmer", "--cpu", str(threads), "--noali", "--tblout", tbl, "-o", os.devnull, db, prefix + ".fam.loci.fa"])
+    lengths = profile_lengths(db)
+    members = {fam: {h.split("|")[2] for h, _s in copies}
+               for fam, copies in copies_by_family(prefix + ".fam.copies.fa").items() if fam in lengths}
+    rows = concord_rows(parse_tblout(open(tbl), HIT_EVALUE), members, lengths)
+    verdict, rec, top = decide(rows)
+    with open(os.path.join(out, "concordance.tsv"), "w") as fh:
+        fh.write("family\tn_copies\tn_recovered\tn_extra\tn_top_own\n")
+        for r in rows:
+            fh.write("%s\t%d\t%d\t%d\t%d\n" % (r["family"], r["n_copies"], r["n_recovered"], r["n_extra"], r["n_top_own"]))
+        fh.write("# rule: %s recovered=%.4f top_own=%.4f\n" % (verdict, rec, top))
+    print("famhmm concord: %s recovered=%.4f top_own=%.4f families=%d" % (verdict, rec, top, len(rows)))
+    return rows
