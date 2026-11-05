@@ -174,10 +174,15 @@ class ConcordTargets(unittest.TestCase):
             prefix, _ = toy_family(tmp)
             out = os.path.join(tmp, "out")
             F.build(prefix, out)
-            with open(os.path.join(out, "dna", "FAM1.tblout"), "w") as fh:       # a finished family's scan is reused
+            with open(os.path.join(out, "dna", "FAM1.toy.fam.copies.fa.tblout"), "w") as fh:   # finished scan of THIS target is reused
                 fh.write("# nothing\n")
             F.concord(prefix, out, threads=1)
-            self.assertIn("FAM1\t3\t0\t0\t0", open(os.path.join(out, "concordance.tsv")).read())
+            txt = open(os.path.join(out, "concordance.tsv")).read()
+            self.assertIn("FAM1\t3\t0\t0\t0", txt)
+            self.assertIn("target=" + prefix + ".fam.copies.fa", txt)
+            shutil.copy(prefix + ".fam.copies.fa", prefix + ".fam.loci.fa")
+            F.concord(prefix, out, threads=1, targets=prefix + ".fam.loci.fa")     # another target: not reused
+            self.assertIn("FAM1\t3\t3\t0\t3", open(os.path.join(out, "concordance.tsv")).read())
         finally:
             shutil.rmtree(tmp)
 

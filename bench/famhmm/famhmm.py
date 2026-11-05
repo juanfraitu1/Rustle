@@ -251,10 +251,12 @@ def concord(prefix, out, threads=1, targets=None, only=None):
     # one single-cpu nhmmer per family: nhmmer --cpu N used ~1/3 of 16 cores on the A119b panel (jobs 4442327/4442354)
     from concurrent.futures import ThreadPoolExecutor
     def one(fam):
-        t = os.path.join(out, "dna", fam + ".tblout")
-        if os.path.exists(t) and os.path.getsize(t) > 0:       # resume: nhmmer writes tblout only on completion
+        hmm = os.path.join(out, "dna", fam + ".hmm")
+        t = os.path.join(out, "dna", "%s.%s.tblout" % (fam, os.path.basename(target)))
+        # resume: nhmmer writes tblout only on completion; keyed by target, invalid when the profile is newer
+        if os.path.exists(t) and os.path.getsize(t) > 0 and os.path.getmtime(t) >= os.path.getmtime(hmm):
             return t
-        _run(["nhmmer", "--cpu", "1", "--noali", "--tblout", t, "-o", os.devnull, os.path.join(out, "dna", fam + ".hmm"), target])
+        _run(["nhmmer", "--cpu", "1", "--noali", "--tblout", t, "-o", os.devnull, hmm, target])
         return t
     with ThreadPoolExecutor(max_workers=threads) as ex, open(tbl, "w") as fh:
         for t in ex.map(one, sorted(lengths if only is None else set(lengths) & only)):
@@ -268,7 +270,7 @@ def concord(prefix, out, threads=1, targets=None, only=None):
         fh.write("family\tn_copies\tn_recovered\tn_extra\tn_top_own\n")
         for r in rows:
             fh.write("%s\t%d\t%d\t%d\t%d\n" % (r["family"], r["n_copies"], r["n_recovered"], r["n_extra"], r["n_top_own"]))
-        fh.write("# rule: %s recovered=%.4f top_own=%.4f\n" % (verdict, rec, top))
+        fh.write("# rule: %s recovered=%.4f top_own=%.4f target=%s\n" % (verdict, rec, top, target))
     print("famhmm concord: %s recovered=%.4f top_own=%.4f families=%d" % (verdict, rec, top, len(rows)))
     return rows
 
