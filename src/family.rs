@@ -50612,6 +50612,49 @@ pub mod denovo_pipeline {
         }
 
         impl BamIndexCache {
+            /// Records the given windows would hold, estimated from the index alone as in [`deep_families_estimate`] (compressed
+            /// bytes the windows' index chunks span / the BAM's mean compressed bytes per record). No record is read.
+            pub fn estimate_records(&self, bam_path: &str, windows: &[(String, u64, u64)]) -> Result<u64> {
+                use noodles_csi::binning_index::{BinningIndex as _, ReferenceSequence as _};
+                let total: u64 = self
+                    .index
+                    .reference_sequences()
+                    .iter()
+                    .filter_map(|r| r.metadata())
+                    .map(|m| m.mapped_record_count() + m.unmapped_record_count())
+                    .sum();
+                anyhow::ensure!(total > 0, "{bam_path}.bai carries no record counts");
+                let bytes_per_record = std::fs::metadata(bam_path)?.len() as f64 / total as f64;
+                let mut bytes = 0u64;
+                for (chrom, a, b) in windows {
+                    let Some(id) = self.header.reference_sequences().get_index_of(chrom.as_bytes()) else { continue };
+                    let lo = noodles_core::Position::try_from(usize::try_from(a + 1)?)?;
+                    let hi = noodles_core::Position::try_from(usize::try_from((*b).max(a + 1))?)?;
+                    let mut spans: Vec<(u64, u64)> = self
+                        .index
+                        .query(id, noodles_core::region::Interval::from(lo..=hi))?
+                        .iter()
+                        .map(|c| (c.start().compressed(), c.end().compressed()))
+                        .collect();
+                    spans.sort_unstable();
+                    let mut cur: Option<(u64, u64)> = None;
+                    for (x, y) in spans {
+                        match cur.as_mut() {
+                            Some(c) if x <= c.1 => c.1 = c.1.max(y),
+                            _ => {
+                                if let Some(c) = cur {
+                                    bytes += c.1 - c.0;
+                                }
+                                cur = Some((x, y));
+                            }
+                        }
+                    }
+                    if let Some(c) = cur {
+                        bytes += c.1 - c.0;
+                    }
+                }
+                Ok((bytes as f64 / bytes_per_record) as u64)
+            }
             /// Parse `{bam_path}.bai` and the header once. Errs (so the caller can fall back to per-region opens or a
             /// full scan) when the index is missing or unreadable.
             pub fn open(bam_path: &str) -> Result<Self> {

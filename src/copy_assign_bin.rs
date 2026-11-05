@@ -7455,6 +7455,27 @@ fn main() -> Result<()> {
             .and_then(|w| w.get(&(contig.clone(), lo, hi)))
             .cloned()
             .unwrap_or_else(|| vec![(contig.clone(), lo, hi)]);
+        // r1543 read budget: a region holds its estimated record count (from the BAM index, no decoding) out of
+        // RUSTLE_REGION_READ_BUDGET (default 2,500,000) from before its fetch until it is done; a region above the budget
+        // takes it whole and runs alone. Eight heavy regions fetched at once (4.4M records) were OOM-killed at 250 GB.
+        let _budget = match &bam_cache {
+            Some(c) if args.region_threads > 1 => Some(
+                READ_BUDGET
+                    .get_or_init(|| {
+                        rustle::family::Permits::new(
+                            std::env::var("RUSTLE_REGION_READ_BUDGET").ok().and_then(|v| v.parse().ok()).unwrap_or(2_500_000),
+                        )
+                    })
+                    .acquire({
+                        let est = c.estimate_records(&args.bam, &wins)? as usize;
+                        if timing {
+                            eprintln!("[timing] budget estimate {contig}:{lo}-{hi}: {est} records");
+                        }
+                        est
+                    }),
+            ),
+            _ => None,
+        };
         // The genome this region's assignment needs: every chromosome any window actually reads from —
         // for every region before cross-chromosome families existed this is the single-element set
         // `{contig}`, so `genome_for_multi` delegates to the ORIGINAL cached single-contig `genome_for`
@@ -7952,12 +7973,6 @@ fn main() -> Result<()> {
             GATE_REC_ALL.fetch_add(n_rec, std::sync::atomic::Ordering::Relaxed);
             GATE_REC_TIED.fetch_add(bam_reads.len(), std::sync::atomic::Ordering::Relaxed);
         }
-        // r1543 read budget: regions run detect_and_assign only while the sum of their fetched records stays under
-        // RUSTLE_REGION_READ_BUDGET (default 2,500,000; ~64 KB per record on A119b: chr13's 1.42M records peak at 91 GB,
-        // eight heavy regions at once were OOM-killed at 250 GB). A region above the budget takes it whole and runs alone.
-        let _budget = (args.region_threads > 1).then(|| READ_BUDGET.get_or_init(|| {
-            rustle::family::Permits::new(std::env::var("RUSTLE_REGION_READ_BUDGET").ok().and_then(|v| v.parse().ok()).unwrap_or(2_500_000))
-        }).acquire(bam_reads.len()));
         let t_da = std::time::Instant::now();
         // §6p6 --assemble-only: the assembly path below needs `primary` and nothing detect_and_assign
         // produces, so skip it outright. Empty results keep every downstream writer on its normal path.
