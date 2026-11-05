@@ -28,3 +28,14 @@ Out of scope (product-changing, registered rows with KB3781 truth if ever): own-
 read-star reuse across families; slim BAM for assign.
 Stop rule: a lever whose cmp differs is reverted the same day; the row PASSES when the genome-wide confirmation run meets the
 targets with identical tables; otherwise the measured wall is recorded and the row FAILS with the remaining gap named.
+
+## Amendment 1 (2026-11-05, labelled; written after the slim/hotspot identity arms, before the genome-wide confirmation)
+L3 WITHDRAWN: the "parallel per-read assign" timer (family.rs t_assign) encloses the read-star timer (t_star), so the two
+~28k CPU-s figures are the same cost counted twice, not a second lever. The hotspot floor is read-star minimap2 CPU.
+Added lever L4, scheduler: StarSlots (family.rs) gives every family a permit from a pool of cores / RUSTLE_STAR_THREADS (8),
+so families fan out even when several regions run (the ae73fc57 auto rule set family threads to 1 whenever ACTIVE_REGIONS>1,
+which would have serialised the chr13 hotspot under L1). RUSTLE_FAMILY_SLOTS=0 restores the old rule.
+L2 as built: RUSTLE_WINDOW_SWEEP=1 builds the per-chromosome sweep store for RUSTLE_SWEEP_BATCH keys at a time (default 64)
+and drops it after the batch; the whole-sweep store of r1507 is gone.
+Identity results so far (frozen binaries ~/r1543/bin): slim panel batch 4, region threads 1: six tables same, 1,576 s, RSS 7.4 GB.
+Hotspot 9 families, slots on: five tables same, 1,626 s (ref 1,664 s), RSS 91 GB.
