@@ -106,3 +106,17 @@ gw6a exports MALLOC_ARENA_MAX=2; gw6b does not. Predictions: H1 -> gw6a peak < 2
 ratchets monotonically to the kill; H2 -> both ratchet and RSS does not step down when chr13 finishes.
 gw6a may run slower from malloc lock contention. Wall bar is NOT expected to pass in either arm; the arm
 result decides whether the budget can be raised (memory not in records) or the row FAILS on wall.
+
+## Amendment 7 (2026-11-05 21:10, before gw7): chr13 detect is the memory, not retention
+
+gw6b (default glibc): chr13's index estimate is 3.34M > the 2.5M cap, so it ran ALONE after all 935 other
+regions (done at minute 39, 48 GB). RSS then rose from 48 GB to > 200 GB during chr13's detect alone: 94
+families on 9 family threads, the eight largest ~30k molecules x 16-31 copies, read-star 900-1,400 s each.
+The serial baseline ran chr13 the same way on a clean heap and fit; after 48 GB of retained memory it does
+not. gw6a (MALLOC_ARENA_MAX=2): RSS flat at 88 GB but 110 regions in 92 min (~8x slower); cancelled, not a
+usable switch. H1 (allocator retention) is a ~48 GB contributor, not the cause.
+gw7 (launched before gw6b finished, to save a wait): same binary, RUSTLE_FAMILY_THREADS=4 RUSTLE_STAR_THREADS=16
+(documented identity-preserving switches, docs/PERFORMANCE.md), RUSTLE_REGION_READ_BUDGET=4000000 so chr13
+(3.34M) no longer takes the whole pool and other regions overlap it. Predictions: chr13 peak ~100 GB, node
+peak 180-220 GB, wall 4,800-5,400 s, six tables identical. If OOM: family threads 3 and budget 3.5M as
+Amendment 8. If wall > 5,400 s with identity: FAIL, gap named.
