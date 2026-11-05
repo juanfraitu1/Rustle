@@ -143,6 +143,12 @@ class Concord(unittest.TestCase):
             shutil.rmtree(tmp)
 
 
+class Cli(unittest.TestCase):
+    def test_parse_args_defaults(self):
+        a = F.parse_args(["all", "--prefix", "p", "--out", "o", "--no-pfam"])
+        self.assertEqual((a.cmd, a.min_copies, a.min_orf_aa, a.threads, a.no_pfam, a.only_families), ("all", 2, 50, 1, True, None))
+
+
 class Helpers(unittest.TestCase):
     def test_copies_by_family_groups_on_first_field(self):
         recs = [("MCL0|0|chr1:1-9|+|nexon=1", "A"), ("MCL1|0|chr2:1-9|+|nexon=1", "C"), ("MCL0|1|chr1:20-29|-|nexon=1", "G")]

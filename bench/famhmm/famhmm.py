@@ -252,3 +252,38 @@ def concord(prefix, out, threads=1):
         fh.write("# rule: %s recovered=%.4f top_own=%.4f\n" % (verdict, rec, top))
     print("famhmm concord: %s recovered=%.4f top_own=%.4f families=%d" % (verdict, rec, top, len(rows)))
     return rows
+
+
+def parse_args(argv):
+    import argparse
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("cmd", choices=["build", "scan", "concord", "all"])
+    ap.add_argument("--prefix", required=True, help="run prefix, e.g. ~/runs/human_A119b/a1")
+    ap.add_argument("--out", required=True, help="output directory (workspace, not home)")
+    ap.add_argument("--only-families", help="file of family ids, one per line")
+    ap.add_argument("--threads", type=int, default=1)
+    ap.add_argument("--no-pfam", action="store_true", help="skip the Pfam scan")
+    ap.add_argument("--pfam", help="Pfam-A.hmm (pressed); default $WS/pfam/Pfam-A.hmm")
+    ap.add_argument("--min-copies", type=int, default=2)
+    ap.add_argument("--min-orf-aa", type=int, default=50)
+    return ap.parse_args(argv)
+
+
+def main(argv=None):
+    a = parse_args(sys.argv[1:] if argv is None else argv)
+    prefix = os.path.expanduser(a.prefix)
+    only = None
+    if a.only_families:
+        only = {ln.strip() for ln in open(a.only_families) if ln.strip() and not ln.startswith("#")}
+    os.makedirs(a.out, exist_ok=True)
+    if a.cmd in ("build", "all"):
+        rows = build(prefix, a.out, only, a.min_copies, a.min_orf_aa, a.threads)
+        print("famhmm build: %d families, %d with a protein profile" % (len(rows), sum(r["prot_status"] == "ok" for r in rows)))
+    if a.cmd == "scan" or (a.cmd == "all" and not a.no_pfam):
+        scan(a.out, pfam_path(a.pfam), threads=a.threads)
+    if a.cmd in ("concord", "all"):
+        concord(prefix, a.out, a.threads)
+
+
+if __name__ == "__main__":
+    main()
