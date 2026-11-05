@@ -81,3 +81,17 @@ misses are hits below the 50% cover bar, because a MAFFT profile spans the union
 median copy length up to 2.95x; MCL884 has a 21 kb single-exon copy beside 4.4 kb ones), median cover of the misses
 0.29. Post hoc, cover measured against the copy's own length instead of the profile's gives recovered 0.890 / top_own 0.890: still FAIL,
 not claimed. Table: `/anvme/workspace/v138da13-rustle/famhmm/A119b_panel/concordance.tsv`.
+
+## Pre-check: copying-HMM (Li-Stephens over copies) for mosaic reads, 2026-11-05
+
+Question: are tied reads explained as a mosaic of two copies (one switch) often enough to justify an HMM over the
+family graph's paths for assignment? Universe: the 1,334 `sites` reads of the OR6737 r1484 run
+(~/o2ties_real/psv/or.psv60.reads.tsv), votes ordered by position. Mosaic = one cut with all for-votes on one side
+and all against-votes on the other, >= 2 sites each side. Rule, fixed before the run: proceed only if mosaic reads
+>= 5% of sites reads AND >= 3x the shuffled-order null (200 shuffles).
+
+Result: 228 reads carry >= 2 for and >= 2 against votes; **23 are mosaic (1.7%) against a null mean of 17.3
+(95% range 10-27)**: within chance on both bars. 65 reads' site lists do not reconcile with their vote counts (sites
+without a rival entry); even counting all 65 as mosaic (6.6%) the 3x-null bar fails. **Not pursued.** The idea stays a
+paragraph: the variation graph is the model, a path posterior would be the scoring rule, and the data show no mosaic
+class for it to explain.
