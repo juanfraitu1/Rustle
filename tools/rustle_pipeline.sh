@@ -295,10 +295,13 @@ if [ "$CACHE" = 1 ]; then export RUSTLE_CACHE_DIR="$OUT.cache"; else unset RUSTL
 INSPECT_CAT=(); INSPECT_ASSIGN=()
 # ASSIGN_FAST (docs/archive/2026-10/merged/GENOMEWIDE_FAST_2026-10-12.md): every copy_assign of the assign stage skips the POA homology DIAGNOSTIC
 # (byte-identical families / assignments / abundance; ~85% of the wall time on dense families; only the diagnostic
-# .fallback.tsv and its log counts are lost) and runs RUSTLE_REGION_THREADS regions at once (byte-identical; default 1, since
-# peak memory grows with it). RUSTLE_POA_DIAGNOSTIC=1 restores the diagnostic pass.
-case "${RUSTLE_REGION_THREADS:-1}" in ''|*[!0-9]*|0) echo "[rustle_pipeline] RUSTLE_REGION_THREADS must be a positive integer (got '${RUSTLE_REGION_THREADS:-}')" >&2; exit 2;; esac
-ASSIGN_FAST=(--region-threads "${RUSTLE_REGION_THREADS:-1}")
+# .fallback.tsv and its log counts are lost) and runs RUSTLE_REGION_THREADS regions at once (byte-identical). Defaults since
+# r1543 (docs/PREREG_pipeline_speed_2026-11-05.md gw7, A119b genome-wide: 6,589 s vs 19,358 s, peak 199 GB on a 250 GB node):
+# 8 regions, 4 family threads x 16 star threads, 4M-record read budget. LOW_MEM=1 keeps regions sequential.
+# RUSTLE_POA_DIAGNOSTIC=1 restores the diagnostic pass.
+case "${RUSTLE_REGION_THREADS:-8}" in ''|*[!0-9]*|0) echo "[rustle_pipeline] RUSTLE_REGION_THREADS must be a positive integer (got '${RUSTLE_REGION_THREADS:-}')" >&2; exit 2;; esac
+ASSIGN_FAST=(--region-threads "${RUSTLE_REGION_THREADS:-8}")
+export RUSTLE_FAMILY_THREADS="${RUSTLE_FAMILY_THREADS:-4}" RUSTLE_STAR_THREADS="${RUSTLE_STAR_THREADS:-16}" RUSTLE_REGION_READ_BUDGET="${RUSTLE_REGION_READ_BUDGET:-4000000}"
 [ "${RUSTLE_POA_DIAGNOSTIC:-0}" = 1 ] || ASSIGN_FAST+=(--skip-poa-diagnostic)
 if [ "$INSPECT" = 1 ]; then
   mkdir -p "$OUT.cache/inspect"
@@ -948,7 +951,7 @@ stage_index() {
 all_env() {
   merged_env
   printf 'candidates=%s\nlegacy=%s\ngff=%s\nindex=%s\nindex_gb=%s\nregion_threads=%s\npoa=%s\n' "$CANDIDATES" "$LEGACY_CATALOG" \
-    "$GFF" "${INDEX:-$OUT.splice.mmi}" "$INDEX_GB" "${RUSTLE_REGION_THREADS:-1}" "${RUSTLE_POA_DIAGNOSTIC:-0}"
+    "$GFF" "${INDEX:-$OUT.splice.mmi}" "$INDEX_GB" "${RUSTLE_REGION_THREADS:-8}" "${RUSTLE_POA_DIAGNOSTIC:-0}"
   printf 'max_window_records=%s\n' "$MAX_WINDOW_RECORDS"
 }
 # run_all: every stage as its own driver call under /usr/bin/time (PREFIX.<stage>.time: wall seconds, peak RSS of the stage's

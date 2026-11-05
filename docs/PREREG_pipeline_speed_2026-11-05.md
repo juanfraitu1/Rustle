@@ -130,3 +130,18 @@ it takes the whole pool) with RSS rising to 222 GB. Wall bar (<= 5,400 s) NOT me
 identity and RSS bars met. L1 (region threads) + L4 (permits) + L5 (budget) are confirmed genome-wide.
 Remaining gap to the bar: 3,300 s, all of it chr13 running serially after the rest. gw7 (Amendment 7) is
 the arm that overlaps chr13 with the other regions.
+
+## Result 2 (2026-11-05 23:35): gw7 completed; wall bar FAILS by 1,189 s, identity and RSS hold
+
+gw7 (job 4447078; region threads 8, family slots 1, family threads 4, star threads 16, budget 4M): assign
+exit 0, wall 6,589 s (baseline 19,358 s; 2.9x; gw6b 8,697 s), peak RSS 198.7 GB (gw6b 222 GB), six tables
+byte-identical to gw_off. chr13 overlapped the other regions (budget held at minute 29) and its detect took
+3,957 s (gw6b 4,576 s alone). Amendment 7 predictions: node peak 180-220 GB met; wall 4,800-5,400 s NOT
+met. Verdict per the pre-committed rule: assign bar (<= 5,400 s) FAIL, gap 1,189 s = the chr13 region's own
+detect (eight ~30k-molecule x 16-31-copy families, read-star 900-1,400 s each at 16 star threads); nothing
+outside that region can shorten the run further. Identity and RSS bars PASS. Shipped: gw7 settings are the
+driver defaults (tools/rustle_pipeline.sh: region threads 8, family threads 4, star threads 16, budget 4M;
+LOW_MEM=1 keeps regions sequential), since they beat gw6b on every bar with identical outputs. Amendment 8
+(family threads 3, budget 3.5M) not run: memory passed, so it would only slow chr13. Stretch 3,600 s and
+end-to-end 2.5 h not reached; closing the chr13 gap needs a cheaper read-star for 30k-molecule families, a
+new row.
