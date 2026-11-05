@@ -66,3 +66,14 @@ the budget takes the whole pool and runs alone. Active only with region threads 
 `Permits` type (family.rs). Identity by construction (ordering only); still checked on the slim panel in the same job.
 Third genome-wide arm: sweep off, 8 region threads, slots, budget 2.5M; bars unchanged (six tables, <= 5,400 s, < 250 GB).
 Prediction: 4,800-5,600 s (chr13 floor plus some queueing of the four 0.5M-record keys behind it), RSS 160-200 GB.
+
+## Amendment 4 (2026-11-05, labelled; after the third kill, before the fourth genome-wide run)
+Third arm (job 4442751, budget on the fetched count before detect_and_assign): OOM-killed at 242.6 GB, 2,345 s. Slim same
+environment: six tables same, 597 s, 9.9 GB. At the kill 912 regions were fetched and 911 finished: only chr13 was in
+detect_and_assign; the other seven threads were mid-FETCH of the heavy cross-chromosome keys (MCL3/5/8/10/18/44/80, none
+had logged reads_in_region). The memory is in the fetch itself, so a budget taken after the fetch cannot bound it.
+L5 as rebuilt: the budget is acquired BEFORE the fetch from the BAM index alone (`BamIndexCache::estimate_records`: the
+windows' index-chunk compressed bytes / the BAM's mean compressed bytes per record, the `deep_families_estimate` method of
+the max-window-records guard; seconds, no decoding, good to a small factor) and held until the region is done. Default
+2,500,000 estimated records. The log's `budget estimate` lines are compared with the real `reads_in_region` counts in the
+result. Bars unchanged. Prediction: 4,800-5,800 s, RSS < 200 GB.
