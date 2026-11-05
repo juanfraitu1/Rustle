@@ -7237,18 +7237,6 @@ fn main() -> Result<()> {
         args.tie_ms.is_none() || bam_cache.is_some(),
         "--tie-ms needs an indexed BAM (.bai): only the indexed reader carries ms"
     );
-    // Region-parallel pool (opt-in via --region-threads > 1). Sized to region_threads; the inner per-copy
-    // poasta parallelism (discover_psvs) composes on the SAME pool, so total concurrency is bounded to N.
-    let region_pool = if args.region_threads > 1 {
-        Some(
-            rayon::ThreadPoolBuilder::new()
-                .num_threads(args.region_threads)
-                .build()
-                .context("building region thread pool")?,
-        )
-    } else {
-        None
-    };
     // FLAT region list across ALL contigs, in the deterministic by_contig order (sorted contig, file-order
     // ranges). Out-of-order parallel processing over this flat list lets the globally-heaviest families —
     // which live on DIFFERENT contigs — overlap, while the serial drain below (in this same order) keeps
@@ -8569,17 +8557,31 @@ fn main() -> Result<()> {
         if sweep_on {
             *window_store.lock().unwrap() = Some(build_store(chunk)?);
         }
-        let mut w: Vec<RegionWork> = match &region_pool {
-            Some(pool) => pool.install(|| {
-                chunk
-                    .par_iter()
-                    .map(|(c, lo, hi)| compute(c, *lo, *hi))
-                    .collect::<Result<Vec<_>>>()
-            })?,
-            None => chunk
+        // Regions run on plain OS threads (not a rayon pool): `compute` blocks on the read budget / star
+        // slots, and a rayon worker blocked while holding permits can be the thief of another region's
+        // inner job -> deadlock (gw4 2026-11-05 hung 7.5 h at 334/936). Inner par_iters use the global pool.
+        let mut w: Vec<RegionWork> = if args.region_threads > 1 {
+            let next = std::sync::atomic::AtomicUsize::new(0);
+            let slots: Vec<std::sync::Mutex<Option<Result<RegionWork>>>> =
+                chunk.iter().map(|_| std::sync::Mutex::new(None)).collect();
+            std::thread::scope(|sc| {
+                for _ in 0..args.region_threads.min(chunk.len()) {
+                    sc.spawn(|| loop {
+                        let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let Some((c, lo, hi)) = chunk.get(i) else { break };
+                        *slots[i].lock().unwrap() = Some(compute(c, *lo, *hi));
+                    });
+                }
+            });
+            slots
+                .into_iter()
+                .map(|m| m.into_inner().unwrap().expect("region computed"))
+                .collect::<Result<Vec<_>>>()?
+        } else {
+            chunk
                 .iter()
                 .map(|(c, lo, hi)| compute(c, *lo, *hi))
-                .collect::<Result<Vec<_>>>()?,
+                .collect::<Result<Vec<_>>>()?
         };
         works.append(&mut w);
         if sweep_on {

@@ -77,3 +77,14 @@ windows' index-chunk compressed bytes / the BAM's mean compressed bytes per reco
 the max-window-records guard; seconds, no decoding, good to a small factor) and held until the region is done. Default
 2,500,000 estimated records. The log's `budget estimate` lines are compared with the real `reads_in_region` counts in the
 result. Bars unchanged. Prediction: 4,800-5,800 s, RSS < 200 GB.
+
+## Amendment 5 (2026-11-05 16:45, before gw5): gw4 deadlock, region threads moved off rayon
+
+gw4 (job 4442782, pre-fetch index budget) did not OOM: the assign log stops at 08:56 after 334/936 regions,
+last line `budget estimate ~xchrom~MCL378: 682239 records`, and the job idled to its 8 h wall. Cause: regions
+ran as a rayon `par_iter` on a pool shared with the inner per-copy work; a worker holding budget permits
+enters an inner join, steals another region's job, and blocks in `Permits::acquire` on permits it holds
+itself. Fix: regions now run on `--region-threads` plain OS threads over a shared index (`std::thread::scope`);
+inner `par_iter`s use the global pool bounded by `--threads`. Serial path unchanged. No scoring code touched.
+Relaunch gw5 + slim5 with the same env (sweep 0, region threads 8, family slots 1, budget 2.5M).
+Prediction unchanged from Amendment 4: wall 4,800–5,800 s, RSS < 200 GB, six tables identical.
