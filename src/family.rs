@@ -30335,7 +30335,7 @@ pub mod denovo_pipeline {
         // 2026-11-02 "alone only" rule is kept under RUSTLE_FAMILY_SLOTS=0.
         let slot_sched = std::env::var("RUSTLE_FAMILY_SLOTS").map(|v| v != "0").unwrap_or(true);
         let assign_one = |cf: ColocatedFamily| -> (FamilyAssignment, Vec<DnaNeedsRecord>, Vec<(String, super::arms::linearize::LinearizeCertificate, (String, u64, u64))>) {
-            let _slot = slot_sched.then(crate::family::StarSlotGuard::acquire);
+            let _slot = slot_sched.then(|| crate::family::star_slots().acquire(1));
             let mut dna_needs: Vec<DnaNeedsRecord> = Vec::new();
             let mut linearize_certs: Vec<(String, super::arms::linearize::LinearizeCertificate, (String, u64, u64))> = Vec::new();
             // RESCUE: recover under-assembled copies homologous to this family (below the >=3-read assembly gate)
@@ -82560,34 +82560,42 @@ impl Drop for ActiveRegionGuard {
 /// its whole assignment, so a heavy region fans its families out even while other regions run (the auto rule above gave it 1
 /// family thread unless it ran alone: with 8 region threads the A119b chr13 hotspot would have run its 89 families one after
 /// another), and the node is never oversubscribed. Products are merged in family order, so identical by construction.
-pub(crate) struct StarSlots {
-    free: std::sync::Mutex<usize>,
+/// Counted permits (r1543): `acquire(n)` blocks until n are free; a request above the pool's size takes the whole pool,
+/// so it still runs (alone). Used for read-star slots (1 permit per family) and the per-region read budget.
+pub struct Permits {
+    pub free: std::sync::Mutex<usize>,
+    cap: usize,
     cv: std::sync::Condvar,
 }
-pub(crate) static STAR_SLOTS: std::sync::OnceLock<StarSlots> = std::sync::OnceLock::new();
-pub(crate) fn star_slots() -> &'static StarSlots {
+impl Permits {
+    pub fn new(cap: usize) -> Self {
+        Permits { free: std::sync::Mutex::new(cap), cap, cv: std::sync::Condvar::new() }
+    }
+    pub fn acquire(&'static self, n: usize) -> PermitGuard {
+        let n = n.min(self.cap).max(1);
+        let mut f = self.free.lock().unwrap();
+        while *f < n {
+            f = self.cv.wait(f).unwrap();
+        }
+        *f -= n;
+        PermitGuard { pool: self, n }
+    }
+}
+pub struct PermitGuard {
+    pool: &'static Permits,
+    n: usize,
+}
+impl Drop for PermitGuard {
+    fn drop(&mut self) {
+        *self.pool.free.lock().unwrap() += self.n;
+        self.pool.cv.notify_all();
+    }
+}
+pub(crate) static STAR_SLOTS: std::sync::OnceLock<Permits> = std::sync::OnceLock::new();
+pub(crate) fn star_slots() -> &'static Permits {
     STAR_SLOTS.get_or_init(|| {
         let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
         let star: usize = std::env::var("RUSTLE_STAR_THREADS").ok().and_then(|v| v.parse().ok()).unwrap_or(8).max(1);
-        StarSlots { free: std::sync::Mutex::new((cores / star).max(1)), cv: std::sync::Condvar::new() }
+        Permits::new((cores / star).max(1))
     })
-}
-pub(crate) struct StarSlotGuard;
-impl StarSlotGuard {
-    pub(crate) fn acquire() -> Self {
-        let s = star_slots();
-        let mut n = s.free.lock().unwrap();
-        while *n == 0 {
-            n = s.cv.wait(n).unwrap();
-        }
-        *n -= 1;
-        StarSlotGuard
-    }
-}
-impl Drop for StarSlotGuard {
-    fn drop(&mut self) {
-        let s = star_slots();
-        *s.free.lock().unwrap() += 1;
-        s.cv.notify_one();
-    }
 }

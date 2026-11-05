@@ -7441,6 +7441,7 @@ fn main() -> Result<()> {
     // The expensive, INDEPENDENT per-region work: BAM read + detect_and_assign (the dominant poasta alignment
     // lives here). Pure w.r.t. the read-only genome/bam_cache. The heavy read SEQUENCES are dropped here —
     // only the read NAMES + computed `fams` are returned — so collecting every region's result is lightweight.
+    static READ_BUDGET: std::sync::OnceLock<rustle::family::Permits> = std::sync::OnceLock::new();
     let compute = |contig: &String, lo: u64, hi: u64| -> Result<RegionWork> {
         // §6dh: on the --families path, gather from the supplied copies' own neighbourhoods rather than
         // the whole bound region — a dispersed family's hull can be tens of Mb while its copies occupy a
@@ -7951,6 +7952,12 @@ fn main() -> Result<()> {
             GATE_REC_ALL.fetch_add(n_rec, std::sync::atomic::Ordering::Relaxed);
             GATE_REC_TIED.fetch_add(bam_reads.len(), std::sync::atomic::Ordering::Relaxed);
         }
+        // r1543 read budget: regions run detect_and_assign only while the sum of their fetched records stays under
+        // RUSTLE_REGION_READ_BUDGET (default 2,500,000; ~64 KB per record on A119b: chr13's 1.42M records peak at 91 GB,
+        // eight heavy regions at once were OOM-killed at 250 GB). A region above the budget takes it whole and runs alone.
+        let _budget = (args.region_threads > 1).then(|| READ_BUDGET.get_or_init(|| {
+            rustle::family::Permits::new(std::env::var("RUSTLE_REGION_READ_BUDGET").ok().and_then(|v| v.parse().ok()).unwrap_or(2_500_000))
+        }).acquire(bam_reads.len()));
         let t_da = std::time::Instant::now();
         // §6p6 --assemble-only: the assembly path below needs `primary` and nothing detect_and_assign
         // produces, so skip it outright. Empty results keep every downstream writer on its normal path.
@@ -12682,6 +12689,21 @@ mod tests {
         e.has_primary = false;
         assert!(super::gate_tied(&e, 1.0, Some(10), false), "without the flag the score gate decides");
         assert!(!super::gate_tied(&e, 1.0, Some(10), true), "seen through secondaries only: out");
+    }
+
+    #[test]
+    fn permits_oversized_request_takes_whole_pool_and_releases() {
+        static P: std::sync::OnceLock<rustle::family::Permits> = std::sync::OnceLock::new();
+        let p = P.get_or_init(|| rustle::family::Permits::new(10));
+        let big = p.acquire(1_000); // above cap: takes all 10
+        assert_eq!(*p.free.lock().unwrap(), 0);
+        drop(big);
+        let a = p.acquire(4);
+        let b = p.acquire(6);
+        assert_eq!(*p.free.lock().unwrap(), 0);
+        drop(a);
+        drop(b);
+        assert_eq!(*p.free.lock().unwrap(), 10);
     }
 
     /// Register 1542: the guard is on under `--tie-ms` unless `--no-primary-on-family`; the flag alone keeps it on.
