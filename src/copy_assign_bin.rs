@@ -904,6 +904,9 @@ struct Args {
     /// family) and the PSV model cannot test that origin: 77 % of r1510's held-out assignments were such reads.
     #[arg(long)]
     primary_on_family: bool,
+    /// Register 1542: under `--tie-ms` the primary-on-family guard is ON; this is the escape (restores r1510's gate).
+    #[arg(long)]
+    no_primary_on_family: bool,
 
     /// ⭐ §6hd (user 2026-09-09): widen the gate to ALIGNER SELF-DISAGREEMENT — admit a molecule whose PRIMARY
     /// record sits in one supplied-family unit while its best-AS record sits in a DIFFERENT one, even with no
@@ -3082,6 +3085,11 @@ fn as_tied(ev: &AsEvidence, ratio: f64) -> bool {
         Some(second) => (second as f64) >= ratio * (ev.best as f64),
         None => false,
     }
+}
+
+/// Register 1542: the guard is on under `--tie-ms` unless `--no-primary-on-family`; `--primary-on-family` alone keeps it on.
+fn guard_on(primary_on_family: bool, tie_ms: Option<i32>, no_primary_on_family: bool) -> bool {
+    primary_on_family || (tie_ms.is_some() && !no_primary_on_family)
 }
 
 /// The gate: AS-tied at `ratio`, or (`--tie-ms W`) ms-tied within `W` (register 1509).
@@ -7387,7 +7395,7 @@ fn main() -> Result<()> {
                 let t: DetHashSet<String> = br
                     .iter()
                     .zip(ev.iter())
-                    .filter(|(_, e)| gate_tied(e, args.as_tie_ratio, args.tie_ms, args.primary_on_family))
+                    .filter(|(_, e)| gate_tied(e, args.as_tie_ratio, args.tie_ms, guard_on(args.primary_on_family, args.tie_ms, args.no_primary_on_family)))
                     .map(|(b, _)| b.name.clone())
                     .collect();
                 Arc::new(t)
@@ -7622,7 +7630,7 @@ fn main() -> Result<()> {
                 let tied: DetHashSet<String> = br
                     .iter()
                     .zip(ev.iter())
-                    .filter(|(_, e)| gate_tied(e, args.as_tie_ratio, args.tie_ms, args.primary_on_family))
+                    .filter(|(_, e)| gate_tied(e, args.as_tie_ratio, args.tie_ms, guard_on(args.primary_on_family, args.tie_ms, args.no_primary_on_family)))
                     .map(|(b, _)| b.name.clone())
                     .collect();
                 light_spans = Some(br.iter().map(|b| (b.chrom.clone(), b.read.ref_start, read_ref_end(&b.read))).collect());
@@ -7757,7 +7765,7 @@ fn main() -> Result<()> {
             let mut all: DetHashSet<&str> = DetHashSet::default();
             for (br, e) in bam_reads.iter().zip(ev.iter()) {
                 all.insert(br.name.as_str());
-                if gate_tied(e, args.as_tie_ratio, args.tie_ms, args.primary_on_family) {
+                if gate_tied(e, args.as_tie_ratio, args.tie_ms, guard_on(args.primary_on_family, args.tie_ms, args.no_primary_on_family)) {
                     tied.insert(br.name.as_str());
                 }
             }
@@ -10981,7 +10989,7 @@ fn main() -> Result<()> {
             for ratio in widths {
                 let el: Vec<&&AssignRow> = mols
                     .iter()
-                    .filter(|r| gate_tied(&r.as_ev, ratio, args.tie_ms, args.primary_on_family) || is_disagreement(&r.read_name))
+                    .filter(|r| gate_tied(&r.as_ev, ratio, args.tie_ms, guard_on(args.primary_on_family, args.tie_ms, args.no_primary_on_family)) || is_disagreement(&r.read_name))
                     .collect();
                 // ⚠⚠ The AS-tied set is NOT yet O2's subject: it still holds molecules the catalog cannot
                 // explain (origin-rejected — O3's material) and molecules with a single candidate locus
@@ -12645,6 +12653,15 @@ mod tests {
         e.has_primary = false;
         assert!(super::gate_tied(&e, 1.0, Some(10), false), "without the flag the score gate decides");
         assert!(!super::gate_tied(&e, 1.0, Some(10), true), "seen through secondaries only: out");
+    }
+
+    /// Register 1542: the guard is on under `--tie-ms` unless `--no-primary-on-family`; the flag alone keeps it on.
+    #[test]
+    fn guard_on_follows_tie_ms_unless_escaped() {
+        assert!(!super::guard_on(false, None, false), "default path: no guard");
+        assert!(super::guard_on(true, None, false), "flag alone");
+        assert!(super::guard_on(false, Some(10), false), "under --tie-ms: on");
+        assert!(!super::guard_on(false, Some(10), true), "--no-primary-on-family: off");
     }
 
     /// `--bridge-regroup` unset is `f1v2` under `--assemble-only` (the default since 2026-09-29), off elsewhere;
