@@ -85,6 +85,21 @@ class Build(unittest.TestCase):
         self.assertIn("skip NOPE", err.getvalue())
 
 
+DOMTBL = [
+    "# target name accession tlen query name accession qlen E-value score bias # of c-Evalue i-Evalue score bias from to from to from to acc description",
+    "Kinase   PF00069.1  260 FAM1  -  400  1e-50  170.0 0.1  1  2  1e-40  1e-38  80.0 0.0  1 100  120 220  118 222  0.9  -",
+    "SH2      PF00017.1   80 FAM1  -  400  1e-20   70.0 0.0  2  2  1e-18  1e-17  60.0 0.0  1  80    5   85    3   87  0.9  -",
+    "Junk     PF99999.1   50 FAM1  -  400  1e-02    5.0 0.0  1  1  1e-02  1e-02   5.0 0.0  1  50  300  350  298  352  0.5  -",
+]
+
+
+class Scan(unittest.TestCase):
+    def test_parse_domtblout_orders_domains_by_position(self):
+        d = F.parse_domtblout(DOMTBL)
+        self.assertEqual([x[1] for x in d["FAM1"]], ["SH2", "Kinase"])
+        self.assertEqual(d["FAM1"][0][0], 5)
+
+
 class Helpers(unittest.TestCase):
     def test_copies_by_family_groups_on_first_field(self):
         recs = [("MCL0|0|chr1:1-9|+|nexon=1", "A"), ("MCL1|0|chr2:1-9|+|nexon=1", "C"), ("MCL0|1|chr1:20-29|-|nexon=1", "G")]
