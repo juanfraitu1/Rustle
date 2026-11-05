@@ -25,7 +25,9 @@ threads, and the region's families ran one after another (`~/asg_prof/`, perf: 6
 | `RUSTLE_TIMING=1` | per-region and read-star timing lines in the copy_assign log | — | identical |
 | `RUSTLE_STAR_THREADS=N` (default 8) | minimap2 threads of the read-star step | MCL1 read-star 1,452 s (8) / 423 s (32) / 248 s (64); wall 1,754 / 723 / 852 s | **identical** (4 tables) |
 | `RUSTLE_FAMILY_THREADS=N` (unset = auto: a region running ALONE gets cores / star threads, capped at its families; otherwise 1; `1` forces sequential) | a region's families in parallel, merged in family order (commit ddcd2e2d; auto 2026-11-02) | 9 chr13 hotspot families: 4,227 s sequential vs 1,664 s auto (2.5x). 57-family panel: auto fans out one region only; walls 555 / 649 / 885 s across reruns are read I/O noise (`reads_in_region` 83 s for 2 reads), so the panel cannot resolve +-20% | **identical** (hotspot 5 tables, panel 6 tables, every rerun) |
-| `--region-threads N` / `RUSTLE_REGION_THREADS` | regions in parallel | the pipeline's assign DEFAULTS TO 1 (the r1507 genome-wide arms ran sequentially: 19,358 s); r1543 raises it | identical (merge in region order) |
+| `--region-threads N` / `RUSTLE_REGION_THREADS` | regions in parallel on plain OS threads (not a rayon pool: a worker blocked on a permit while holding others deadlocked, r1543 gw4) | r1543 genome-wide A119b at 8: 8,697 s vs 19,358 s sequential (2.2x), peak 222 GB; the pipeline's assign still DEFAULTS TO 1 until r1543 closes | **identical** (6 tables, genome-wide gw6b) |
+| `RUSTLE_REGION_READ_BUDGET=N` (default 2,500,000; active only with region threads > 1) | a region holds its BAM-index record estimate out of N permits from before its fetch until done; a region above N takes the pool alone | estimate within 0.6-0.85x of real counts; chr13 (3.34M est, 1.42M real) exceeds 2.5M so it runs alone at the tail: 935 regions done at 39 min / 48 GB, then chr13 4,576 s alone rising to 222 GB (its 94 families on 9 family threads are the memory, not the fetch) | identical |
+| `MALLOC_ARENA_MAX=2` | glibc arena cap | RSS flat at 88 GB but ~8x slower (110 regions in 92 min vs 935). **Not a lever.** | — |
 | slim BAM (`slimbam`, ratio 0.8) | drops secondaries no step reads | chr20: 12% fewer records; assemble 46 -> 36-44 s | assemble **identical**; assign **changes** (6 of 36 rows lost) |
 | mm2-fast (`RUSTLE_MINIMAP2`, `~/tools_home/mm2fast/src/minimap2`, v2.24 + AVX-512) | accelerated chaining | MCL1 at 64 threads: read-star 299 s vs **256 s for our minimap2 2.30 default**; 2.30 with the `--max-chain-skip=1000000` mm2-fast requires takes 3,031 s, so mm2-fast only accelerates a setting we do not use. **Not a lever.** | **changes** (15,946 of ~31,800 assignment lines differ vs 2.30; statuses nearly equal) |
 
@@ -35,7 +37,8 @@ threads, and the region's families ran one after another (`~/asg_prof/`, perf: 6
 | `candidate_copies --molecules --min-ms-ratio 0.5` (r1513) | nets keep informative secondaries only | 447 vs 416 s on 40 families: nets are primaries-bound, no gain | **changes** (6 vs 3 reference-absent contigs) |
 
 Threads multiply: region threads x family threads x star threads should not exceed the node's cores by much (the panel run at
-8 x 8 x 8 was slower than 8 x 1 x 8).
+8 x 8 x 8 was slower than 8 x 1 x 8). Memory genome-wide (250 GB node): eight heavy cross-chromosome fetches at once ~280 GB
+(~64 KB per record live); the chr13 hotspot's detect alone climbs ~150 GB.
 
 ## Not levers (measured)
 
@@ -46,7 +49,9 @@ default chaining heuristic on our read-star job, see the table).
 
 ## Open levers, by expected gain
 
-1. Done: auto family threads (the hotspot runs alone at the tail and fans out).
+1. Done: auto family threads (the hotspot runs alone at the tail and fans out); region threads + read budget (r1543, 2.2x genome-wide).
+   Remaining gap to the 5,400 s bar is chr13 serialised after the rest (4,576 s); overlapping it needs its detect peak halved
+   (family threads 4 x star threads 16, gw7 pending).
 2. One read-star alignment per read per region, reused across families (the hotspot families' padded loci overlap heavily); may
    change products -> needs an identity check, a registration if not identical.
 3. `candidate_copies` pass A from the sequential sweep (needed before the candidates lever can be tested at all).
