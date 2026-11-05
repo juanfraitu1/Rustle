@@ -209,14 +209,14 @@ def profile_lengths(hmm_path):
     return out
 
 
-def concord_rows(hits, members, lengths, min_cover=MIN_COVER):
+def concord_rows(hits, members, lengths, min_cover=MIN_COVER, only=None):
     """hits = parse_tblout rows (already E-filtered); members = {family: set(locus keys)}; one row per family"""
     counted = [h for h in hits if h[3] - h[2] + 1 >= min_cover * lengths[h[1]]]
     by_locus = collections.defaultdict(dict)                       # locus -> {family: best score}
     for t, fam, _a, _b, _ev, sc in counted:
         by_locus[t][fam] = max(by_locus[t].get(fam, 0.0), sc)
     rows = []
-    for fam in sorted(members):
+    for fam in sorted(members if only is None else set(members) & only):
         own = members[fam]
         hit_loci = {t for t, fams in by_locus.items() if fam in fams}
         rows.append({"family": fam, "n_copies": len(own), "n_recovered": len(own & hit_loci),
@@ -241,7 +241,7 @@ def locus_key(name):
     return f[2] if len(f) > 2 else name
 
 
-def concord(prefix, out, threads=1, targets=None):
+def concord(prefix, out, threads=1, targets=None, only=None):
     """nhmmer the DNA profiles against `targets` (default PREFIX.fam.copies.fa; PREFIX.fam.loci.fa for a genome-wide
     extra-loci count, ~1.9 Gb on A119b: hours) -> out/concordance.tsv with the rule in the footer"""
     db = os.path.join(out, "families.dna.hmm")
@@ -257,12 +257,12 @@ def concord(prefix, out, threads=1, targets=None):
         _run(["nhmmer", "--cpu", "1", "--noali", "--tblout", t, "-o", os.devnull, os.path.join(out, "dna", fam + ".hmm"), target])
         return t
     with ThreadPoolExecutor(max_workers=threads) as ex, open(tbl, "w") as fh:
-        for t in ex.map(one, sorted(lengths)):
+        for t in ex.map(one, sorted(lengths if only is None else set(lengths) & only)):
             fh.write(open(t).read())
     members = {fam: {locus_key(h) for h, _s in copies}
                for fam, copies in copies_by_family(prefix + ".fam.copies.fa").items() if fam in lengths}
     hits = [(locus_key(h[0]),) + tuple(h[1:]) for h in parse_tblout(open(tbl), HIT_EVALUE)]
-    rows = concord_rows(hits, members, lengths)
+    rows = concord_rows(hits, members, lengths, only=only)
     verdict, rec, top = decide(rows)
     with open(os.path.join(out, "concordance.tsv"), "w") as fh:
         fh.write("family\tn_copies\tn_recovered\tn_extra\tn_top_own\n")
@@ -302,7 +302,7 @@ def main(argv=None):
     if a.cmd == "scan" or (a.cmd == "all" and not a.no_pfam):
         scan(a.out, pfam_path(a.pfam), threads=a.threads)
     if a.cmd in ("concord", "all"):
-        concord(prefix, a.out, a.threads, a.targets)
+        concord(prefix, a.out, a.threads, a.targets, only)
 
 
 if __name__ == "__main__":

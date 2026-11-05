@@ -182,6 +182,11 @@ class ConcordTargets(unittest.TestCase):
             shutil.rmtree(tmp)
 
 
+    def test_concord_rows_only_restricts_members(self):
+        rows = F.concord_rows([], {"FAM1": {"L1"}, "FAM2": {"L2"}}, {"FAM1": 400, "FAM2": 400}, only={"FAM2"})
+        self.assertEqual([r["family"] for r in rows], ["FAM2"])
+
+
 class Helpers(unittest.TestCase):
     def test_copies_by_family_groups_on_first_field(self):
         recs = [("MCL0|0|chr1:1-9|+|nexon=1", "A"), ("MCL1|0|chr2:1-9|+|nexon=1", "C"), ("MCL0|1|chr1:20-29|-|nexon=1", "G")]
