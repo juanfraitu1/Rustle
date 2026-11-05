@@ -8564,14 +8564,34 @@ fn main() -> Result<()> {
         // slots, and a rayon worker blocked while holding permits can be the thief of another region's
         // inner job -> deadlock (gw4 2026-11-05 hung 7.5 h at 334/936). Inner par_iters use the global pool.
         let mut w: Vec<RegionWork> = if args.region_threads > 1 {
+            // Largest index estimate first (r1543 gw8): chr13 (3.3M records, 66 min of detect) waited 29 min
+            // for the pool to drain in gw7 and then set the wall alone. Output order is `chunk` order regardless.
+            let order: Vec<usize> = {
+                let mut o: Vec<usize> = (0..chunk.len()).collect();
+                if let Some(c) = &bam_cache {
+                    let est: Vec<u64> = chunk
+                        .iter()
+                        .map(|(ct, lo, hi)| {
+                            let wins = region_windows
+                                .as_ref()
+                                .and_then(|w| w.get(&(ct.clone(), *lo, *hi)))
+                                .cloned()
+                                .unwrap_or_else(|| vec![(ct.clone(), *lo, *hi)]);
+                            c.estimate_records(&args.bam, &wins).unwrap_or(0)
+                        })
+                        .collect();
+                    o.sort_by_key(|&i| std::cmp::Reverse(est[i]));
+                }
+                o
+            };
             let next = std::sync::atomic::AtomicUsize::new(0);
             let slots: Vec<std::sync::Mutex<Option<Result<RegionWork>>>> =
                 chunk.iter().map(|_| std::sync::Mutex::new(None)).collect();
             std::thread::scope(|sc| {
                 for _ in 0..args.region_threads.min(chunk.len()) {
                     sc.spawn(|| loop {
-                        let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        let Some((c, lo, hi)) = chunk.get(i) else { break };
+                        let Some(&i) = order.get(next.fetch_add(1, std::sync::atomic::Ordering::Relaxed)) else { break };
+                        let (c, lo, hi) = &chunk[i];
                         *slots[i].lock().unwrap() = Some(compute(c, *lo, *hi));
                     });
                 }

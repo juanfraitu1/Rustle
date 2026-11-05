@@ -145,3 +145,15 @@ LOW_MEM=1 keeps regions sequential), since they beat gw6b on every bar with iden
 (family threads 3, budget 3.5M) not run: memory passed, so it would only slow chr13. Stretch 3,600 s and
 end-to-end 2.5 h not reached; closing the chr13 gap needs a cheaper read-star for 30k-molecule families, a
 new row.
+
+## Amendment 9 (2026-11-05 23:55, after Result 2, before gw8): the gap is chr13's late start
+
+Correction to Result 2: "nothing outside that region can shorten the run" was wrong. gw7 timeline: chr13's
+budget was not held until minute 29 (the pool had to drain below 0.66M while small regions ran), its fetch
+was then contended (868 s), and its detect (3,957 s) finished at 6,560 s. chr13 idled ~1,700 s. gw8: same
+binary logic and env as gw7 plus largest-estimate-first dispatch (regions sorted by BAM-index estimate
+descending before the OS-thread loop; output order unchanged). Predictions: chr13 starts at t=0 with the
+whole pool, wall ~ fetch + detect = 4,500-4,900 s (PASS); peak RSS <= 220 GB (gw7 overlapped chr13 with the
+rest at 199 GB; more overlap early); six tables identical. End to end then ~ 47 + 5 + 80 min ~ 2.2 h, under
+the 2.5 h bar; at gw7's 6,589 s end to end is ~2.7 h (FAIL by arithmetic). If gw8 OOMs: row stays FAIL on
+wall at gw7's figure; if wall > 5,400 s: FAIL, gap named. L3 (per-read early exit) was never attempted.
