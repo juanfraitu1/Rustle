@@ -21,3 +21,18 @@ Bars (all must hold):
 Pass all -> the guard is part of `--tie-ms` (docs: definition, ledger, THESIS_OBJECTIVES); `--tie-ms` itself stays opt-in (the
 r1510 held-out verdict stands: O2 = primary on correctness, the gain is not assigning reads the catalog cannot explain).
 Any bar fails -> the change is reverted, the row recorded.
+
+## RESULT r1542 (2026-11-05): PASS, adopted
+Job 4442213 (`/anvme/workspace/v138da13-rustle/r1542`, `~/r1540/r1542.sbatch`), binary ~/rustle_target_test/release (commit
+"copy_assign: primary-on-family guard on under --tie-ms").
+1. Default path: KB3781 panel base rerun identical on assignments, families, quant, famcn_readonly, family_join (the job's
+   "copy_conversions DIFFER" line is the script comparing a file neither run writes). PASS.
+2. `--tie-ms 10` alone = r1514 `pof10.assignments.tsv` byte-identical (2,543 assigned, 310 s); `--tie-ms 10
+   --no-primary-on-family` = r1510 `all10.assignments.tsv` byte-identical (5,804, 447 s). PASS.
+3. Human A119b, 40 families (38 regions): guarded 5,800 assigned rows (5,702 molecules), escape 6,355 (6,246); removed share
+   8.7% (KB3781 held-out was 77%: the human catalog's parent genes are in the catalog). Wall 689 s / 983 s (bar 1 h). PASS.
+   (a) 5,800 of 5,800 assigned rows have a primary record in the family's read windows as the binary builds them (every copy of
+   every family bound to the same swept region, +-50 kb). Under a narrower reading, the molecule's OWN family's copies +-50 kb,
+   it is 5,719 of 5,800: 81 rows (1.4%) have their primary on a sibling family's copy of the same region, the class r1514
+   reported as "of another family (4)". The bar is stated on the binary's windows; the narrower count is reported, not judged.
+Adopted: under `--tie-ms` the guard is on; `--no-primary-on-family` restores r1510's gate; `--tie-ms` stays opt-in.
