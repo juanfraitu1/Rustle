@@ -7464,6 +7464,9 @@ fn main() -> Result<()> {
             ),
             _ => None,
         };
+        if timing && _budget.is_some() {
+            eprintln!("[timing] budget held {contig}:{lo}-{hi}");
+        }
         // The genome this region's assignment needs: every chromosome any window actually reads from —
         // for every region before cross-chromosome families existed this is the single-element set
         // `{contig}`, so `genome_for_multi` delegates to the ORIGINAL cached single-contig `genome_for`

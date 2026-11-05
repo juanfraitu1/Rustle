@@ -88,3 +88,21 @@ itself. Fix: regions now run on `--region-threads` plain OS threads over a share
 inner `par_iter`s use the global pool bounded by `--threads`. Serial path unchanged. No scoring code touched.
 Relaunch gw5 + slim5 with the same env (sweep 0, region threads 8, family slots 1, budget 2.5M).
 Prediction unchanged from Amendment 4: wall 4,800–5,800 s, RSS < 200 GB, six tables identical.
+
+## Amendment 6 (2026-11-05 19:05, before gw6): gw5 OOM with the budget enforced; allocator A/B
+
+gw5 (job 4446337, OS-thread regions, budget 2.5M): no deadlock; OOM-killed at 242.6 GB after 6,609 s with
+755/936 regions done. The `budget estimate` line prints BEFORE the permit wait, so the eight regions with an
+estimate and no completion were mostly queued, not fetching: at most ~2.05M estimated records (MCL3 fetched,
+579k real, in detect; MCL61/62/621/623 could fit) were held, ~130 GB at 64 KB/record. gw3 reached the same
+242.6 GB with only chr13 live. So >100 GB sits OUTSIDE the budgeted regions, and lowering the budget cannot
+fix it. Wall: 6,609 s at 755/936 with chr19 (3.2M est), MCL53 (2.57M), MCL4 (1.8M) still queued, so this
+configuration misses the 5,400 s bar regardless; chr13 holds 90% of the pool for 4,577 s and the heavy
+regions serialise behind it.
+Hypotheses: H1 glibc per-thread arena retention (no custom allocator; freed small allocations from one
+thread's arena are not reusable by others and not trimmed); H2 retained `RegionWork` output (estimated a few
+GB, unlikely). Arms, same binary and env as gw5 plus `[timing] budget held` and a 30 s RSS series:
+gw6a exports MALLOC_ARENA_MAX=2; gw6b does not. Predictions: H1 -> gw6a peak < 200 GB and finishes, gw6b
+ratchets monotonically to the kill; H2 -> both ratchet and RSS does not step down when chr13 finishes.
+gw6a may run slower from malloc lock contention. Wall bar is NOT expected to pass in either arm; the arm
+result decides whether the budget can be raised (memory not in records) or the row FAILS on wall.
