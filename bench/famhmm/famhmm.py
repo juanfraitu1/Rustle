@@ -245,10 +245,19 @@ def concord(prefix, out, threads=1, targets=None):
     """nhmmer the DNA profiles against `targets` (default PREFIX.fam.copies.fa; PREFIX.fam.loci.fa for a genome-wide
     extra-loci count, ~1.9 Gb on A119b: hours) -> out/concordance.tsv with the rule in the footer"""
     db = os.path.join(out, "families.dna.hmm")
-    tbl = os.path.join(out, "targets.tblout")
-    _run(["nhmmer", "--cpu", str(threads), "--noali", "--tblout", tbl, "-o", os.devnull, db,
-          targets or prefix + ".fam.copies.fa"])
     lengths = profile_lengths(db)
+    tbl = os.path.join(out, "targets.tblout")
+    target = targets or prefix + ".fam.copies.fa"
+    # one single-cpu nhmmer per family: nhmmer --cpu N used ~1/3 of 16 cores on the A119b panel (jobs 4442327/4442354)
+    from concurrent.futures import ThreadPoolExecutor
+    def one(fam):
+        t = os.path.join(out, "dna", fam + ".tblout")
+        _run(["nhmmer", "--cpu", "1", "--noali", "--tblout", t, "-o", os.devnull, os.path.join(out, "dna", fam + ".hmm"), target])
+        return t
+    with ThreadPoolExecutor(max_workers=threads) as ex, open(tbl, "w") as fh:
+        for t in ex.map(one, sorted(lengths)):
+            fh.write(open(t).read())
+            os.remove(t)
     members = {fam: {locus_key(h) for h, _s in copies}
                for fam, copies in copies_by_family(prefix + ".fam.copies.fa").items() if fam in lengths}
     hits = [(locus_key(h[0]),) + tuple(h[1:]) for h in parse_tblout(open(tbl), HIT_EVALUE)]

@@ -161,7 +161,7 @@ class ConcordTargets(unittest.TestCase):
             prefix, _ = toy_family(tmp)
             out = os.path.join(tmp, "out")
             F.build(prefix, out)
-            F.concord(prefix, out, threads=1)            # no loci.fa written: must scan PREFIX.fam.copies.fa
+            F.concord(prefix, out, threads=2)            # pool path; no loci.fa written: must scan PREFIX.fam.copies.fa
             self.assertIn("FAM1\t3\t3\t0\t3", open(os.path.join(out, "concordance.tsv")).read())
         finally:
             shutil.rmtree(tmp)
