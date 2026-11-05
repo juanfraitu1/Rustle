@@ -120,3 +120,13 @@ gw7 (launched before gw6b finished, to save a wait): same binary, RUSTLE_FAMILY_
 (3.34M) no longer takes the whole pool and other regions overlap it. Predictions: chr13 peak ~100 GB, node
 peak 180-220 GB, wall 4,800-5,400 s, six tables identical. If OOM: family threads 3 and budget 3.5M as
 Amendment 8. If wall > 5,400 s with identity: FAIL, gap named.
+
+## Result 1 (2026-11-05 21:50): gw6b completed, genome-wide identity holds
+
+gw6b (job 4446733; sweep off, region threads 8, family slots 1, budget 2.5M, default glibc): assign exit 0,
+wall 8,697 s (baseline 19,358 s; 2.2x), peak RSS 222.2 GB, six tables byte-identical to gw_off. Timeline:
+935 regions done by minute 39 (48 GB), then chr13 alone 4,576 s (its estimate 3.34M exceeds the 2.5M cap, so
+it takes the whole pool) with RSS rising to 222 GB. Wall bar (<= 5,400 s) NOT met by this configuration;
+identity and RSS bars met. L1 (region threads) + L4 (permits) + L5 (budget) are confirmed genome-wide.
+Remaining gap to the bar: 3,300 s, all of it chr13 running serially after the rest. gw7 (Amendment 7) is
+the arm that overlaps chr13 with the other regions.
