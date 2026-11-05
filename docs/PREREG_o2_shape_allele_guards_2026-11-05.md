@@ -33,3 +33,17 @@ Decidable assigned rows going to a single-exon copy: held-out 0 of 151, panel 0 
 panel 368, all to multi-exon copies). Across all 2,543 r1514 assignments, 1 goes to any of the 77 single-exon copies. The MCL148
 class (spliced parent-gene reads on an 850-bp retrocopy) was removed entirely by `--primary-on-family` (r1514); nothing is left for
 a shape guard. Bars (>= 2 wrong removed): FAIL. Closed: not ported.
+
+## RESULT r1541 (2026-11-05): FAIL as registered (held-out fixes 4 wrong, costs 12 right; panel fixes 0, costs 9)
+Rerun job 4442196 (`pof10d`, assignments byte-identical to r1514's `pof10`; 320 s); `bench/o2_contested/guards.py`, outputs
+`~/r1540/guard_{heldout,panel}.out`. Decidable assigned rows with a star proof: held-out 143 of 151 (8 without a proof row),
+panel 394 of 419 (25).
+| set | right kept | right abstained | wrong kept | wrong abstained | wrong moved to right | net |
+|---|---|---|---|---|---|---|
+| held-out | 109 | 12 | 18 | 2 | 2 | fixes 4, costs 12: **FAIL** |
+| panel | 359 | 9 | 26 | 0 | 0 | fixes 0, costs 9: **FAIL** |
+Control (allelic test off, same two-column rule): nothing changes on either set, so every change above is the allelic column
+removal, not the counting rule. Of the held-out right rows, 16 kept an allelic column and still held; the 12 lost were decided
+against a weak rival by columns the copy's own unique reads show as polymorphic. MCL183 has no decidable row in either set: the
+r1413 trap itself is not scorable here. Verdict: the within-sample allelic rule removes 3x more right than wrong decisions; not
+ported; the haplotype-aware version (assemblies as input) stays unregistered.
