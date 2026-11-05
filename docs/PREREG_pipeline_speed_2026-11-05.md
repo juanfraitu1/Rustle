@@ -39,3 +39,17 @@ L2 as built: RUSTLE_WINDOW_SWEEP=1 builds the per-chromosome sweep store for RUS
 and drops it after the batch; the whole-sweep store of r1507 is gone.
 Identity results so far (frozen binaries ~/r1543/bin): slim panel batch 4, region threads 1: six tables same, 1,576 s, RSS 7.4 GB.
 Hotspot 9 families, slots on: five tables same, 1,626 s (ref 1,664 s), RSS 91 GB.
+
+## Amendment 2 (2026-11-05, labelled; written after the killed genome-wide run, before the relaunch)
+Genome-wide arm (sweep on, batch 64, 8 region threads, slots on; job 4442328): OOM-killed (exit 137) at 239.8 GB RSS after
+573 of 936 regions, 10,095 s at the kill. The six DIFFER lines are the incomplete tables of a killed run, not a logic
+difference; the stop rule's revert applies to L2 only. L1 and L4 identity still rest on slim b4r8 and hot9 (six/five tables same).
+L2 WITHDRAWN on two measured grounds: (a) the nine per-batch sweeps are serialised before each batch's compute and cost
+4,600 s of the 10,095 s (slim: 38 sweeps 2,616 s on both arms against a 391 s baseline); the direct xchrom fetch they replace
+(9,839 s sequential) parallelises under L1 instead. (b) `flat.chunks(batch)` makes batch N+1 wait for batch N, so the chr13
+hotspot (4,523 s, same as alone) held the other seven region threads idle. The code stays gated behind RUSTLE_WINDOW_SWEEP
+(default off); it is closed, not adopted. Saved log: /anvme/workspace/v138da13-rustle/r1543/gw_killed/.
+Relaunch arm (registered before its numbers): sweep OFF, RUSTLE_REGION_THREADS=8, slots on (RUSTLE_FAMILY_SLOTS=1), same
+six-table identity bars against gw_off, wall <= 5,400 s, RSS < 250 GB. Prediction: 4,600-5,200 s, chr13 the floor, provided
+the eight direct xchrom fetches plus chr13's 91 GB fit (no prior measurement of that combination). Same environment run on the
+slim panel as the identity arm for this exact combination (b4r8 had the sweep on; hot9 ran one region).
