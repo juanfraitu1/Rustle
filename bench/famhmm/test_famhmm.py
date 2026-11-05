@@ -167,6 +167,21 @@ class ConcordTargets(unittest.TestCase):
             shutil.rmtree(tmp)
 
 
+    @unittest.skipUnless(HAVE_HMMER, "hmmbuild not on PATH")
+    def test_concord_resumes_from_existing_family_tblout(self):
+        tmp = tempfile.mkdtemp()
+        try:
+            prefix, _ = toy_family(tmp)
+            out = os.path.join(tmp, "out")
+            F.build(prefix, out)
+            with open(os.path.join(out, "dna", "FAM1.tblout"), "w") as fh:       # a finished family's scan is reused
+                fh.write("# nothing\n")
+            F.concord(prefix, out, threads=1)
+            self.assertIn("FAM1\t3\t0\t0\t0", open(os.path.join(out, "concordance.tsv")).read())
+        finally:
+            shutil.rmtree(tmp)
+
+
 class Helpers(unittest.TestCase):
     def test_copies_by_family_groups_on_first_field(self):
         recs = [("MCL0|0|chr1:1-9|+|nexon=1", "A"), ("MCL1|0|chr2:1-9|+|nexon=1", "C"), ("MCL0|1|chr1:20-29|-|nexon=1", "G")]

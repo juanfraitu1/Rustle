@@ -252,12 +252,13 @@ def concord(prefix, out, threads=1, targets=None):
     from concurrent.futures import ThreadPoolExecutor
     def one(fam):
         t = os.path.join(out, "dna", fam + ".tblout")
+        if os.path.exists(t) and os.path.getsize(t) > 0:       # resume: nhmmer writes tblout only on completion
+            return t
         _run(["nhmmer", "--cpu", "1", "--noali", "--tblout", t, "-o", os.devnull, os.path.join(out, "dna", fam + ".hmm"), target])
         return t
     with ThreadPoolExecutor(max_workers=threads) as ex, open(tbl, "w") as fh:
         for t in ex.map(one, sorted(lengths)):
             fh.write(open(t).read())
-            os.remove(t)
     members = {fam: {locus_key(h) for h, _s in copies}
                for fam, copies in copies_by_family(prefix + ".fam.copies.fa").items() if fam in lengths}
     hits = [(locus_key(h[0]),) + tuple(h[1:]) for h in parse_tblout(open(tbl), HIT_EVALUE)]
