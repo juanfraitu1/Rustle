@@ -30331,7 +30331,11 @@ pub mod denovo_pipeline {
         // at 1 (the 57-family panel was slower at 8 x 8 x 8). `RUSTLE_FAMILY_THREADS=1` forces the sequential path.
         let family_threads_env: Option<usize> = std::env::var("RUSTLE_FAMILY_THREADS").ok().and_then(|v| v.parse().ok());
         let _active_region = crate::family::ActiveRegionGuard::enter();
+        // r1543: unset = every region fans out up to the shared star slots (`StarSlotGuard` bounds the node); the
+        // 2026-11-02 "alone only" rule is kept under RUSTLE_FAMILY_SLOTS=0.
+        let slot_sched = std::env::var("RUSTLE_FAMILY_SLOTS").map(|v| v != "0").unwrap_or(true);
         let assign_one = |cf: ColocatedFamily| -> (FamilyAssignment, Vec<DnaNeedsRecord>, Vec<(String, super::arms::linearize::LinearizeCertificate, (String, u64, u64))>) {
+            let _slot = slot_sched.then(crate::family::StarSlotGuard::acquire);
             let mut dna_needs: Vec<DnaNeedsRecord> = Vec::new();
             let mut linearize_certs: Vec<(String, super::arms::linearize::LinearizeCertificate, (String, u64, u64))> = Vec::new();
             // RESCUE: recover under-assembled copies homologous to this family (below the >=3-read assembly gate)
@@ -30821,7 +30825,7 @@ pub mod denovo_pipeline {
                 let star: usize = std::env::var("RUSTLE_STAR_THREADS").ok().and_then(|v| v.parse().ok()).unwrap_or(8).max(1);
                 // only a region running ALONE fans out: with other regions still in flight the panel was slower
                 // (555 s sequential vs 649 s with cores / (star x active), 2026-11-02)
-                if crate::family::ACTIVE_REGIONS.load(std::sync::atomic::Ordering::SeqCst) > 1 {
+                if !slot_sched && crate::family::ACTIVE_REGIONS.load(std::sync::atomic::Ordering::SeqCst) > 1 {
                     return 1;
                 }
                 (cores / star).min(colocated.len())
@@ -82549,5 +82553,41 @@ impl ActiveRegionGuard {
 impl Drop for ActiveRegionGuard {
     fn drop(&mut self) {
         ACTIVE_REGIONS.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// r1543: star-thread SLOTS shared by every region in flight (cores / RUSTLE_STAR_THREADS permits). A family takes one slot for
+/// its whole assignment, so a heavy region fans its families out even while other regions run (the auto rule above gave it 1
+/// family thread unless it ran alone: with 8 region threads the A119b chr13 hotspot would have run its 89 families one after
+/// another), and the node is never oversubscribed. Products are merged in family order, so identical by construction.
+pub(crate) struct StarSlots {
+    free: std::sync::Mutex<usize>,
+    cv: std::sync::Condvar,
+}
+pub(crate) static STAR_SLOTS: std::sync::OnceLock<StarSlots> = std::sync::OnceLock::new();
+pub(crate) fn star_slots() -> &'static StarSlots {
+    STAR_SLOTS.get_or_init(|| {
+        let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+        let star: usize = std::env::var("RUSTLE_STAR_THREADS").ok().and_then(|v| v.parse().ok()).unwrap_or(8).max(1);
+        StarSlots { free: std::sync::Mutex::new((cores / star).max(1)), cv: std::sync::Condvar::new() }
+    })
+}
+pub(crate) struct StarSlotGuard;
+impl StarSlotGuard {
+    pub(crate) fn acquire() -> Self {
+        let s = star_slots();
+        let mut n = s.free.lock().unwrap();
+        while *n == 0 {
+            n = s.cv.wait(n).unwrap();
+        }
+        *n -= 1;
+        StarSlotGuard
+    }
+}
+impl Drop for StarSlotGuard {
+    fn drop(&mut self) {
+        let s = star_slots();
+        *s.free.lock().unwrap() += 1;
+        s.cv.notify_one();
     }
 }

@@ -7333,20 +7333,24 @@ fn main() -> Result<()> {
     // have queried them, so every product is the per-window query's. Only on the buffered `--tied-prefilter` path with
     // an index and none of the per-window record states (read-home table, secondary AS ratio, readthrough flags);
     // Opt-in `RUSTLE_WINDOW_SWEEP=1` until the genome-wide identity check of the prereg passes.
-    let window_store: Option<WindowStore> = if args.tied_prefilter
+    let sweep_on = args.tied_prefilter
         && bam_cache.is_some()
         && !args.assemble_only
         && rt_switch.is_none()
         && rustle::denovo_assemble::sweep_supported()
-        && std::env::var("RUSTLE_WINDOW_SWEEP").map(|v| v == "1").unwrap_or(false)
-    {
+        && std::env::var("RUSTLE_WINDOW_SWEEP").map(|v| v == "1").unwrap_or(false);
+    // r1543: the store is built per BATCH of regions (`RUSTLE_SWEEP_BATCH` regions, default 64) and dropped after the batch is
+    // computed: the r1507 genome-wide run held every key's windows at once (the hotspot's records once per cross-chromosome
+    // key that covers them) and was OOM-killed at 250 GB. Each window's records are the same whichever batch serves them.
+    let window_store: Mutex<Option<WindowStore>> = Mutex::new(None);
+    let build_store = |flat: &[(String, u64, u64)]| -> Result<WindowStore> {
         let t = std::time::Instant::now();
         let c = bam_cache.as_ref().expect("checked above");
         let mut index: DetHashMap<RegionKey, Vec<usize>> = DetHashMap::default();
         let mut by_chrom: DetHashMap<String, Vec<(usize, u64, u64)>> = DetHashMap::default();
         let mut n_win = 0usize;
         let mut win_coord: Vec<(String, u64, u64)> = Vec::new();
-        for (contig, lo, hi) in &flat {
+        for (contig, lo, hi) in flat {
             let key: RegionKey = (contig.clone(), *lo, *hi);
             let wins: Vec<(String, u64, u64)> = region_windows
                 .as_ref()
@@ -7432,9 +7436,7 @@ fn main() -> Result<()> {
                 n_win, flat.len(), chroms.len(), t_light, t.elapsed().as_secs_f64() - t_light
             );
         }
-        Some(WindowStore { index, light, full })
-    } else {
-        None
+        Ok(WindowStore { index, light, full })
     };
     // The expensive, INDEPENDENT per-region work: BAM read + detect_and_assign (the dominant poasta alignment
     // lives here). Pure w.r.t. the read-only genome/bam_cache. The heavy read SEQUENCES are dropped here —
@@ -7597,10 +7599,15 @@ fn main() -> Result<()> {
             for (wi, (wchrom, wlo, whi)) in wins.iter().enumerate() {
                 let (wlo, whi) = (*wlo, *whi);
                 let (p, b) = match &bam_cache {
-                    Some(_) if window_store.is_some() => {
-                        let st = window_store.as_ref().expect("checked");
-                        let g = st.index[&(contig.clone(), lo, hi)][wi];
-                        Ok(st.light[g].lock().unwrap().take().expect("each window's light records are taken once"))
+                    Some(_) if sweep_on => {
+                        let taken = {
+                            let guard = window_store.lock().unwrap();
+                            let st = guard.as_ref().expect("the batch's store is built before its regions compute");
+                            let g = st.index[&(contig.clone(), lo, hi)][wi];
+                            let x = st.light[g].lock().unwrap().take();
+                            x
+                        };
+                        Ok(taken.expect("each window's light records are taken once"))
                     }
                     Some(c) if args.tied_prefilter => c.reads_in_region_mode(
                         &args.bam,
@@ -7638,12 +7645,18 @@ fn main() -> Result<()> {
                 let c = bam_cache.as_ref().expect("checked at startup");
                 let mut full: Vec<rustle::denovo_assemble::BamRead> = Vec::new();
                 for (wi, (wchrom, wlo, whi)) in wins.iter().enumerate() {
-                    let b = match &window_store {
-                        Some(st) => {
-                            let g = st.index[&(contig.clone(), lo, hi)][wi];
-                            st.full[g].lock().unwrap().take().expect("each window's full records are taken once")
+                    let b = match sweep_on {
+                        true => {
+                            let taken = {
+                                let guard = window_store.lock().unwrap();
+                                let st = guard.as_ref().expect("the batch's store is built before its regions compute");
+                                let g = st.index[&(contig.clone(), lo, hi)][wi];
+                                let x = st.full[g].lock().unwrap().take();
+                                x
+                            };
+                            taken.expect("each window's full records are taken once")
                         }
-                        None => {
+                        false => {
                             c.reads_in_region_mode(
                                 &args.bam,
                                 wchrom,
@@ -8524,17 +8537,33 @@ fn main() -> Result<()> {
         })
     };
     // Compute all regions (out-of-order across contigs when region_threads > 1), collected in the flat order.
-    let mut works: Vec<RegionWork> = match &region_pool {
-        Some(pool) => pool.install(|| {
-            flat.par_iter()
-                .map(|(c, lo, hi)| compute(c, *lo, *hi))
-                .collect::<Result<Vec<_>>>()
-        })?,
-        None => flat
-            .iter()
-            .map(|(c, lo, hi)| compute(c, *lo, *hi))
-            .collect::<Result<Vec<_>>>()?,
+    let batch: usize = if sweep_on {
+        std::env::var("RUSTLE_SWEEP_BATCH").ok().and_then(|v| v.parse().ok()).filter(|&n| n > 0).unwrap_or(64)
+    } else {
+        flat.len().max(1)
     };
+    let mut works: Vec<RegionWork> = Vec::with_capacity(flat.len());
+    for chunk in flat.chunks(batch) {
+        if sweep_on {
+            *window_store.lock().unwrap() = Some(build_store(chunk)?);
+        }
+        let mut w: Vec<RegionWork> = match &region_pool {
+            Some(pool) => pool.install(|| {
+                chunk
+                    .par_iter()
+                    .map(|(c, lo, hi)| compute(c, *lo, *hi))
+                    .collect::<Result<Vec<_>>>()
+            })?,
+            None => chunk
+                .iter()
+                .map(|(c, lo, hi)| compute(c, *lo, *hi))
+                .collect::<Result<Vec<_>>>()?,
+        };
+        works.append(&mut w);
+        if sweep_on {
+            *window_store.lock().unwrap() = None;
+        }
+    }
     // ⭐ PREREG_o2_tie_outside_gate_2026-10-13: the §6gz gate once more, now that EVERY region has registered its
     // outside ties. Inside a worker the gate reads a registry the other regions are still filling, so a molecule whose
     // outside placement lies in a region swept later stayed `Assigned` (which ones depended on region order and
