@@ -135,7 +135,7 @@ class Concord(unittest.TestCase):
             loci = [(h.split("|")[2], s if i < 2 else s.translate(RC)[::-1]) for i, (h, s) in enumerate(copies)]
             loci.append(("chrZ:1-300", "".join(random.Random(7).choice("ACGT") for _ in range(300))))
             F.write_fasta(prefix + ".fam.loci.fa", loci)
-            F.concord(prefix, out, threads=1)
+            F.concord(prefix, out, threads=1, targets=prefix + ".fam.loci.fa")
             txt = open(os.path.join(out, "concordance.tsv")).read()
             self.assertIn("FAM1\t3\t3\t0\t3", txt)
             self.assertIn("# rule: CONCORDANT", txt)
@@ -147,6 +147,24 @@ class Cli(unittest.TestCase):
     def test_parse_args_defaults(self):
         a = F.parse_args(["all", "--prefix", "p", "--out", "o", "--no-pfam"])
         self.assertEqual((a.cmd, a.min_copies, a.min_orf_aa, a.threads, a.no_pfam, a.only_families), ("all", 2, 50, 1, True, None))
+
+
+class ConcordTargets(unittest.TestCase):
+    def test_locus_key_strips_family_fields(self):
+        self.assertEqual(F.locus_key("MCL0|1|chr13:14029360-14033660|+|nexon=2"), "chr13:14029360-14033660")
+        self.assertEqual(F.locus_key("chr1:7508-12323"), "chr1:7508-12323")
+
+    @unittest.skipUnless(HAVE_HMMER, "hmmbuild not on PATH")
+    def test_concord_default_target_is_copies_fa(self):
+        tmp = tempfile.mkdtemp()
+        try:
+            prefix, _ = toy_family(tmp)
+            out = os.path.join(tmp, "out")
+            F.build(prefix, out)
+            F.concord(prefix, out, threads=1)            # no loci.fa written: must scan PREFIX.fam.copies.fa
+            self.assertIn("FAM1\t3\t3\t0\t3", open(os.path.join(out, "concordance.tsv")).read())
+        finally:
+            shutil.rmtree(tmp)
 
 
 class Helpers(unittest.TestCase):

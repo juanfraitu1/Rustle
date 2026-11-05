@@ -235,15 +235,24 @@ def decide(rows):
     return ("CONCORDANT" if rec >= RULE_RECOVERED and top >= RULE_TOP_OWN else "FAIL"), rec, top
 
 
-def concord(prefix, out, threads=1):
-    """nhmmer the DNA profiles against PREFIX.fam.loci.fa -> out/concordance.tsv with the rule in the footer"""
+def locus_key(name):
+    """'FAM|idx|chrom:start-end|...' or 'chrom:start-end' -> 'chrom:start-end'"""
+    f = name.split("|")
+    return f[2] if len(f) > 2 else name
+
+
+def concord(prefix, out, threads=1, targets=None):
+    """nhmmer the DNA profiles against `targets` (default PREFIX.fam.copies.fa; PREFIX.fam.loci.fa for a genome-wide
+    extra-loci count, ~1.9 Gb on A119b: hours) -> out/concordance.tsv with the rule in the footer"""
     db = os.path.join(out, "families.dna.hmm")
-    tbl = os.path.join(out, "loci.tblout")
-    _run(["nhmmer", "--cpu", str(threads), "--noali", "--tblout", tbl, "-o", os.devnull, db, prefix + ".fam.loci.fa"])
+    tbl = os.path.join(out, "targets.tblout")
+    _run(["nhmmer", "--cpu", str(threads), "--noali", "--tblout", tbl, "-o", os.devnull, db,
+          targets or prefix + ".fam.copies.fa"])
     lengths = profile_lengths(db)
-    members = {fam: {h.split("|")[2] for h, _s in copies}
+    members = {fam: {locus_key(h) for h, _s in copies}
                for fam, copies in copies_by_family(prefix + ".fam.copies.fa").items() if fam in lengths}
-    rows = concord_rows(parse_tblout(open(tbl), HIT_EVALUE), members, lengths)
+    hits = [(locus_key(h[0]),) + tuple(h[1:]) for h in parse_tblout(open(tbl), HIT_EVALUE)]
+    rows = concord_rows(hits, members, lengths)
     verdict, rec, top = decide(rows)
     with open(os.path.join(out, "concordance.tsv"), "w") as fh:
         fh.write("family\tn_copies\tn_recovered\tn_extra\tn_top_own\n")
@@ -266,6 +275,7 @@ def parse_args(argv):
     ap.add_argument("--pfam", help="Pfam-A.hmm (pressed); default $WS/pfam/Pfam-A.hmm")
     ap.add_argument("--min-copies", type=int, default=2)
     ap.add_argument("--min-orf-aa", type=int, default=50)
+    ap.add_argument("--targets", help="concordance target FASTA; default PREFIX.fam.copies.fa (PREFIX.fam.loci.fa = genome-wide, slow)")
     return ap.parse_args(argv)
 
 
@@ -282,7 +292,7 @@ def main(argv=None):
     if a.cmd == "scan" or (a.cmd == "all" and not a.no_pfam):
         scan(a.out, pfam_path(a.pfam), threads=a.threads)
     if a.cmd in ("concord", "all"):
-        concord(prefix, a.out, a.threads)
+        concord(prefix, a.out, a.threads, a.targets)
 
 
 if __name__ == "__main__":
