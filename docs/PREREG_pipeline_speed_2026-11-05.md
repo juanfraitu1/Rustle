@@ -53,3 +53,16 @@ Relaunch arm (registered before its numbers): sweep OFF, RUSTLE_REGION_THREADS=8
 six-table identity bars against gw_off, wall <= 5,400 s, RSS < 250 GB. Prediction: 4,600-5,200 s, chr13 the floor, provided
 the eight direct xchrom fetches plus chr13's 91 GB fit (no prior measurement of that combination). Same environment run on the
 slim panel as the identity arm for this exact combination (b4r8 had the sweep on; hot9 ran one region).
+
+## Amendment 3 (2026-11-05, labelled; after the second kill, before the third genome-wide run)
+Relaunch arm (job 4442736, sweep off, 8 region threads, slots): OOM-killed at 241.4 GB, 3,433 s, 911 of 936 regions done,
+the chr13 hotspot still running. Slim under the same environment: six tables same, 526 s, 8.9 GB (identity of L1+L4 holds).
+Cause, from gw_off's reads_in_region counts: the eight heaviest regions (chr13 1.42M records; ~xchrom~MCL3/5/8/10 0.5-0.58M;
+MCL18/44/70 0.19-0.29M) sum to 4.4M records; chr13 alone peaks at 91 GB (~64 KB per record), so eight at once need ~280 GB.
+Neither window span (chr13 is 2.6 Mb) nor the copies table's n_reads predicts this before the fetch.
+Lever L5, read budget: after the fetch (cheap: the records Vec), a region acquires its record count from a pool of
+RUSTLE_REGION_READ_BUDGET records (default 2,500,000 ~ 160 GB) before detect_and_assign and releases it after; a region above
+the budget takes the whole pool and runs alone. Active only with region threads > 1; star slots and the budget share one
+`Permits` type (family.rs). Identity by construction (ordering only); still checked on the slim panel in the same job.
+Third genome-wide arm: sweep off, 8 region threads, slots, budget 2.5M; bars unchanged (six tables, <= 5,400 s, < 250 GB).
+Prediction: 4,800-5,600 s (chr13 floor plus some queueing of the four 0.5M-record keys behind it), RSS 160-200 GB.
