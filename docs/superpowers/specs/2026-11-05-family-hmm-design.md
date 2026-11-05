@@ -65,3 +65,19 @@ rule evaluates CONCORDANT. Skips if hmmbuild is not on PATH.
 
 HMM member discovery / read assignment; HMM-vs-HMM comparison (HH-suite); a driver stage (one case block
 later if wanted); Rust changes.
+
+## Result (A119b panel, 2026-11-05)
+
+Build: 57 panel families, all with a DNA and a protein profile, 7 min at 16 threads (Pfam scan skipped: Pfam-A not
+downloaded). Concordance target: `a1.fam.copies.fa` (42 MB, spliced copies), not `fam.loci.fa` (1.86 Gb; job 4442327
+timed out at the 1 h wall with no output). nhmmer cost: ~1,300 CPU-min for 50 families on 72 cores (one single-cpu
+nhmmer per family; `--cpu 16` on one process did 10 families in 1 h); 6 more needed another 4 h; MCL1312 (14 kb profile)
+is still unfinished after 6 CPU-h (job 4443368 runs it alone). Genome-wide (1,565 families) is therefore days: the
+concordance layer stays a panel-scale check; the export layer is cheap.
+
+**Rule: FAIL as registered** on the 56 finished families: recovered 0.7131, top_own 0.7089 (both < 0.95); 417 extra
+copy hits. Cause (diagnostic, not a rescue): every one of the 237 copies is hit by its own profile at E <= 1e-10; the 68
+misses are hits below the 50% cover bar, because a MAFFT profile spans the union of all copies' columns (profile /
+median copy length up to 2.95x; MCL884 has a 21 kb single-exon copy beside 4.4 kb ones), median cover of the misses
+0.29. Post hoc, cover measured against the copy's own length instead of the profile's gives recovered 0.890 / top_own 0.890: still FAIL,
+not claimed. Table: `/anvme/workspace/v138da13-rustle/famhmm/A119b_panel/concordance.tsv`.
