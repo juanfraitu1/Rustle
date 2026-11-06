@@ -25,3 +25,9 @@ Identity by construction: the per-region computation and the merge order are unc
 chr13 holds at t ~ 0; 911 regions <= 0.66M (6,685 s work) run beside it on 7 threads (~1,000 s); the 24
 regions > 0.66M (3,046 s work, mostly fetch) are deferred and run after chr13 releases at ~4,150 s; wall
 4,500-5,000 s (PASS), chr13 detect 3,900-4,300 s (sharing cores), RSS <= 200 GB, identical.
+
+## Pre-check result (2026-11-06 14:10): PASS
+pre13 (job 4450386; 14 regions, 585 families, budget forced to 50k so almost every region defers): unset 1,471 s,
+defer 1,388 s, 475 region records each, 93 deferrals, five tables identical, no hang. gw13 submitted.
+Clock note: the "13:00/13:10/13:40" stamps in the gw12 Result and this file's header were estimates; actual
+wall-clock was ~12:00-12:25.
