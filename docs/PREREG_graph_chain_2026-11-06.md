@@ -39,3 +39,14 @@ GraphAligner 1.0.20, reads.f.gaf, 15,828 reads aligned, 7,745 end to end) was ne
 wall on those reads is not in the log; the arm reports agreement only, and a PASS there would send the time
 question to a timed rerun before any further claim. This arm uses the UNIT (transcript) sequences, so the
 comparison is against the same baseline (gw7) but the graph is of units, not genomic windows.
+
+## Result arm 2 (2026-11-06 21:35): FAIL on agreement; row closed
+seqwish graph of the 31 units: 311 segments, 3,271 copy-specific segment memberships. GraphAligner paths scored
+by the registered rule: of the 35 baseline-assigned reads 1 same, 27 different copy, 7 uncalled (bar >= 31 same,
+<= 1 different: FAIL). Tied reads called 20 of 41; ambiguous reads called 11,767 of 15,752 (false-confidence
+warning). Not a label permutation: baseline copy 17 lands on copy18/22/28/8 by read, with best-minus-second
+margins of 0-3 segments out of ~65: the graph does not separate copies at ~99% identity (seqwish on a minimap2
+asm20 all-vs-all keeps few PSV-scale bubbles). Time bar not evaluated (GraphAligner wall not logged; moot).
+Closing: with minigraph the copies collapse to one segment; with seqwish the bubbles exist but do not carry
+the copy identity read-star finds in the base-level alignment. A rarity-weighted scoring rule was not tried
+(post hoc). Lever closed; the per-base PSV evidence read-star uses has no cheap graph proxy in these tools.
