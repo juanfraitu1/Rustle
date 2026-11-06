@@ -867,7 +867,7 @@ stage_assign() {
     say "assign: annotated-only: $(wc -l < "$OUT.assign.unannotated.txt") famil(ies) with no copy on a gene of $RUSTLE_ANNOTATED_ONLY are not assigned ($OUT.assign.unannotated.txt)"
   fi
   # the regions are rebuilt without the skipped families: a region left with no family would be read whole
-  cat "$OUT.assign.depth_skipped.txt" "$OUT.assign.unannotated.txt" 2>/dev/null | sort -u > "$OUT.assign.skipped.txt"
+  { for f in "$OUT.assign.depth_skipped.txt" "$OUT.assign.unannotated.txt"; do [ -s "$f" ] && cat "$f"; done; true; } | sort -u > "$OUT.assign.skipped.txt"
   if [ -s "$OUT.assign.skipped.txt" ]; then
     mem+=(--skip-families "$OUT.assign.skipped.txt")
     fam_regions skip "$OUT.assign.skipped.txt" > "$OUT.regions.txt"
