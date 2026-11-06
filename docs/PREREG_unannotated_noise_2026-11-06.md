@@ -38,3 +38,16 @@ Verdict by the registered rule: SIGNAL (check 1 signal mark, check 3 no noise ma
 families are spliced at canonical and U12 motifs in a pericentromeric block and their 8,994 assignments are
 the most decisive in the run. The annotated-only restriction (row 1551) trades away the pipeline's strongest
 results and stays opt-in, not recommended. The assign cost is where the results are.
+
+## Correction (2026-11-06 22:50, appended): the hotspot is the HSat1A satellite array
+T2T censat v2.1 (chm13v2.0_censat_v2.1.bed, kept at /anvme/workspace/v138da13-rustle/annot_dl/) places
+chr13:13,940,927-15,547,593 as `hsat1A_13_4`, flanked by `ct_13_42` (13.70-13.92 Mb) and the chr13/21 HOR array
+from 15.55 Mb. Every copy of MCL0/1/6/20 lies inside it (31/31, 23/23, 21/21, 24/24). RefSeq Liftoff v5.2 has no
+gene between 13.92 and 15.6 Mb (EIF3FP1 at 13.918 Mb is the last). CAT has nothing because GRCh38 has no
+acrocentric p-arms to lift from, so "unannotated" here means "satellite", not "novel gene family".
+Over the whole gw_off catalogue: 618 of 1,565 families have most copies inside a censat element; assigned reads
+by the family's majority class: hsat1A 8,927, ct 746, none 2,518, censat 38, mon 33, hsat3 25, hor 7.
+The row's SIGNAL verdict stands as measured (canonical GT-AG / AT-AC junctions, 9 decisive sites) but the
+interpretation changes: these are transcribed HSat1A tandem repeat units, one super-family of repeat monomers
+(row 1557), not nine gene families. They are outside the thesis object (gene families) and should be excluded
+by annotation, not by recall. Lever: row 1559.
