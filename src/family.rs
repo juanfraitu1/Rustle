@@ -25136,9 +25136,9 @@ pub mod copy_assign {
                 };
                 if timing {
                     eprintln!(
-                        "[timing]     read-star minimap2 ({} of {} molecules x {} copies): {:.1}s",
-                        reps.len(),
+                        "[timing]     read-star minimap2 ({} aligned of {} molecules x {} copies): {:.1}s",
                         n_aligned,
+                        reps.len(),
                         copies.len(),
                         t_star.elapsed().as_secs_f64()
                     );
