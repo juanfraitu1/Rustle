@@ -7485,6 +7485,7 @@ fn main() -> Result<()> {
             }
             _ => None,
         };
+        let mut _budget = _budget;
         if timing && _budget.is_some() {
             eprintln!("[timing] budget held {contig}:{lo}-{hi}");
         }
@@ -7743,6 +7744,12 @@ fn main() -> Result<()> {
                 bam_reads.len(),
                 t_read.elapsed().as_secs_f64()
             );
+        }
+        if let Some(g) = _budget.as_mut().filter(|_| std::env::var("RUSTLE_BUDGET_SHRINK").as_deref() == Ok("1")) {
+            let back = g.shrink_to(bam_reads.len());
+            if timing && back > 0 {
+                eprintln!("[timing] budget shrink {contig}:{lo}-{hi}: released {back} records");
+            }
         }
         let extra = if args.recover_copies || args.tied_seed {
             tied_secondary_reads_in_region(&args.bam, contig, lo, hi, args.as_ratio)

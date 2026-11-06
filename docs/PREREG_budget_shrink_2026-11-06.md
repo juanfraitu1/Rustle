@@ -25,3 +25,14 @@ only), to be confirmed by the six comparisons.
 ## Pre-check
 pre15: the 14-region panel with budget 50k, DEFER=1 + SHRINK=1 vs unset: identical tables; `[timing] budget
 shrink` lines present.
+
+## Result
+pre15 (14-region panel, budget 50k): unset 1,509 s vs defer+shrink 1,478 s, five tables identical, 91 shrink
+lines, 94 deferrals. Identity on the panel PASS.
+gw17 (job 4450876, full sample): CANCELLED at 5,190 s with 759 of 936 regions done. chr13: fetch 253 s, shrink
+released 1,915,080 of 3.3M permits at t ~ 250 s, detect 4,746.7 s (gw15: 4,040 s): the freed permits let more
+regions run beside chr13 and the hotspot's read-star lost ~700 s of cores. At cancel, MCL3/5/10 (460-495 s each)
+and the chr1/2/7/19 hulls were still pending, so wall >= ~5,700 s against a same-run bar of 1.1 x 5,000 =
+5,500 s: bar A FAIL by the decided-outcome rule; bar B on the full run not measured (panel identity only).
+Lesson: the tail is core-bound as well as budget-bound; releasing permits trades chr13 time for tail time.
+RUSTLE_BUDGET_SHRINK stays opt-in; the BED route (row 1559) is the adopted one.

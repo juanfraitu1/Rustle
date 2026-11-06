@@ -82677,6 +82677,19 @@ pub struct PermitGuard {
     pool: &'static Permits,
     n: usize,
 }
+impl PermitGuard {
+    /// r1558: give back permits above `n` once the real record count is known (the estimate stays an upper bound).
+    pub fn shrink_to(&mut self, n: usize) -> usize {
+        let n = n.max(1).min(self.n);
+        let back = self.n - n;
+        if back > 0 {
+            self.n = n;
+            *self.pool.free.lock().unwrap() += back;
+            self.pool.cv.notify_all();
+        }
+        back
+    }
+}
 impl Drop for PermitGuard {
     fn drop(&mut self) {
         *self.pool.free.lock().unwrap() += self.n;
