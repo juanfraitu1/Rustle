@@ -233,3 +233,14 @@ gw11: spr1tb, gw7 env with RUSTLE_STAR_THREADS=24, budget 6M, --threads 96, bin9
 Prediction: with 6M, chr13 (3.3M) fits beside the others from the start; wall 3,900-4,800 s (PASS),
 RSS above gw10's 204 GB (fine on 1 TB), six tables identical.
 e2e rerun with bin9 (Amendment 12 otherwise unchanged); e2e job 4447459 cancelled, no numbers taken from it.
+
+## Result 6 (2026-11-06 07:55): gw11, clean 104-core arm, 4,514 s; assign bar PASSES on that node class
+
+gw11 (job 4447489, spr1tb 104 cores, bin9 = shipped gw7 logic, family 4 x star 24, --threads 96, budget 6M):
+exit 0, wall 4,514 s, peak RSS 217.1 GB, six tables identical to gw_off. chr13 detect 3,269 s (gw7 3,957 s
+at star 16). Correction prediction (3,900-4,800 s, RSS > 204 GB, identical) held. Against the registered bars:
+assign <= 5,400 s PASS on the 104-core class (stretch 3,600 missed); the 250 GB bar was written for singlenode
+and does not apply here (Amendment 11). On the 250 GB singlenode class the best figure stays gw7 6,589 s, FAIL.
+gw10 (5,507 s) vs gw11 (4,514 s) on the same node and env isolates turnstile + sort at ~1,000 s, confirming
+the Correction. Settings for the 104-core class are not shipped as defaults (they assume 1 TB and 96 cores);
+`RUSTLE_STAR_THREADS=24 RUSTLE_REGION_READ_BUDGET=6000000 --threads 96` is the recorded recipe.
