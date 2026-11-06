@@ -7433,6 +7433,14 @@ fn main() -> Result<()> {
     // r1548: set by the dispatch loop under RUSTLE_DISPATCH_DEFER=1; `compute` then returns Ok(None) instead of blocking
     // when the region's budget cannot be taken now (gw12: chr13 starved on the pool for ~2,000 s, then ran alone).
     thread_local! { static MAY_DEFER: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; }
+    // r1548 head gate: the thread running dispatch position 0 opens it the moment its budget is held; the other
+    // dispatch threads wait on it before their first acquire (gw14: they raced position 0 for the pool).
+    thread_local! { static IS_HEAD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; }
+    let head_held = (std::sync::Mutex::new(false), std::sync::Condvar::new());
+    let open_gate = || {
+        *head_held.0.lock().unwrap() = true;
+        head_held.1.notify_all();
+    };
     let compute = |contig: &String, lo: u64, hi: u64| -> Result<Option<RegionWork>> {
         // §6dh: on the --families path, gather from the supplied copies' own neighbourhoods rather than
         // the whole bound region — a dispersed family's hull can be tens of Mb while its copies occupy a
@@ -7478,6 +7486,9 @@ fn main() -> Result<()> {
         };
         if timing && _budget.is_some() {
             eprintln!("[timing] budget held {contig}:{lo}-{hi}");
+        }
+        if IS_HEAD.with(|h| h.get()) {
+            open_gate();
         }
         // The genome this region's assignment needs: every chromosome any window actually reads from —
         // for every region before cross-chromosome families existed this is the single-element set
@@ -8598,8 +8609,10 @@ fn main() -> Result<()> {
                 let est: Vec<u64> = (0..chunk.len()).map(est_of).collect();
                 order.sort_by_key(|&i| (std::cmp::Reverse(est[i]), i));
             }
-            let deferred: std::sync::Mutex<Vec<usize>> = std::sync::Mutex::new(Vec::new());
-            let drain_next = std::sync::atomic::AtomicUsize::new(0);
+            // gw14: the other threads raced position 0 for the pool and the drain blocked largest-first (gw9 again).
+            // Head gate: nobody acquires before position 0 holds; deferred regions cycle a queue with try_acquire only.
+            let deferred: std::sync::Mutex<std::collections::VecDeque<usize>> = std::sync::Mutex::new(Default::default());
+            let in_flight = std::sync::atomic::AtomicUsize::new(0);
             let nthreads = args.region_threads.min(chunk.len());
             std::thread::scope(|sc| {
                 for _ in 0..nthreads {
@@ -8608,27 +8621,61 @@ fn main() -> Result<()> {
                             let k = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                             let Some(&i) = order.get(k) else { break };
                             let (c, lo, hi) = &chunk[i];
+                            if defer && k > 0 {
+                                drop(head_held.1.wait_while(head_held.0.lock().unwrap(), |h| !*h).unwrap());
+                            }
                             MAY_DEFER.with(|d| d.set(defer && k > 0));
-                            match compute(c, *lo, *hi) {
-                                Ok(None) => deferred.lock().unwrap().push(i),
+                            IS_HEAD.with(|h| h.set(defer && k == 0));
+                            in_flight.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            let r = compute(c, *lo, *hi);
+                            in_flight.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                            IS_HEAD.with(|h| h.set(false));
+                            if defer && k == 0 {
+                                open_gate(); // covers the error path, where compute returned before holding
+                            }
+                            match r {
+                                Ok(None) => deferred.lock().unwrap().push_back(i),
                                 r => *slots[i].lock().unwrap() = Some(r.map(|o| o.expect("not deferred"))),
                             }
                         }
-                        MAY_DEFER.with(|d| d.set(false));
+                        if defer {
+                            open_gate(); // chunk shorter than the pool: position 0 may never have been this thread's
+                        }
+                        // rolling retry: pop, try; push back on deferral; done when the queue is empty and nothing
+                        // is still running or still being dispatched
+                        let mut cycled = 0usize;
                         loop {
-                            // the deferred list is complete once every thread has left the first loop; a thread that
-                            // arrives early just sees a shorter list and comes back for the rest
-                            let k = drain_next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                            let Some(&i) = deferred.lock().unwrap().get(k).copied().as_ref() else {
-                                if next.load(std::sync::atomic::Ordering::Relaxed) < order.len() + nthreads {
-                                    drain_next.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-                                    std::thread::sleep(std::time::Duration::from_millis(200));
-                                    continue;
+                            let front = deferred.lock().unwrap().pop_front();
+                            let Some(i) = front else {
+                                let busy = in_flight.load(std::sync::atomic::Ordering::SeqCst) > 0
+                                    || next.load(std::sync::atomic::Ordering::Relaxed) < order.len() + nthreads;
+                                if !busy {
+                                    break;
                                 }
-                                break;
+                                std::thread::sleep(std::time::Duration::from_millis(200));
+                                continue;
                             };
                             let (c, lo, hi) = &chunk[i];
-                            *slots[i].lock().unwrap() = Some(compute(c, *lo, *hi).map(|o| o.expect("blocking acquire")));
+                            MAY_DEFER.with(|d| d.set(true));
+                            in_flight.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            let r = compute(c, *lo, *hi);
+                            in_flight.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                            match r {
+                                Ok(None) => {
+                                    let mut q = deferred.lock().unwrap();
+                                    q.push_back(i);
+                                    cycled += 1;
+                                    if cycled >= q.len() {
+                                        cycled = 0;
+                                        drop(q);
+                                        std::thread::sleep(std::time::Duration::from_millis(200));
+                                    }
+                                }
+                                r => {
+                                    cycled = 0;
+                                    *slots[i].lock().unwrap() = Some(r.map(|o| o.expect("not deferred")));
+                                }
+                            }
                         }
                     });
                 }
