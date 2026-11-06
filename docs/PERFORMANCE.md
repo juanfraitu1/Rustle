@@ -49,7 +49,7 @@ default chaining heuristic on our read-star job, see the table).
 
 ## Open levers, by expected gain
 
-1. Done: auto family threads (the hotspot runs alone at the tail and fans out); region threads + read budget + family 4 x star 16 (r1543, 2.9x genome-wide; remaining gap is chr13 starting late: budget held only at minute 29, then 3,957 s of detect; largest-first dispatch is gw8, pending).
+1. Done: auto family threads (the hotspot runs alone at the tail and fans out); region threads + read budget + family 4 x star 16 (r1543, 2.9x genome-wide; remaining gap is chr13 starting late: budget held only at minute 29, then 3,957 s of detect; largest-first dispatch (gw8) did not help, 7,071 s: the threads race for the budget; next lever is acquiring the budget in dispatch order).
    Remaining gap to the 5,400 s bar is chr13 serialised after the rest (4,576 s); overlapping it needs its detect peak halved
    (family threads 4 x star threads 16, gw7 pending).
 2. One read-star alignment per read per region, reused across families (the hotspot families' padded loci overlap heavily); may

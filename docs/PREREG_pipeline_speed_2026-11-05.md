@@ -157,3 +157,15 @@ whole pool, wall ~ fetch + detect = 4,500-4,900 s (PASS); peak RSS <= 220 GB (gw
 rest at 199 GB; more overlap early); six tables identical. End to end then ~ 47 + 5 + 80 min ~ 2.2 h, under
 the 2.5 h bar; at gw7's 6,589 s end to end is ~2.7 h (FAIL by arithmetic). If gw8 OOMs: row stays FAIL on
 wall at gw7's figure; if wall > 5,400 s: FAIL, gap named. L3 (per-read early exit) was never attempted.
+
+## Result 3 (2026-11-06 01:45): gw8 largest-first dispatch did not help; row closes FAIL on wall at gw7's figure
+
+gw8 (job 4447200): exit 0, wall 7,071 s (gw7 6,589 s), peak RSS 194.3 GB, six tables identical. chr13's
+detect was 3,962 s (gw7 3,957 s), but its budget was held only after 236 regions had finished: the eight
+threads race for the pool, the seven other big regions (1.1-3.2M each) took it first, and chr13 (3.3M of 4M)
+had to wait for the pool to drain again. Amendment 9's prediction (4,500-4,900 s) FAILED. Ordering the
+dispatch list is not enough; chr13 needs to hold the pool before any other region acquires. Not run tonight.
+Final verdict for row 1543: assign wall bar FAIL (best 6,589 s, gw7, 2.9x), identity PASS, RSS PASS, end to
+end ~2.7 h FAIL by arithmetic. Shipped defaults = gw7 settings; largest-first sort stays (harmless, identical).
+Next row: budget acquisition in dispatch order (a turnstile so the largest region holds first), predicted
+wall ~ 870 + 3,960 = 4,800-5,000 s.
