@@ -14,3 +14,9 @@ censat (ct excluded). Computed by bench/satseq.py with a class-filtered id list.
 ## Prediction
 recall 0.75-0.85 (bsat/rDNA copies are 0/23 at dup15 >= 0.5: the bar is at risk from those two classes),
 precision ~0.9; wall 850-1,100 s (the hsat1A hotspot is 77/94 caught; the missed 17 may hold a long family).
+
+## Result (detection bars)
+Repeat-class truth 154 families. flagged 103: tp 91, fp 12, fn 63. Precision 0.883 FAIL (bar 0.9), recall
+0.591 FAIL (bar 0.8). Both detection bars fail; the wall arm was not run. Observed, not a rule: truth median GC
+0.227 vs other 0.422 (HSat1A is AT-rich); a GC term was not registered here and is not applied post hoc.
+Misses by class are bsat/rDNA/mon/censat (their copies are not internally periodic at k = 15) and 17 hsat1A.
