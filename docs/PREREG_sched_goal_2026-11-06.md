@@ -24,3 +24,17 @@ cannot be reinterpreted.
 A clean-directory run re-assembles, and assemble is not byte-reproducible (row 1543 Result 7: 7,691 vs 7,988
 copies), so "assign tables identical to gw_off" cannot hold for an e2e run. Bar C = time only: each of three
 clean runs <= 7,200 s; each run's assign table set is kept and its copy count reported. Identity stays bar B.
+
+## Result gw15 (job 4450704, bin14, RUSTLE_DISPATCH_DEFER=1, staged BAM, singlenode 72 cores)
+| bar | value | verdict |
+|---|---|---|
+| A wall <= 1.1 x chr13 (241.5 + 4,040.2 = 4,281.7 s; bar 4,710 s) | 6,638 s | FAIL |
+| B six tables identical to gw_off | all six `same` | PASS |
+| B RSS < 250 GB | 215.1 GB | PASS |
+The mechanism did what it was built for: chr13 held the pool at log line 745 (t ~ 0), fetched in 241 s and ran
+4,040 s. The wall is 2,356 s longer than chr13 because the tail is NOT small: while chr13 held 3.3M of the 4M
+read budget (its index ESTIMATE; the actual fetch is 1.42M records), the xchrom families (MCL3/5/8/10 at 500-580k
+records each, detect 460-495 s each) and the chromosome hulls chr1/chr2/chr7/chr19 (23k-123k reads) could not
+acquire permits and all ran after chr13 released (log lines 195k-266k of 269k). 932 deferrals. Prediction was
+wrong on the tail size (~400 s predicted, ~2,350 s observed). Bar C not run (A failed, flag stays opt-in).
+Next registered lever (row 1558): release the estimate-minus-actual permits once the fetch count is known.
