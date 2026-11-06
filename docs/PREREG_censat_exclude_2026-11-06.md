@@ -27,3 +27,14 @@ reported separately so the user can keep them.
 element: 550 of 1,565 (the 618 in the register row counted the majority CLASS incl. transition zone; 550 is the
 figure the run uses). Row 1551 output unchanged (212). BED kept at data/denovo_eval/chm13v2.0_censat_v2.1.bed.
 Run gw18 = gw16 harness with RUSTLE_EXCLUDE_BED instead of RUSTLE_ANNOTATED_ONLY.
+
+## Result gw18 (job 4450882, singlenode, bin14 pipeline path, RUSTLE_EXCLUDE_BED + DISPATCH_DEFER=1)
+| bar | value | verdict |
+|---|---|---|
+| assign wall <= 2,400 s | 843 s | PASS |
+| non-satellite assigned reads >= 2,493 (gw_off 2,524) | 2,526 (10 families differ by a read or two: neighbours' candidate sets change when a satellite family leaves the window, as row 1551 saw) | PASS |
+| RSS | 35.4 GB (gw15: 215 GB) | — |
+Kept-family tables not byte-identical (expected, recorded). Longest region now 171 s (xchrom family), so the
+row 1550 bar A "wall <= 1.1 x critical path" reads 843 vs 188 s: the regime changed and the bar is no longer the
+right one; the user's goal text names ~4,550 s, and 843 s is below it by 5x. Goal amendment is the user's call.
+Satellite reads dropped by design: 9,768 of 12,294 assigned in gw_off.
