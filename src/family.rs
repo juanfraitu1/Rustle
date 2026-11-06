@@ -24504,7 +24504,7 @@ pub mod copy_assign {
                     if want_gpos { copies.iter().map(|c| exon_map(c)).collect() } else { Vec::new() };
                 let target_starts: Vec<u64> =
                     if want_gpos { copies.iter().map(|c| target_of(c).0).collect() } else { Vec::new() };
-                let (alns, star_gpos): (Vec<ReadStarObs>, Vec<Vec<Vec<Option<u64>>>>) = if genomic_spans.is_some()
+                let run_star = |read_seqs: &[&[u8]]| -> (Vec<ReadStarObs>, Vec<Vec<Vec<Option<u64>>>>) { if genomic_spans.is_some()
                     && p.read_star_two_form
                 {
                     // ⭐ §6fp: both forms, the better one per (molecule, candidate)
@@ -24555,15 +24555,7 @@ pub mod copy_assign {
                     // no positions off the two-form path: under a population every column then counts as not FIXED
                     // (R20, `fixed_matrix`), so the fixed-only certificate ties
                     (o, vec![Vec::new(); n])
-                };
-                if timing {
-                    eprintln!(
-                        "[timing]     read-star minimap2 ({} molecules x {} copies): {:.1}s",
-                        reps.len(),
-                        copies.len(),
-                        t_star.elapsed().as_secs_f64()
-                    );
-                }
+                } };
                 // §6ft: intron support over every record of the family (the O1 mis-chain rule's count), for the
                 // read-through certificate's cut at giant unsupported introns
                 let intron_support: DetHashMap<(u64, u64), usize> = {
@@ -24583,7 +24575,7 @@ pub mod copy_assign {
                     }
                     m
                 };
-                let done: Vec<(usize, PerRead)> = reps
+                let assign_batch = |reps: &[usize], alns: &[ReadStarObs], star_gpos: &[Vec<Vec<Option<u64>>>]| -> Vec<(usize, PerRead)> { reps
             .par_iter()
             .zip(alns.par_iter().zip(star_gpos.par_iter()))
             .map(|(&ri, ((cand, obs, profiles, unit_edits, covered, star_cols), gpos))| {
@@ -25102,7 +25094,55 @@ pub mod copy_assign {
                     },
                 )
             })
-            .collect();
+            .collect() };
+                // PREREG row 1545 (opt-in, RUSTLE_STAR_PILOT=N): align a stride sample of N molecules first; when the
+                // pilot assigns nothing, the rest get empty observations (the no-candidate path) instead of alignments
+                let pilot_n: Option<usize> = std::env::var("RUSTLE_STAR_PILOT")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .filter(|&n: &usize| n > 0 && n < reps.len());
+                let (done, n_aligned): (Vec<(usize, PerRead)>, usize) = match pilot_n {
+                    None => {
+                        let (alns, gpos) = run_star(&read_seqs);
+                        (assign_batch(&reps, &alns, &gpos), reps.len())
+                    }
+                    Some(n) => {
+                        let k = reps.len().div_ceil(n);
+                        let (pi, ri): (Vec<usize>, Vec<usize>) = (0..reps.len()).partition(|i| i % k == 0);
+                        let pick = |ix: &[usize]| -> (Vec<usize>, Vec<&[u8]>) {
+                            (ix.iter().map(|&i| reps[i]).collect(), ix.iter().map(|&i| read_seqs[i]).collect())
+                        };
+                        let (p_reps, p_seqs) = pick(&pi);
+                        let (r_reps, r_seqs) = pick(&ri);
+                        let (pa, pg) = run_star(&p_seqs);
+                        let mut done = assign_batch(&p_reps, &pa, &pg);
+                        let hits = done
+                            .iter()
+                            .filter(|(_, pr)| {
+                                pr.result.as_ref().map(|r| r.combined.status == AssignStatus::Assigned).unwrap_or(false)
+                            })
+                            .count();
+                        let (ra, rg, n_aligned) = if hits == 0 {
+                            let empty: ReadStarObs =
+                                (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
+                            (vec![empty; r_reps.len()], vec![Vec::new(); r_reps.len()], p_reps.len())
+                        } else {
+                            let (a, g) = run_star(&r_seqs);
+                            (a, g, reps.len())
+                        };
+                        done.extend(assign_batch(&r_reps, &ra, &rg));
+                        (done, n_aligned)
+                    }
+                };
+                if timing {
+                    eprintln!(
+                        "[timing]     read-star minimap2 ({} of {} molecules x {} copies): {:.1}s",
+                        reps.len(),
+                        n_aligned,
+                        copies.len(),
+                        t_star.elapsed().as_secs_f64()
+                    );
+                }
                 let mut out: Vec<Option<PerRead>> = (0..reads.len()).map(|_| None).collect();
                 for (ri, pr) in done {
                     out[ri] = Some(pr);

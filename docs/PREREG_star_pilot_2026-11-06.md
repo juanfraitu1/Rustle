@@ -1,4 +1,4 @@
-# PREREG row 1545: per-family read-star pilot with early exit (2026-11-06 08:50, before any build or run)
+# PREREG row 1545: per-family read-star pilot with early exit (2026-11-06 08:10, before any build or run)
 
 ## Question
 The eight chr13 hotspot families (plus MCL0; the `hot9` panel) align ~30k molecules each for 0-35 unique
