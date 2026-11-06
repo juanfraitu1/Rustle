@@ -60,3 +60,8 @@ Bars and prediction unchanged (assign <= 5,400 s, identical, RSS < 250 GB; wall 
 gw13 (job 4450483, bin11 span key): 6,667 s, RSS 180 GB, six tables identical to gw_off, 20 deferrals, chr13
 held at line 17,065 and detect 3,935 s; the deferred regions ran after chr13 (last detect line 17,478), so the
 tail added ~440 s over gw12. The deferral path is genome-wide identical; the schedule was the defect (Amendment 1-2).
+
+## Pre-check 2 result (2026-11-06 20:00): PASS; gw15 submitted
+pre14 (job 4450651, bin13): unset 1,504 s, defer 1,471 s, 475 region records each, five tables identical, no hang.
+The rolling retry logged a `deferred` line per attempt (1.4M lines); bin14 = bin13 with retries silent (log only).
+gw15 = bin14. gw16 (row 1551) runs the same binary and flag with RUSTLE_ANNOTATED_ONLY set.

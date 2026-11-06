@@ -7436,6 +7436,7 @@ fn main() -> Result<()> {
     // r1548 head gate: the thread running dispatch position 0 opens it the moment its budget is held; the other
     // dispatch threads wait on it before their first acquire (gw14: they raced position 0 for the pool).
     thread_local! { static IS_HEAD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; }
+    thread_local! { static RETRY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; } // retries log nothing
     let head_held = (std::sync::Mutex::new(false), std::sync::Condvar::new());
     let open_gate = || {
         *head_held.0.lock().unwrap() = true;
@@ -7472,7 +7473,7 @@ fn main() -> Result<()> {
                     match pool.try_acquire(est) {
                         Some(g) => Some(g),
                         None => {
-                            if timing {
+                            if timing && !RETRY.with(|r| r.get()) {
                                 eprintln!("[timing] deferred {contig}:{lo}-{hi}");
                             }
                             return Ok(None);
@@ -8657,9 +8658,11 @@ fn main() -> Result<()> {
                             };
                             let (c, lo, hi) = &chunk[i];
                             MAY_DEFER.with(|d| d.set(true));
+                            RETRY.with(|r| r.set(true));
                             in_flight.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                             let r = compute(c, *lo, *hi);
                             in_flight.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                            RETRY.with(|r| r.set(false));
                             match r {
                                 Ok(None) => {
                                     let mut q = deferred.lock().unwrap();
