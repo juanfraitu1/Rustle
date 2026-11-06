@@ -38,3 +38,10 @@ records each, detect 460-495 s each) and the chromosome hulls chr1/chr2/chr7/chr
 acquire permits and all ran after chr13 released (log lines 195k-266k of 269k). 932 deferrals. Prediction was
 wrong on the tail size (~400 s predicted, ~2,350 s observed). Bar C not run (A failed, flag stays opt-in).
 Next registered lever (row 1558): release the estimate-minus-actual permits once the fetch count is known.
+
+## Amendment 2 (2026-11-06 23:40, before any e2e run): bar C runs with the satellite BED
+Row 1559 cut assign to 843 s by excluding satellite-majority families. The three clean e2e runs (bar C, time
+only) run with RUSTLE_EXCLUDE_BED (censat v2.1) + RUSTLE_DISPATCH_DEFER=1. Prediction: assemble ~2,700 +
+families ~320 + assign ~850-1,000 (a fresh assembly has a different catalogue) = 3,900-4,100 s each; PASS.
+Bar A under exclusion is reported, not judged (Result gw18 note); the goal text's absolute figure (~4,550 s) is
+met. Jobs e2e1/2/3 submitted after this amendment.
