@@ -278,3 +278,10 @@ Assign: 2.9x with byte-identical outputs on the 250 GB class (6,589 s, misses th
 104 cores (bar met on that class only). End to end from a clean directory: 8,905 s (~2.5 h) vs ~6.4 h baseline
 arithmetic, at the bar with no margin. Further speed-ups (per-family pilot + early exit, dropping the genomic
 read-star form where units explain the reads, per-bubble graph vote) change outputs and need the user's call.
+
+## Goal state update (2026-11-06 13:10)
+Identity-preserving levers are exhausted: r1545 pilot early exit (changes outputs, no time), r1546 unit form
+(different answer), r1547 BAM staged on NVMe (gw12 6,228 s identical, FAIL; fetch -31% but chr13 detect 3,922 s
+is the critical path). 250 GB class stands at 6,228-6,589 s identical; bar met only on 104 cores (gw11 4,514 s);
+e2e at the bar n = 1. Next step is the user's: accept the 104-core recipe, or authorise an output-changing lever
+(yield-rate gate, per-bubble graph vote) under a new PREREG.

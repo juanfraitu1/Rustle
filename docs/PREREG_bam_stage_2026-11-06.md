@@ -39,3 +39,8 @@ Reading: the staged BAM removes the fetch variance and ~3,500 s of summed fetch,
 hidden behind chr13's 3,922 s detect, which is the critical path on 72 cores. Lever closed as a wall lever on
 singlenode; staging stays useful for run-to-run stability (chr13 fetch 189-202 s on NVMe, n = 2). Not adopted as
 a pipeline step: the decision is the user's.
+
+Correction (13:10): "gw7 varied 189-868" above is wrong; gw7 is one run. The 189-868 s range is across five runs
+(gw7, e2e, hot10, hot11 and the earlier panels) as the panel Result states. Critical-path check: chr13's
+detect_and_assign timing line is the last one in the gw12 assign log (line 17438 of 17438 timing lines), so chr13
+finishes last and the "hidden behind chr13 detect" reading holds for this run.
