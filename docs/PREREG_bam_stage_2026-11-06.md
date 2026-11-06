@@ -29,3 +29,13 @@ gw12: singlenode, gw7 recipe exactly (region threads 8, family 4 x star 16, budg
 identical to gw_off, RSS < 250 GB; fetch sum (936 regions) reported against gw7's 11,308 s and e2e's 8,152 s.
 Prediction: fetch sum 5,000-8,000 s; chr13 obtains its budget earlier because the other fetches finish
 sooner; wall 5,200-6,000 s, so the bar is a coin flip; identical. Wall limit 2.5 h.
+
+## Result (2026-11-06 13:00): gw12 6,228 s, identical; wall bar FAIL; fetch sum 7,799 s
+
+gw12 (job 4447876): assign 6,228 s (bar <= 5,400 FAIL; prediction 5,200-6,000 missed), RSS 174 GB (< 250 PASS),
+six tables identical to gw_off (PASS). Fetch sum 7,799 s vs gw7 11,308 / e2e 8,152 (-31% vs gw7, -4% vs e2e);
+chr13 fetch 202 s (gw7 varied 189-868), chr13 detect 3,922 s (gw7 3,957). Wall gain vs gw7: 361 s (6,589 -> 6,228).
+Reading: the staged BAM removes the fetch variance and ~3,500 s of summed fetch, but those seconds were mostly
+hidden behind chr13's 3,922 s detect, which is the critical path on 72 cores. Lever closed as a wall lever on
+singlenode; staging stays useful for run-to-run stability (chr13 fetch 189-202 s on NVMe, n = 2). Not adopted as
+a pipeline step: the decision is the user's.
