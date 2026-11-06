@@ -21,3 +21,16 @@ path: their regions are not swept, their copies stay in the table). Genome-wide:
 ## Prediction
 wall 1,800-2,600 s (PASS); chr13 detect < 300 s; 0 differing rows among kept families; the 212 skipped families
 are listed in PREFIX.assign.unannotated.txt. Not a default: adoption is a catalogue decision the user makes.
+
+## Result (2026-11-06 22:35): time PASS, kept-family identity FAIL (small, enumerated)
+gw16 (job 4450705): assign 1,806 s (bar <= 2,700 PASS; gw12 6,228 s, 3.4x), RSS 105.5 GB (PASS), 212 families
+skipped, no skipped-family row in any table. Kept families are NOT byte-identical (expectation 0 differing rows
+missed): assignments 290,025 vs 290,327 rows; 386 rows only in gw_off (358 ambiguous, 24 tied, 4 assigned;
+reads whose window belonged to a skipped family), 84 only in gw16; 3,188 rows changed, of which 2,975 only in
+the `tie_outside_catalog` flag (the outside-tie registry no longer sees the skipped copies), 92 assigned -> tied,
+15 tied -> assigned, the rest ambiguous-row statistics. Families: 62 of 1,353 rows differ (n_reads 53,
+resolvable_psv/j 21); quant 322 of 6,599 (soft counts/CI); famcn_readonly 53 n_reads; family_join 87 n_reads_hard.
+Net on assigned status among kept families: -92 +15 -4 = -81 rows out of the genome-wide assigned total, i.e.
+reads shared between a kept family and a skipped neighbour lose or gain a decision. Verdict as registered:
+time bar PASS, identity bar FAIL; the output change is bounded and enumerated above. Adoption is the user's
+catalogue decision (opt-in stays opt-in).
