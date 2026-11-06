@@ -21,3 +21,9 @@ catalogue still lists them; only assignment skips them. Opt-in.
 Assign wall 1,700-2,000 s; e2e then ~2,700 + 320 + 1,900 = ~4,900 s < 7,200 s, which would make bar C
 reachable. ct families (746 reads, 13.70-13.92 Mb transition zone, EIF3FP1 etc.) are the ambiguous class:
 reported separately so the user can keep them.
+
+## Implementation note (before the run)
+`annotated_families.py --majority-in BED` lists families with strictly more than half their copies overlapping an
+element: 550 of 1,565 (the 618 in the register row counted the majority CLASS incl. transition zone; 550 is the
+figure the run uses). Row 1551 output unchanged (212). BED kept at data/denovo_eval/chm13v2.0_censat_v2.1.bed.
+Run gw18 = gw16 harness with RUSTLE_EXCLUDE_BED instead of RUSTLE_ANNOTATED_ONLY.

@@ -866,8 +866,15 @@ stage_assign() {
     python3 "$(dirname "$0")/annotated_families.py" "$OUT.fam.copies.tsv" "$RUSTLE_ANNOTATED_ONLY" > "$OUT.assign.unannotated.txt" 2>> "$OUT.assign.depth.log" || exit 2
     say "assign: annotated-only: $(wc -l < "$OUT.assign.unannotated.txt") famil(ies) with no copy on a gene of $RUSTLE_ANNOTATED_ONLY are not assigned ($OUT.assign.unannotated.txt)"
   fi
+  # RUSTLE_EXCLUDE_BED=BED (opt-in, row 1559): families whose copies mostly lie in a confounding element (T2T censat
+  # satellites: the chr13 HSat1A array is 618 of A119b's 1,565 families and the assign wall) join the skip list.
+  rm -f "$OUT.assign.excluded.txt"
+  if [ -n "${RUSTLE_EXCLUDE_BED:-}" ]; then
+    python3 "$(dirname "$0")/annotated_families.py" "$OUT.fam.copies.tsv" "$RUSTLE_EXCLUDE_BED" --majority-in > "$OUT.assign.excluded.txt" 2>> "$OUT.assign.depth.log" || exit 2
+    say "assign: exclude-bed: $(wc -l < "$OUT.assign.excluded.txt") famil(ies) mostly inside $RUSTLE_EXCLUDE_BED are not assigned ($OUT.assign.excluded.txt)"
+  fi
   # the regions are rebuilt without the skipped families: a region left with no family would be read whole
-  { for f in "$OUT.assign.depth_skipped.txt" "$OUT.assign.unannotated.txt"; do [ -s "$f" ] && cat "$f"; done; true; } | sort -u > "$OUT.assign.skipped.txt"
+  { for f in "$OUT.assign.depth_skipped.txt" "$OUT.assign.unannotated.txt" "$OUT.assign.excluded.txt"; do [ -s "$f" ] && cat "$f"; done; true; } | sort -u > "$OUT.assign.skipped.txt"
   if [ -s "$OUT.assign.skipped.txt" ]; then
     mem+=(--skip-families "$OUT.assign.skipped.txt")
     fam_regions skip "$OUT.assign.skipped.txt" > "$OUT.regions.txt"
