@@ -244,3 +244,16 @@ and does not apply here (Amendment 11). On the 250 GB singlenode class the best 
 gw10 (5,507 s) vs gw11 (4,514 s) on the same node and env isolates turnstile + sort at ~1,000 s, confirming
 the Correction. Settings for the 104-core class are not shipped as defaults (they assume 1 TB and 96 cores);
 `RUSTLE_STAR_THREADS=24 RUSTLE_REGION_READ_BUDGET=6000000 --threads 96` is the recorded recipe.
+
+## Result 7 (2026-11-06 08:05): e2e measured 8,905 s = 2.47 h on singlenode; end-to-end bar PASSES by 95 s
+
+e2e (job 4447488, singlenode 72 cores / 250 GB, `all --to assign`, clean directory, shipped defaults, bin9):
+exit 0, wall 8,905 s, peak RSS 214.0 GB. Stages: assemble 2,700 s, families 324 s, assign 5,865 s. Bar
+<= 2.5 h (9,000 s) PASS with 95 s to spare; Amendment 12 predicted 2.7 h FAIL and was wrong because assign
+ran 5,865 s, not 6,589 s. The six assign tables are NOT identical to gw_off and the comparison is not
+interpretable: the fresh assembly differs from gw_off's upstream (a1.gtf 2,193,334 vs 2,178,364 lines;
+a1.fam.copies.tsv 7,691 vs 7,988 copies; a1.families.tsv identical), so assign saw a different copy set, which
+also explains the shorter assign wall. Assign identity on a fixed input is established by gw7 and gw11, not by
+this run. Where the upstream difference comes from (gw_off's assembly predates the 2026-11-02 layers split and
+the r1525 strand vote) is not part of this row. Margin is thin: on the same class gw7 assign was 6,589 s, which
+would put the end to end at 2.67 h FAIL; the bar passes on this measurement but not with margin.
