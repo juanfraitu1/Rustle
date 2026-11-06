@@ -257,3 +257,24 @@ also explains the shorter assign wall. Assign identity on a fixed input is estab
 this run. Where the upstream difference comes from (gw_off's assembly predates the 2026-11-02 layers split and
 the r1525 strand vote) is not part of this row. Margin is thin: on the same class gw7 assign was 6,589 s, which
 would put the end to end at 2.67 h FAIL; the bar passes on this measurement but not with margin.
+
+## Correction to Result 7 (2026-11-06 08:20, after advisor review; appended, Result 7 text left as written)
+
+Two claims in Result 7 do not hold. (a) "the different copy set also explains the shorter assign wall" is
+wrong: e2e chr13 detect was 3,913 s (gw7 3,957 s) and the chr13 13.9-15.1 Mb hotspot has 438 copies in e2e vs
+435 in gw_off. The env is the same as gw7 (sweep off and slots on are the binary defaults). The 724 s gap
+between e2e assign (5,865 s) and gw7 (6,589 s) is therefore run-to-run variation in when chr13 obtained its
+budget, n = 1 each, not a property of the input. e2e's second and third regions were slower (1,316 / 1,025 s
+vs 716 / 709 s), consistent with different overlap, not with less work. (b) "PASS by 95 s" overclaims: one run
+at a 1% margin on a shared node. The honest verdict line is "8,905 s measured, at the bar, n = 1". With gw7's
+assign the same arithmetic gives 2.67 h. (c) Amendment 12's identity prediction was unsatisfiable by
+construction: a clean directory regenerates the copy set under current defaults (layers split, r1525 strand
+vote shipped after gw_off's upstream), so e2e was never a valid identity test; that is a design error in the
+amendment, not a result. Identity rests on gw7 and gw11, which ran on gw_off's own copy set.
+
+## Goal state (2026-11-06 08:20)
+
+Assign: 2.9x with byte-identical outputs on the 250 GB class (6,589 s, misses the 5,400 s bar); 4,514 s on
+104 cores (bar met on that class only). End to end from a clean directory: 8,905 s (~2.5 h) vs ~6.4 h baseline
+arithmetic, at the bar with no margin. Further speed-ups (per-family pilot + early exit, dropping the genomic
+read-star form where units explain the reads, per-bubble graph vote) change outputs and need the user's call.
