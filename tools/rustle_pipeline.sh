@@ -855,13 +855,25 @@ stage_assign() {
     "$BIN/utilities" window-depth --bam "$BAM" --copies "$OUT.fam.copies.tsv" --max "$MAX_WINDOW_RECORDS" \
       --out "$OUT.assign.depth_skipped.tsv" 2>> "$OUT.assign.depth.log"
     if [ -s "$OUT.assign.depth_skipped.tsv" ]; then
-      cut -f1 "$OUT.assign.depth_skipped.tsv" > "$OUT.assign.depth_skipped.txt"
-      mem+=(--skip-families "$OUT.assign.depth_skipped.txt")
+      cut -f1 "$OUT.assign.depth_skipped.tsv" > "$OUT.assign.depth_skipped.txt"   # --skip-families is passed once below
       say "assign: $(wc -l < "$OUT.assign.depth_skipped.tsv") famil(ies) with a copy window over $MAX_WINDOW_RECORDS records are not assigned ($OUT.assign.depth_skipped.tsv)"
     fi
   fi
+  # RUSTLE_ANNOTATED_ONLY=GFF (opt-in, row 1551): families with no copy on a `gene` feature of GFF join the skip list
+  # (A119b: 212 of 1,565, among them every chr13 hotspot family that sets the assign wall). Output-changing: not a default.
+  rm -f "$OUT.assign.unannotated.txt"
+  if [ -n "${RUSTLE_ANNOTATED_ONLY:-}" ]; then
+    python3 "$(dirname "$0")/annotated_families.py" "$OUT.fam.copies.tsv" "$RUSTLE_ANNOTATED_ONLY" > "$OUT.assign.unannotated.txt" 2>> "$OUT.assign.depth.log" || exit 2
+    say "assign: annotated-only: $(wc -l < "$OUT.assign.unannotated.txt") famil(ies) with no copy on a gene of $RUSTLE_ANNOTATED_ONLY are not assigned ($OUT.assign.unannotated.txt)"
+  fi
   # the regions are rebuilt without the skipped families: a region left with no family would be read whole
-  if [ -s "$OUT.assign.depth_skipped.txt" ]; then fam_regions skip "$OUT.assign.depth_skipped.txt" > "$OUT.regions.txt"; else fam_regions all > "$OUT.regions.txt"; fi
+  cat "$OUT.assign.depth_skipped.txt" "$OUT.assign.unannotated.txt" 2>/dev/null | sort -u > "$OUT.assign.skipped.txt"
+  if [ -s "$OUT.assign.skipped.txt" ]; then
+    mem+=(--skip-families "$OUT.assign.skipped.txt")
+    fam_regions skip "$OUT.assign.skipped.txt" > "$OUT.regions.txt"
+  else
+    fam_regions all > "$OUT.regions.txt"
+  fi
   "$BIN/copy_assign" --bam "$BAM" --fasta "$FASTA" --regions "$OUT.regions.txt" --families "$OUT.fam.copies.tsv" \
     --copies-fa "$OUT.fam.copies.fa" "${ASSIGN_FAST[@]}" "${mem[@]}" "${INSPECT_ASSIGN[@]}" --out "$OUT.assign" > "$OUT.assign.log" 2>&1 \
     || { local rc=$?; say "assign: copy_assign failed (exit $rc), see $OUT.assign.log"; exit "$rc"; }
