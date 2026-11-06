@@ -575,14 +575,17 @@ stage_assemble() {
     off) ;;
     *) echo "[rustle_pipeline] RUSTLE_ASSEMBLY_LAYERS must be on or off (got '$RUSTLE_ASSEMBLY_LAYERS')" >&2; exit 2 ;;
   esac
+  # r1564 PASS (2026-11-07): contigs swept in parallel (--region-threads; low-mem mode sets 1 = serial), A119b assemble
+  # 2,588 -> 1,685 s, six products byte-identical, RSS 16 GB. The read budget is 20M records here, not assign's 4M:
+  # at 4M chr1/chr2/chr13 (5-6M records each) run alone and the sweep stays near serial.
   local fin_pid=""
   rm -f "$OUT.final.gtf" "$OUT".final_run.*
   if [ "${#layers[@]}" -gt 0 ]; then
-    env "${seed_env[@]}" "$BIN/copy_assign" --assemble-only "${scope[@]}" --assembly-junctions strict $POLISH "${layers[@]}" --gtf-tpm \
+    env "${seed_env[@]}" RUSTLE_REGION_READ_BUDGET=20000000 "$BIN/copy_assign" --assemble-only --region-threads "${RUSTLE_REGION_THREADS:-8}" "${scope[@]}" --assembly-junctions strict $POLISH "${layers[@]}" --gtf-tpm \
       --bam "$BAM" --fasta "$FASTA" --out "$OUT.final_run" > "$OUT.final.log" 2>&1 &
     fin_pid=$!
   fi
-  env "${seed_env[@]}" "$BIN/copy_assign" --assemble-only "${scope[@]}" --assembly-junctions strict $POLISH --gtf-tpm \
+  env "${seed_env[@]}" RUSTLE_REGION_READ_BUDGET=20000000 "$BIN/copy_assign" --assemble-only --region-threads "${RUSTLE_REGION_THREADS:-8}" "${scope[@]}" --assembly-junctions strict $POLISH --gtf-tpm \
     --bam "$BAM" --fasta "$FASTA" --out "$OUT" > "$OUT.assemble.log" 2>&1
   if [ -n "$fin_pid" ]; then
     if wait "$fin_pid" && [ -s "$OUT.final_run.gtf" ]; then
