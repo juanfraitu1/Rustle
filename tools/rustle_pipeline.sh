@@ -985,7 +985,12 @@ run_all() {
     rm -f "$OUT.all.env"
     say "all: $st"
     local rc=0
-    /usr/bin/time -f $'wall_s\t%e\npeak_rss_kb\t%M' -o "$OUT.$st.time.tmp" bash "$0" "$st" "${args[@]}" || rc=$?
+    if [ -x /usr/bin/time ]; then
+      /usr/bin/time -f $'wall_s\t%e\npeak_rss_kb\t%M' -o "$OUT.$st.time.tmp" bash "$0" "$st" "${args[@]}" || rc=$?
+    else
+      # compute nodes without GNU time (r1543 e2e, 2026-11-06): wall only, no peak RSS
+      local st0=$SECONDS; bash "$0" "$st" "${args[@]}" || rc=$?; printf 'wall_s\t%s\n' "$(( SECONDS - st0 ))" > "$OUT.$st.time.tmp"
+    fi
     { cat "$OUT.$st.time.tmp" 2>/dev/null | grep -E '^(wall_s|peak_rss_kb)'; printf 'exit\t%s\n' "$rc"; } > "$OUT.$st.time"; rm -f "$OUT.$st.time.tmp"
     [ "$rc" = 0 ] || { say "all: $st FAILED (exit $rc); see $OUT.$st.time and the stage's log"; exit "$rc"; }
     printf '%s\n' "$env_now" > "$OUT.all.env"
