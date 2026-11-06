@@ -7430,8 +7430,6 @@ fn main() -> Result<()> {
     // lives here). Pure w.r.t. the read-only genome/bam_cache. The heavy read SEQUENCES are dropped here —
     // only the read NAMES + computed `fams` are returned — so collecting every region's result is lightweight.
     static READ_BUDGET: std::sync::OnceLock<rustle::family::Permits> = std::sync::OnceLock::new();
-    static TURN: (std::sync::Mutex<usize>, std::sync::Condvar) = (std::sync::Mutex::new(0), std::sync::Condvar::new());
-    thread_local! { static DISPATCH_POS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
     let compute = |contig: &String, lo: u64, hi: u64| -> Result<RegionWork> {
         // §6dh: on the --families path, gather from the supplied copies' own neighbourhoods rather than
         // the whole bound region — a dispersed family's hull can be tens of Mb while its copies occupy a
@@ -7448,19 +7446,6 @@ fn main() -> Result<()> {
         // r1543 read budget: a region holds its estimated record count (from the BAM index, no decoding) out of
         // RUSTLE_REGION_READ_BUDGET (default 2,500,000) from before its fetch until it is done; a region above the budget
         // takes it whole and runs alone. Eight heavy regions fetched at once (4.4M records) were OOM-killed at 250 GB.
-        // r1543 gw9: regions acquire the budget in dispatch order (largest first), so chr13 holds the pool before
-        // the seven other big regions take it (gw8: it waited behind 236 regions and set the wall alone).
-        // The fallible estimate runs before the turnstile so an error cannot leave the other threads waiting.
-        let est = match &bam_cache {
-            Some(c) if args.region_threads > 1 => Some(c.estimate_records(&args.bam, &wins)? as usize),
-            _ => None,
-        };
-        let _turn = (args.region_threads > 1).then(|| {
-            let pos = DISPATCH_POS.with(|p| p.get());
-            let (m, cv) = &TURN;
-            let g = cv.wait_while(m.lock().unwrap(), |t| *t != pos).unwrap();
-            g
-        });
         let _budget = match &bam_cache {
             Some(c) if args.region_threads > 1 => Some(
                 READ_BUDGET
@@ -7470,8 +7455,7 @@ fn main() -> Result<()> {
                         )
                     })
                     .acquire({
-                        let _ = c;
-                        let est = est.unwrap();
+                        let est = c.estimate_records(&args.bam, &wins)? as usize;
                         if timing {
                             eprintln!("[timing] budget estimate {contig}:{lo}-{hi}: {est} records");
                         }
@@ -7480,11 +7464,6 @@ fn main() -> Result<()> {
             ),
             _ => None,
         };
-        if let Some(mut g) = _turn {
-            *g += 1;
-            drop(g);
-            TURN.1.notify_all();
-        }
         if timing && _budget.is_some() {
             eprintln!("[timing] budget held {contig}:{lo}-{hi}");
         }
@@ -8606,15 +8585,12 @@ fn main() -> Result<()> {
                 o
             };
             let next = std::sync::atomic::AtomicUsize::new(0);
-            *TURN.0.lock().unwrap() = 0;
             let slots: Vec<std::sync::Mutex<Option<Result<RegionWork>>>> =
                 chunk.iter().map(|_| std::sync::Mutex::new(None)).collect();
             std::thread::scope(|sc| {
                 for _ in 0..args.region_threads.min(chunk.len()) {
                     sc.spawn(|| loop {
-                        let k = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        let Some(&i) = order.get(k) else { break };
-                        DISPATCH_POS.with(|p| p.set(k));
+                        let Some(&i) = order.get(next.fetch_add(1, std::sync::atomic::Ordering::Relaxed)) else { break };
                         let (c, lo, hi) = &chunk[i];
                         *slots[i].lock().unwrap() = Some(compute(c, *lo, *hi));
                     });

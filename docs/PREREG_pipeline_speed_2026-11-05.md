@@ -177,3 +177,16 @@ and releases the turn once it holds it, so the largest region (chr13, position 0
 other region can take permits; everything else unchanged (env as gw7). Predictions: chr13 budget held at
 t ~ 0, wall ~ 870 + 3,960 = 4,800-5,100 s (PASS if <= 5,400), peak RSS <= 220 GB, six tables identical.
 If wall > 5,400 s: FAIL stands at gw7's figure.
+
+## Result 4 (2026-11-06 02:40): gw9 turnstile cancelled at 30 min; scheduling cannot meet the bar
+
+gw9 (job 4447403): chr13 held the pool at t = 0 as predicted, but only 1 other region finished in 30 min
+(gw7: 467). The turnstile makes position k+1 wait until position k HOLDS its permits; positions 1-7 are
+1.1-3.2M-record regions that do not fit in the 0.66M left beside chr13, so every region queued behind them.
+Projected wall >= 4,830 (chr13) + 2,300 (the rest at 8 threads) > 7,000 s: outcome decided, cancelled per
+the no-waiting rule. Turnstile code reverted (largest-first sort kept). Amendment 10 prediction FAILED.
+Closing analysis: chr13 alone needs fetch + detect ~ 4,800 s on 64 cores (family 4 x star 16); the other 935
+regions need ~39 min of 8-thread wall. They can only overlap by sharing those cores, which is what gw7 did
+(6,589 s). Meeting 5,400 s needs chr13's own detect cut (cheaper read-star for the eight 30k-molecule
+families), not a different schedule. Row 1543 verdict unchanged: FAIL on wall at 6,589 s (2.9x), PASS
+identity + RSS, end to end ~2.7 h FAIL. gw7 settings remain the shipped defaults.
