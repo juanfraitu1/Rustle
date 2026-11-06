@@ -45,3 +45,6 @@ only) run with RUSTLE_EXCLUDE_BED (censat v2.1) + RUSTLE_DISPATCH_DEFER=1. Predi
 families ~320 + assign ~850-1,000 (a fresh assembly has a different catalogue) = 3,900-4,100 s each; PASS.
 Bar A under exclusion is reported, not judged (Result gw18 note); the goal text's absolute figure (~4,550 s) is
 met. Jobs e2e1/2/3 submitted after this amendment.
+Note (23:20): the first e2e1/2/3 submissions (4450932-34) died at 31 s: the frozen bin14 held copy_assign only
+and the assemble stage calls as_table/mcl_families/etc. Resubmitted with bin16 = the full binary set built from
+the same source plus the opt-in row 1558 shrink (RUSTLE_BUDGET_SHRINK unset = gw15 path). No number was seen.
