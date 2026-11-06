@@ -40,3 +40,18 @@ running only as the genome-wide identity check of the deferral code. gw14: bin12
 changed to the BAM-index record estimate (in-memory, no decoding; the quantity the budget is charged in), rule
 otherwise unchanged. Bars and prediction as registered: assign <= 5,400 s, identical, RSS < 250 GB; wall
 4,500-5,000 s with chr13 held at t ~ 0.
+
+## Result gw14 (2026-11-06 20:05): cancelled at 58 min, outcome decided (FAIL); two loop defects
+gw14 (job 4450579): 931 of 936 regions deferred; chr13 `budget held` at log line 8,131 (threads 1-7 raced it for
+the pool with try_acquire before it could hold); the main list was exhausted in seconds, and the drain phase then
+took deferred regions largest-first with the blocking acquire, so seven threads blocked behind chr13 (597 regions
+done at 58 min; gw9's serialisation). Cancelled per the no-waiting rule. gw13 left running as the identity check.
+
+## Amendment 2 (2026-11-06 20:10, before gw15): head gate + rolling retry
+1. Head gate: threads other than position 0 wait until position 0 holds its budget (or fails) before their
+   first acquire, so chr13 takes the empty pool. Cost: one acquire's latency (~0 s, pool empty).
+2. Deferred regions are a rolling queue: a thread pops the front, try_acquire; on failure pushes it back and
+   sleeps 200 ms when it has cycled the whole queue. No blocking acquire anywhere after position 0. A region
+   that needs the whole pool fits once everything else has finished.
+Bars and prediction unchanged (assign <= 5,400 s, identical, RSS < 250 GB; wall 4,500-5,000 s). Pre-check
+(pre13 recipe) must pass first: identical tables, all regions computed, no hang.
