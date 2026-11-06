@@ -1,0 +1,28 @@
+# PREREG: chain once on a family graph (row 1552, 2026-11-06 20:40, user-requested parallel lever)
+
+## Question
+Read-star chains every molecule against every copy (MCL1: 30,034 molecules x 31 copies, 1,372 s at 16 threads).
+A family sequence graph (copies collapsed, divergence as bubbles) lets one graph chaining per read replace 31
+chainings, with the copy read off the bubbles the chain passes. Does minigraph's graph chaining give the same
+copy calls as read-star at a fraction of the time?
+
+## Set-up (prototype, outside the Rust code; row 1544's inputs on /anvme/workspace/v138da13-rustle/r1544)
+MCL1: 31 genomic copy windows (+-2 kb, genomic.fa), 15,828 of its 30,034 molecules recovered (reads.fa);
+baseline = gw7 assignments restricted to those reads: 35 assigned, 41 tied, 15,752 ambiguous.
+Control: row 1544's `minimap2 -x splice` CLI run on the same reads, 469 s at 16 threads.
+Graph: `minigraph -cxggs` over the 31 windows (first = backbone) with `-L` lowered so that PSV-scale divergence
+forms bubbles (minigraph's default ignores variants < 50 bp, which would erase the copy signal). Each copy's walk =
+its own window aligned to the graph. Reads: `minigraph -cx lr -t 16`. Copy call per read: the copy whose walk
+shares the most copy-specific segments with the read's path; assigned iff a unique best with margin >= 1 segment.
+
+## Bars (fixed before any number; loss bound chosen by me, amendable only before the run)
+- Time: graph build + read alignment <= 160 s at 16 threads (>= 3x the 469 s control on the same reads).
+- Agreement: of the 35 baseline-assigned reads, >= 31 get the same copy (loss <= 4), and <= 1 gets a different
+  copy. Of the 41 tied, report how many the graph assigns (ties are the "do not call" class: a high number is a
+  false-confidence warning, not a gain).
+- Of the 15,752 ambiguous, report the newly assigned count; no bar (unverifiable), reported for the record.
+## Prediction
+Time passes (minigraph long-read chaining is seconds to a minute on 16k reads). Agreement is the coin flip: if
+`-L` cannot be lowered far enough, copies collapse and most reads land on the backbone with no copy-specific
+segment (loss near 35 = FAIL, lever closed at the graph-construction step, not the chaining idea). If bubbles
+form at PSVs, agreement 28-34 of 35, tie calls 5-15.
