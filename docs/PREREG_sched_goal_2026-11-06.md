@@ -48,3 +48,13 @@ met. Jobs e2e1/2/3 submitted after this amendment.
 Note (23:20): the first e2e1/2/3 submissions (4450932-34) died at 31 s: the frozen bin14 held copy_assign only
 and the assemble stage calls as_table/mcl_families/etc. Resubmitted with bin16 = the full binary set built from
 the same source plus the opt-in row 1558 shrink (RUSTLE_BUDGET_SHRINK unset = gw15 path). No number was seen.
+
+## Result bar C (jobs 4450964-66, bin16, clean directories, censat BED + DISPATCH_DEFER=1)
+| run | wall | RSS | satellite families skipped |
+|---|---|---|---|
+| e2e1 | 3,581 s | 46.2 GB | 552 |
+| e2e2 | 3,671 s | 44.0 GB | 552 |
+| e2e3 | 3,611 s | 45.4 GB | 552 |
+Three of three <= 7,200 s: bar C PASS (time only, Amendment 1). Prediction 3,900-4,100 s was slightly high.
+Goal summary: A not judged under exclusion (regime change, Result gw18), B PASS, C PASS. Goal cleared by the user
+2026-11-07 00:00.
