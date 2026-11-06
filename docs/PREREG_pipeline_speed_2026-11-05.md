@@ -219,3 +219,17 @@ The end-to-end bar (<= 2.5 h) was never measured. e2e job: `rustle_pipeline.sh a
 directory on singlenode (72 cores, 250 GB), shipped defaults, no RUSTLE_* speed variables exported, --no-cache.
 The flag stage is excluded (--to assign), as in the baseline arithmetic. Prediction: 47 + 5 + 110 min ~ 2.7 h
 (FAIL); the six assign tables identical to gw_off. This measures, it does not change the verdict.
+
+## Correction (2026-11-06 05:30, before gw11 and e2e rerun): gw10 and the first e2e ran the TURNSTILE binary
+
+`~/r1543/bin8/copy_assign` was rebuilt for gw9 (turnstile) at 01:44 and never rebuilt after the source
+revert; gw10 and e2e job 4447459 used it. So Result 5 measured turnstile + largest-first on 104 cores, not
+"gw8 binary, sort kept, no turnstile" as Amendment 11 states (gw10's log fits: chr13 held at 0 regions,
+11 regions in 64 min). Result 5's wall (5,507 s) and identity stand as measured; its attribution is wrong
+and a clean 104-core arm is untested. Also: the largest-first sort is NOT harmless (Result 3 claimed so):
+gw8 vs gw7 on the same node and env differ only by the sort, 7,071 vs 6,589 s. Sort reverted in source;
+the shipped source now equals the gw7 logic. New binary `bin9` built from HEAD.
+gw11: spr1tb, gw7 env with RUSTLE_STAR_THREADS=24, budget 6M, --threads 96, bin9 (no ordering trick).
+Prediction: with 6M, chr13 (3.3M) fits beside the others from the start; wall 3,900-4,800 s (PASS),
+RSS above gw10's 204 GB (fine on 1 TB), six tables identical.
+e2e rerun with bin9 (Amendment 12 otherwise unchanged); e2e job 4447459 cancelled, no numbers taken from it.
