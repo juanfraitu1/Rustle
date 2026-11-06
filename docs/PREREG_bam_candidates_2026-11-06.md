@@ -26,3 +26,14 @@ Time passes (single-target chaining has no cross-copy seed hits). Observations p
 Guard FAILS: 28 of 35 assigned reads and 39 of 41 tied reads have a competitor within 10 AS that the BAM does
 not reach, so ~30-39 ties are predicted to resolve falsely. If so the lever is closed at the CLI stage and the
 Rust hook is not written. A pass would send it to the hot9 panel in Rust with the same guard.
+
+## Result (2026-11-07 00:50): FAIL on time, observations and assigned; guard PASSED; row closed
+r1557 (job 4450784): per-copy loop 345 s vs 469 s control (1.36x; bar <= 160 s FAIL) for 141,490 read-copy
+pairs vs 397,462, i.e. the pair count fell 2.8x but the wall only 1.4x: single-target runs produce 610,285 PAF
+lines (secondaries within one target are no longer pruned by -p against the best over all copies), and 31
+invocations each re-index and re-seed. Observations: AS identical on 90.5% of shared (read, copy) pairs (bar
+>= 99% FAIL): chaining differs without the competitor targets. Assigned: 27 of 35 keep their copy as unique
+best among reached copies (bar 35 FAIL). Guard: 2 of 41 ties resolve by pruning (bar <= 5 PASS; prediction of
+30-39 FAILED, in the safe direction: AS ties mostly persist among reached copies). Lever closed; the Rust hook
+is not written. What stands from the row: the super-family structure of the nine hotspot families and the BAM
+reach figures (8.9 of 31 copies per molecule, all 48 assigned copies reached).
