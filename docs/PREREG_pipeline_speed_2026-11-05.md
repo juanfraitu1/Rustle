@@ -169,3 +169,11 @@ Final verdict for row 1543: assign wall bar FAIL (best 6,589 s, gw7, 2.9x), iden
 end ~2.7 h FAIL by arithmetic. Shipped defaults = gw7 settings; largest-first sort stays (harmless, identical).
 Next row: budget acquisition in dispatch order (a turnstile so the largest region holds first), predicted
 wall ~ 870 + 3,960 = 4,800-5,000 s.
+
+## Amendment 10 (2026-11-06 02:00, after Result 3, before gw9): budget acquired in dispatch order
+
+gw9: gw8 binary plus a turnstile: a region waits for its dispatch position before acquiring the read budget
+and releases the turn once it holds it, so the largest region (chr13, position 0) holds the pool before any
+other region can take permits; everything else unchanged (env as gw7). Predictions: chr13 budget held at
+t ~ 0, wall ~ 870 + 3,960 = 4,800-5,100 s (PASS if <= 5,400), peak RSS <= 220 GB, six tables identical.
+If wall > 5,400 s: FAIL stands at gw7's figure.
