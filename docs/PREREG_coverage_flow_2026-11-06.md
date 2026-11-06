@@ -21,3 +21,12 @@ scale of read-star's own margin rule, as_margin); M-step w_c = mean_r P(c | r); 
 Agreement passes (large margins dominate the prior). Ties: 30-70% resolved, concentrated on the 3-5 copies with
 the most unique reads. The row cannot establish correctness; if agreement passes, the next step would be the
 same procedure on KB3781, where haplotype truth exists (memory: O2 ms-tie scope), before any adoption.
+
+## Result (2026-11-06 22:25): FAIL on agreement; row closed
+EM over 15,828 reads x 31 copies (T = 10, 50 iterations): flow-assigned 2,458 reads (15.5%). Of the 35
+baseline-assigned reads: 7 same copy (20%; bar >= 90% FAIL), 0 different, 28 unresolved (posterior < 0.9).
+Ties: 2 of 41 resolved (both to copy 17). Ambiguous: 2,449 of 15,752 called, 1,701 to copy 17 and 553 to
+copy 29, the two copies whose weights reached 0.48 and 0.33: the predicted rich-get-richer artifact. Reading:
+read-star's assignments rest on decisive PSV sites, not on the raw AS margin, and on the genomic AS the
+assigned reads are near-ties (28 of 35 unresolved), so a coverage prior cannot reproduce them and mostly moves
+ambiguous reads toward the two deepest copies. T was fixed before the run and not retuned. Lever closed.
