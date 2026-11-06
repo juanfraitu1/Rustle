@@ -190,3 +190,13 @@ regions need ~39 min of 8-thread wall. They can only overlap by sharing those co
 (6,589 s). Meeting 5,400 s needs chr13's own detect cut (cheaper read-star for the eight 30k-molecule
 families), not a different schedule. Row 1543 verdict unchanged: FAIL on wall at 6,589 s (2.9x), PASS
 identity + RSS, end to end ~2.7 h FAIL. gw7 settings remain the shipped defaults.
+
+## Amendment 11 (2026-11-06 02:55, before gw10): more cores, since the floor is CPU-bound
+
+chr13's eight heavy families cost ~153k core-seconds (eight x ~1,200 s x 16 threads) and scale near
+linearly with star threads (MCL1 1,452 s at 8 vs 248 s at 64, docs/PERFORMANCE.md). gw7 at 72 cores is near
+the CPU floor, so the remaining lever is a bigger node. gw10: spr1tb (104 cores, 1 TB), gw8 binary (sort kept,
+no turnstile), env as gw7 except RUSTLE_STAR_THREADS=24 (family 4 x star 24 = 96), --threads 96,
+RUSTLE_REGION_READ_BUDGET=6M. Predictions: wall 4,600-5,200 s (PASS if <= 5,400), peak RSS 220-300 GB (fine on
+1 TB; the 250 GB bar is a singlenode bar and does not apply to this node class, stated now), six tables
+identical. If wall > 5,400 s: FAIL stands; the bar is then out of reach without changing read-star itself.
