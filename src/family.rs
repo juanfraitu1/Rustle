@@ -82663,6 +82663,15 @@ impl Permits {
         *f -= n;
         PermitGuard { pool: self, n }
     }
+    /// r1548: take n now or return None; never waits (a dispatch thread must not idle on a budget it cannot hold).
+    pub fn try_acquire(&'static self, n: usize) -> Option<PermitGuard> {
+        let n = n.min(self.cap).max(1);
+        let mut f = self.free.lock().unwrap();
+        (*f >= n).then(|| {
+            *f -= n;
+            PermitGuard { pool: self, n }
+        })
+    }
 }
 pub struct PermitGuard {
     pool: &'static Permits,

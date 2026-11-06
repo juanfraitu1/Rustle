@@ -7430,7 +7430,10 @@ fn main() -> Result<()> {
     // lives here). Pure w.r.t. the read-only genome/bam_cache. The heavy read SEQUENCES are dropped here —
     // only the read NAMES + computed `fams` are returned — so collecting every region's result is lightweight.
     static READ_BUDGET: std::sync::OnceLock<rustle::family::Permits> = std::sync::OnceLock::new();
-    let compute = |contig: &String, lo: u64, hi: u64| -> Result<RegionWork> {
+    // r1548: set by the dispatch loop under RUSTLE_DISPATCH_DEFER=1; `compute` then returns Ok(None) instead of blocking
+    // when the region's budget cannot be taken now (gw12: chr13 starved on the pool for ~2,000 s, then ran alone).
+    thread_local! { static MAY_DEFER: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; }
+    let compute = |contig: &String, lo: u64, hi: u64| -> Result<Option<RegionWork>> {
         // §6dh: on the --families path, gather from the supplied copies' own neighbourhoods rather than
         // the whole bound region — a dispersed family's hull can be tens of Mb while its copies occupy a
         // few hundred kb, and a read overlapping no copy can never be assigned to one. Cross-chromosome
@@ -7447,21 +7450,30 @@ fn main() -> Result<()> {
         // RUSTLE_REGION_READ_BUDGET (default 2,500,000) from before its fetch until it is done; a region above the budget
         // takes it whole and runs alone. Eight heavy regions fetched at once (4.4M records) were OOM-killed at 250 GB.
         let _budget = match &bam_cache {
-            Some(c) if args.region_threads > 1 => Some(
-                READ_BUDGET
-                    .get_or_init(|| {
-                        rustle::family::Permits::new(
-                            std::env::var("RUSTLE_REGION_READ_BUDGET").ok().and_then(|v| v.parse().ok()).unwrap_or(2_500_000),
-                        )
-                    })
-                    .acquire({
-                        let est = c.estimate_records(&args.bam, &wins)? as usize;
-                        if timing {
-                            eprintln!("[timing] budget estimate {contig}:{lo}-{hi}: {est} records");
+            Some(c) if args.region_threads > 1 => {
+                let pool = READ_BUDGET.get_or_init(|| {
+                    rustle::family::Permits::new(
+                        std::env::var("RUSTLE_REGION_READ_BUDGET").ok().and_then(|v| v.parse().ok()).unwrap_or(2_500_000),
+                    )
+                });
+                let est = c.estimate_records(&args.bam, &wins)? as usize;
+                if timing {
+                    eprintln!("[timing] budget estimate {contig}:{lo}-{hi}: {est} records");
+                }
+                if MAY_DEFER.with(|d| d.get()) {
+                    match pool.try_acquire(est) {
+                        Some(g) => Some(g),
+                        None => {
+                            if timing {
+                                eprintln!("[timing] deferred {contig}:{lo}-{hi}");
+                            }
+                            return Ok(None);
                         }
-                        est
-                    }),
-            ),
+                    }
+                } else {
+                    Some(pool.acquire(est))
+                }
+            }
             _ => None,
         };
         if timing && _budget.is_some() {
@@ -8522,7 +8534,7 @@ fn main() -> Result<()> {
             } else {
                 Vec::new()
             };
-        Ok(RegionWork {
+        Ok(Some(RegionWork {
             contig: contig.clone(),
             lo,
             hi,
@@ -8547,7 +8559,7 @@ fn main() -> Result<()> {
             readthrough,
             tss: tss_ev,
             bridge: bridge_ev,
-        })
+        }))
     };
     // Compute all regions (out-of-order across contigs when region_threads > 1), collected in the flat order.
     let batch: usize = if sweep_on {
@@ -8567,12 +8579,45 @@ fn main() -> Result<()> {
             let next = std::sync::atomic::AtomicUsize::new(0);
             let slots: Vec<std::sync::Mutex<Option<Result<RegionWork>>>> =
                 chunk.iter().map(|_| std::sync::Mutex::new(None)).collect();
+            let defer = std::env::var("RUSTLE_DISPATCH_DEFER").map(|v| v == "1").unwrap_or(false);
+            // r1548 (opt-in): widest hull first so the heaviest region takes the empty pool at t = 0; a region whose
+            // budget does not fit now is pushed to `deferred` and drained (blocking) once the main list is exhausted.
+            let mut order: Vec<usize> = (0..chunk.len()).collect();
+            if defer {
+                order.sort_by_key(|&i| (std::cmp::Reverse(chunk[i].2.saturating_sub(chunk[i].1)), i));
+            }
+            let deferred: std::sync::Mutex<Vec<usize>> = std::sync::Mutex::new(Vec::new());
+            let drain_next = std::sync::atomic::AtomicUsize::new(0);
+            let nthreads = args.region_threads.min(chunk.len());
             std::thread::scope(|sc| {
-                for _ in 0..args.region_threads.min(chunk.len()) {
-                    sc.spawn(|| loop {
-                        let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        let Some((c, lo, hi)) = chunk.get(i) else { break };
-                        *slots[i].lock().unwrap() = Some(compute(c, *lo, *hi));
+                for _ in 0..nthreads {
+                    sc.spawn(|| {
+                        loop {
+                            let k = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            let Some(&i) = order.get(k) else { break };
+                            let (c, lo, hi) = &chunk[i];
+                            MAY_DEFER.with(|d| d.set(defer && k > 0));
+                            match compute(c, *lo, *hi) {
+                                Ok(None) => deferred.lock().unwrap().push(i),
+                                r => *slots[i].lock().unwrap() = Some(r.map(|o| o.expect("not deferred"))),
+                            }
+                        }
+                        MAY_DEFER.with(|d| d.set(false));
+                        loop {
+                            // the deferred list is complete once every thread has left the first loop; a thread that
+                            // arrives early just sees a shorter list and comes back for the rest
+                            let k = drain_next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            let Some(&i) = deferred.lock().unwrap().get(k).copied().as_ref() else {
+                                if next.load(std::sync::atomic::Ordering::Relaxed) < order.len() + nthreads {
+                                    drain_next.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                                    std::thread::sleep(std::time::Duration::from_millis(200));
+                                    continue;
+                                }
+                                break;
+                            };
+                            let (c, lo, hi) = &chunk[i];
+                            *slots[i].lock().unwrap() = Some(compute(c, *lo, *hi).map(|o| o.expect("blocking acquire")));
+                        }
                     });
                 }
             });
@@ -8583,7 +8628,7 @@ fn main() -> Result<()> {
         } else {
             chunk
                 .iter()
-                .map(|(c, lo, hi)| compute(c, *lo, *hi))
+                .map(|(c, lo, hi)| compute(c, *lo, *hi).map(|o| o.expect("sequential path never defers")))
                 .collect::<Result<Vec<_>>>()?
         };
         works.append(&mut w);
