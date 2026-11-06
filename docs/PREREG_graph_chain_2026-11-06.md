@@ -26,3 +26,16 @@ Time passes (minigraph long-read chaining is seconds to a minute on 16k reads). 
 `-L` cannot be lowered far enough, copies collapse and most reads land on the backbone with no copy-specific
 segment (loss near 35 = FAIL, lever closed at the graph-construction step, not the chaining idea). If bubbles
 form at PSVs, agreement 28-34 of 35, tie calls 5-15.
+
+## Result arm 1 (2026-11-06 21:20): minigraph collapses the family; closed at construction
+r1552 (job 4450720): at -L 50, 10 and 3 the rGFA has ONE segment (31 copies collapsed onto the backbone, no
+bubble); build 5-6 s, align 7-8 s, 17,985 GAF lines on 15,828 reads. No copy information exists in that graph, so
+the time bar is vacuous and agreement cannot be computed. The predicted construction-step failure.
+
+## Amendment 1 (2026-11-06 21:25, before scoring): arm 2 = seqwish graph + GraphAligner (row 1544 artifacts)
+Row 1544's follow-up run (mcl1.f.gfa: seqwish over the 31 units, 86 nodes, 31 P-line walks = the copy walks;
+GraphAligner 1.0.20, reads.f.gaf, 15,828 reads aligned, 7,745 end to end) was never scored. Same copy-call rule
+(copy-specific segments; unique best with margin >= 1) and the same agreement bars. Time bar: GraphAligner's own
+wall on those reads is not in the log; the arm reports agreement only, and a PASS there would send the time
+question to a timed rerun before any further claim. This arm uses the UNIT (transcript) sequences, so the
+comparison is against the same baseline (gw7) but the graph is of units, not genomic windows.
