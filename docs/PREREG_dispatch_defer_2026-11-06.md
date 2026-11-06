@@ -55,3 +55,8 @@ done at 58 min; gw9's serialisation). Cancelled per the no-waiting rule. gw13 le
    that needs the whole pool fits once everything else has finished.
 Bars and prediction unchanged (assign <= 5,400 s, identical, RSS < 250 GB; wall 4,500-5,000 s). Pre-check
 (pre13 recipe) must pass first: identical tables, all regions computed, no hang.
+
+## Result gw13 (2026-11-06 20:30): identity PASS genome-wide; wall 6,667 s FAIL as decided at 30 min
+gw13 (job 4450483, bin11 span key): 6,667 s, RSS 180 GB, six tables identical to gw_off, 20 deferrals, chr13
+held at line 17,065 and detect 3,935 s; the deferred regions ran after chr13 (last detect line 17,478), so the
+tail added ~440 s over gw12. The deferral path is genome-wide identical; the schedule was the defect (Amendment 1-2).
