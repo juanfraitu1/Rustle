@@ -212,3 +212,10 @@ under 2.5 h on this node class only. Verdict for row 1543 stays FAIL on the assi
 cores, 6,589 s on the 250 GB singlenode class the bar was written for), PASS identity and RSS. Scheduling
 and cores are exhausted; the next row is a per-family pilot with early exit: the eight chr13 hotspot families
 (all de novo copies at chr13 13.9-15.1 Mb, no CAT gene) align ~200k reads for ~120 unique assignments.
+
+## Amendment 12 (2026-11-06 04:40, before e2e): time the pipeline end to end with the shipped defaults
+
+The end-to-end bar (<= 2.5 h) was never measured. e2e job: `rustle_pipeline.sh all --to assign` from a clean
+directory on singlenode (72 cores, 250 GB), shipped defaults, no RUSTLE_* speed variables exported, --no-cache.
+The flag stage is excluded (--to assign), as in the baseline arithmetic. Prediction: 47 + 5 + 110 min ~ 2.7 h
+(FAIL); the six assign tables identical to gw_off. This measures, it does not change the verdict.
