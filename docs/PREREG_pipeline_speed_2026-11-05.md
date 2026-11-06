@@ -200,3 +200,15 @@ no turnstile), env as gw7 except RUSTLE_STAR_THREADS=24 (family 4 x star 24 = 96
 RUSTLE_REGION_READ_BUDGET=6M. Predictions: wall 4,600-5,200 s (PASS if <= 5,400), peak RSS 220-300 GB (fine on
 1 TB; the 250 GB bar is a singlenode bar and does not apply to this node class, stated now), six tables
 identical. If wall > 5,400 s: FAIL stands; the bar is then out of reach without changing read-star itself.
+
+## Result 5 (2026-11-06 04:25): gw10 on 104 cores, 5,507 s; wall bar missed by 107 s
+
+gw10 (job 4447416, spr1tb 104 cores, family 4 x star 24, budget 6M, largest-first sort): exit 0, wall 5,507 s,
+peak RSS 203.6 GB, six tables identical. chr13 held the pool at t = 0 and its detect took 3,011 s (gw7
+3,957 s), but only 11 other regions finished in the first 64 min: the sort put the seven other big regions
+(1.1-3.2M records) on the free threads with contended fetches, so the 925 small regions ran late. Amendment 11
+prediction (4,600-5,200 s) FAILED by 307 s; the bar by 107 s. End to end by arithmetic 47 + 5 + 92 min = 2.4 h,
+under 2.5 h on this node class only. Verdict for row 1543 stays FAIL on the assign bar (best 5,507 s on 104
+cores, 6,589 s on the 250 GB singlenode class the bar was written for), PASS identity and RSS. Scheduling
+and cores are exhausted; the next row is a per-family pilot with early exit: the eight chr13 hotspot families
+(all de novo copies at chr13 13.9-15.1 Mb, no CAT gene) align ~200k reads for ~120 unique assignments.
