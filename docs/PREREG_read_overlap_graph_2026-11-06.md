@@ -20,3 +20,11 @@ is the coin flip, and the pre-registered expectation is FAIL: either a giant com
 through regions without PSVs) or thousands of tiny components (strict rule + 1.7 kb reads with few overlaps per
 copy). Row 1552 showed graph bubbles do not separate these copies; overlaps may do better because they use
 base-level identity, which is why the arm is run.
+
+## Result (2026-11-06 22:05): FAIL by fusion, as predicted; row closed
+r1553 (job 4450724): all-vs-all 204 s at 16 threads (bar <= 160 FAIL), 2.93M overlaps, 498k edges under the strict
+rule. Components 2,267 of which 2,225 singletons; the largest holds 11,524 of 15,828 reads (72.8%; bar <= 20%
+FAIL). The 35 assigned reads sit in 10 components with 1 purity violation (bar <= 1, PASS but inside the giant
+component). Coverage 73.2% PASS only through the giant component. Reading: reads bridge copies through stretches
+without a PSV, so even a 0.2% mismatch rule percolates into one component; both failure modes appeared at once
+(a giant component plus 2,225 singletons). Lever closed. No further rule tried (post hoc).
