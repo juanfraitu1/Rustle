@@ -19,3 +19,8 @@ gw15: chr13 held at t ~ 0, wall 4,400-4,900 s; A passes if the other regions' ta
 under ~400 s; identical. e2e: assemble ~2,700 + families ~320 + assign ~4,600 = ~7,600 s > 7,200: bar C is
 predicted to FAIL on the assemble stage's share unless assign lands near 4,200 s. Stated now so the e2e verdict
 cannot be reinterpreted.
+
+## Amendment 1 (2026-11-06 21:00, before any e2e run): bar C identity clause withdrawn
+A clean-directory run re-assembles, and assemble is not byte-reproducible (row 1543 Result 7: 7,691 vs 7,988
+copies), so "assign tables identical to gw_off" cannot hold for an e2e run. Bar C = time only: each of three
+clean runs <= 7,200 s; each run's assign table set is kept and its copy count reported. Identity stays bar B.
