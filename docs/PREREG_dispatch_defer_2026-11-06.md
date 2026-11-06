@@ -31,3 +31,12 @@ pre13 (job 4450386; 14 regions, 585 families, budget forced to 50k so almost eve
 defer 1,388 s, 475 region records each, 93 deferrals, five tables identical, no hang. gw13 submitted.
 Clock note: the "13:00/13:10/13:40" stamps in the gw12 Result and this file's header were estimates; actual
 wall-clock was ~12:00-12:25.
+
+## Amendment 1 (2026-11-06 18:10, gw13 running, before gw14): sort key was wrong
+gw13 at 30 min: 933 of 936 regions done, 20 deferrals, but chr13's `budget held` is at log line 17,065, after the
+rest. Hull span put chr3 (200 Mb hull) and chr10 ahead of chr13 (105 Mb hull, 3.3M records), so chr13 was not
+position 0 and starved exactly as in gw12. gw13's wall outcome is decided (~1,800 + 4,124 s, FAIL); it is left
+running only as the genome-wide identity check of the deferral code. gw14: bin12 = bin11 with the dispatch key
+changed to the BAM-index record estimate (in-memory, no decoding; the quantity the budget is charged in), rule
+otherwise unchanged. Bars and prediction as registered: assign <= 5,400 s, identical, RSS < 250 GB; wall
+4,500-5,000 s with chr13 held at t ~ 0.

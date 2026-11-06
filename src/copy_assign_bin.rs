@@ -8584,7 +8584,19 @@ fn main() -> Result<()> {
             // budget does not fit now is pushed to `deferred` and drained (blocking) once the main list is exhausted.
             let mut order: Vec<usize> = (0..chunk.len()).collect();
             if defer {
-                order.sort_by_key(|&i| (std::cmp::Reverse(chunk[i].2.saturating_sub(chunk[i].1)), i));
+                // gw13: hull span put chr3 (200 Mb) ahead of chr13 (105 Mb, 3.3M records) and chr13 starved again; the
+                // BAM-index estimate is in-memory (no decoding) and is the quantity the budget is charged in.
+                let est_of = |i: usize| -> u64 {
+                    let (c, lo, hi) = &chunk[i];
+                    let wins: Vec<(String, u64, u64)> = region_windows
+                        .as_ref()
+                        .and_then(|w| w.get(&(c.clone(), *lo, *hi)))
+                        .cloned()
+                        .unwrap_or_else(|| vec![(c.clone(), *lo, *hi)]);
+                    bam_cache.as_ref().and_then(|b| b.estimate_records(&args.bam, &wins).ok()).unwrap_or(0)
+                };
+                let est: Vec<u64> = (0..chunk.len()).map(est_of).collect();
+                order.sort_by_key(|&i| (std::cmp::Reverse(est[i]), i));
             }
             let deferred: std::sync::Mutex<Vec<usize>> = std::sync::Mutex::new(Vec::new());
             let drain_next = std::sync::atomic::AtomicUsize::new(0);
