@@ -4490,6 +4490,27 @@ fn mono_primed_read(seq: &[u8], a: usize, b: usize) -> bool {
     mono_primed_rich(dn, b'A') || mono_primed_rich(up, b'T')
 }
 
+/// `--polish-mono-primed` counts: for each `[s, e)` of `monos` (sorted by start), (reads `[a, b)` overlapping >= half of
+/// it, how many of them are primed). Shared by the BAM pass and the sweep's in-memory evidence (r1566).
+fn mono_primed_count(seq: &[u8], monos: &[(i64, i64)], reads: impl IntoIterator<Item = (i64, i64)>) -> Vec<(u32, u32)> {
+    let mut out = vec![(0u32, 0u32); monos.len()];
+    let max_len = monos.iter().map(|m| m.1 - m.0).max().unwrap_or(0);
+    for (a, b) in reads {
+        let first = monos.partition_point(|m| m.0 < a - max_len);
+        let last = monos.partition_point(|m| m.0 < b);
+        let mut primed: Option<bool> = None;
+        for (i, &(s, e)) in monos.iter().enumerate().take(last).skip(first) {
+            if ((e.min(b) - s.max(a)) as f64) < 0.5 * (e - s) as f64 {
+                continue;
+            }
+            let p = *primed.get_or_insert_with(|| mono_primed_read(seq, a as usize, b as usize));
+            out[i].0 += 1;
+            out[i].1 += u32::from(p);
+        }
+    }
+    out
+}
+
 impl SnapBam {
     /// `--polish-mono-primed` evidence: for each `[s, e)` of `monos` (sorted by start), (unspliced primary reads
     /// overlapping >= half of it, how many of them are primed). [min s, max e] is split into MONO_PRIMED_CHUNKS
@@ -4533,8 +4554,7 @@ impl SnapBam {
         qhi: i64,
         keep: impl Fn(i64) -> bool,
     ) -> Result<Vec<(u32, u32)>> {
-        let mut out = vec![(0u32, 0u32); monos.len()];
-        let max_len = monos.iter().map(|m| m.1 - m.0).max().unwrap_or(0);
+        let mut reads: Vec<(i64, i64)> = Vec::new();
         let region: noodles_core::Region = format!("{chrom}:{}-{}", qlo + 1, qhi).parse()?;
         for result in self.reader.query(&self.header, &self.index, &region)? {
             let record = result?;
@@ -4568,20 +4588,9 @@ impl SnapBam {
             if spliced || span == 0 {
                 continue;
             }
-            let b = a + span;
-            let first = monos.partition_point(|m| m.0 < a - max_len);
-            let last = monos.partition_point(|m| m.0 < b);
-            let mut primed: Option<bool> = None;
-            for (i, &(s, e)) in monos.iter().enumerate().take(last).skip(first) {
-                if ((e.min(b) - s.max(a)) as f64) < 0.5 * (e - s) as f64 {
-                    continue;
-                }
-                let p = *primed.get_or_insert_with(|| mono_primed_read(seq, a as usize, b as usize));
-                out[i].0 += 1;
-                out[i].1 += u32::from(p);
-            }
+            reads.push((a, a + span));
         }
-        Ok(out)
+        Ok(mono_primed_count(seq, monos, reads))
     }
 
     fn open(bam: &str) -> Result<Self> {
@@ -7562,6 +7571,7 @@ fn main() -> Result<()> {
             if args.polish_tss != "off" || args.polish_tes != "off" {
                 let mut ev = rustle::denovo_assemble::TssEvidence::default();
                 ev.collect_unspliced = args.polish_tes_extend != "off" || args.mono_model != "off";
+                ev.collect_mono = args.polish_mono_primed; // r1566: only the streaming reader records its windows
                 acc.tss = Some(ev);
             }
             if bridge_evidence_on {
@@ -7575,6 +7585,9 @@ fn main() -> Result<()> {
             }
             let mut fetched: Vec<(String, u64, u64)> = Vec::new();
             for (wchrom, wlo, whi) in &wins {
+                if let Some(ev) = acc.tss.as_mut() {
+                    ev.mono_window_add(wchrom, *wlo, *whi);
+                }
                 n_mapped_streamed += rustle::denovo_assemble::stream_pass1_region(
                     &args.bam,
                     wchrom,
@@ -10770,7 +10783,18 @@ fn main() -> Result<()> {
                         .collect();
                     monos.sort();
                     let spans: Vec<(i64, i64)> = monos.iter().map(|m| (m.0, m.1)).collect();
-                    let ev = SnapBam::mono_primed(&args.bam, c, seq, &spans)?;
+                    // r1566: from the sweep when this chromosome was fetched in ONE window covering every model (each
+                    // record then seen once, as by the BAM pass); otherwise the BAM pass
+                    let swept = tss_all.mono.remove(c.as_str());
+                    let covered = match (tss_all.mono_window.get(c.as_str()), spans.first(), spans.iter().map(|m| m.1).max()) {
+                        (Some(Some((wlo, whi))), Some(&(lo, _)), Some(hi)) => *wlo as i64 <= lo && hi <= *whi as i64,
+                        _ => false,
+                    };
+                    let (ev, src) = match swept {
+                        _ if spans.is_empty() => (Vec::new(), "none"), // no model: nothing to count (r1566: chrM)
+                        Some(reads) if covered => (mono_primed_count(seq, &spans, reads), "sweep"),
+                        _ => (SnapBam::mono_primed(&args.bam, c, seq, &spans)?, "bam"),
+                    };
                     let drop: DetHashSet<&str> = monos
                         .iter()
                         .zip(ev.iter())
@@ -10783,7 +10807,7 @@ fn main() -> Result<()> {
                     });
                     eprintln!(
                         "[copy_assign] MONO PRIMED {c}: {} single-exon transcripts, {} with reads -> {n_drop} dropped \
-                         (>= {MONO_PRIMED_SHARE} of their unspliced reads internally primed)",
+                         (>= {MONO_PRIMED_SHARE} of their unspliced reads internally primed; evidence {src})",
                         monos.len(),
                         ev.iter().filter(|x| x.0 > 0).count()
                     );
@@ -14676,6 +14700,34 @@ mod tests {
         let (out, moved) = tes_extend(&l, &u, &seq);
         assert_eq!(moved, 1);
         assert_eq!(ext_last_end(&out, "T", true), (500, 500));
+    }
+    #[test]
+    fn mono_evidence_from_sweep_counts_every_record_and_guards_windows() {
+        use noodles_sam::alignment::record::cigar::{op::Kind as K, Op};
+        use noodles_sam::alignment::record::Flags;
+        let seq = |_: usize| Some(b'A');
+        let un = [Op::new(K::SoftClip, 5), Op::new(K::Match, 300), Op::new(K::Deletion, 2), Op::new(K::Match, 98)];
+        let sp = [Op::new(K::Match, 100), Op::new(K::Skip, 800), Op::new(K::Match, 300)];
+        let mut ev = TssEvidence::default();
+        ev.collect_mono = true;
+        // the BAM pass's admission: primary, not QC-fail, no N; coordinate duplicates both count
+        ev.push_alignment("c", Flags::empty(), 99, &[(99, 499)], &un, 405, seq);
+        ev.push_alignment("c", Flags::REVERSE_COMPLEMENTED, 99, &[(99, 499)], &un, 405, seq);
+        ev.push_alignment("c", Flags::SECONDARY, 99, &[(99, 499)], &un, 405, seq);
+        ev.push_alignment("c", Flags::QC_FAIL, 99, &[(99, 499)], &un, 405, seq);
+        ev.push_alignment("c", Flags::empty(), 99, &[(99, 199), (999, 1299)], &sp, 400, seq);
+        assert_eq!(ev.mono["c"], vec![(99, 499), (99, 499)], "span = M + D, every record, nothing else");
+        // the same counts as the BAM pass's per-record loop: both reads cover [100, 400) by >= half
+        let g = vec![b'C'; 2000];
+        assert_eq!(mono_primed_count(&g, &[(100, 400), (480, 1000)], ev.mono["c"].clone()), vec![(2, 0), (0, 0)]);
+        // windows: one per chromosome is usable; a second (window or region) marks it unusable, absorb included
+        ev.mono_window_add("c", 0, 5000);
+        assert_eq!(ev.mono_window["c"], Some((0, 5000)));
+        let mut other = TssEvidence::default();
+        other.mono_window_add("d", 0, 10);
+        other.mono_window_add("c", 5000, 9000);
+        ev.absorb(other);
+        assert_eq!((ev.mono_window["c"], ev.mono_window["d"]), (None, Some((0, 10))));
     }
     #[test]
     fn tss_evidence_keeps_deduplicated_oriented_unspliced_records() {

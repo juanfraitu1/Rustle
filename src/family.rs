@@ -47001,6 +47001,13 @@ pub mod denovo_pipeline {
             chrom_ids: std::collections::BTreeMap<String, u64>,
             /// collect `unspliced` in `push_alignment` (off unless `--polish-tes-extend` asks: the default run holds none)
             pub collect_unspliced: bool,
+            /// `copy_assign --polish-mono-primed` from the sweep (r1566): chromosome -> EVERY primary unspliced record as
+            /// `[a, a + reference span)` (0-based), NOT deduplicated (the BAM pass it replaces counts each record), and
+            /// chromosome -> the one window it was fetched in (`None` once a second window or region fetches it: a record
+            /// could then arrive twice, and the caller falls back to the BAM pass). Off unless `collect_mono`.
+            pub mono: std::collections::BTreeMap<String, Vec<(i64, i64)>>,
+            pub mono_window: std::collections::BTreeMap<String, Option<(u64, u64)>>,
+            pub collect_mono: bool,
         }
 
         impl TssEvidence {
@@ -47077,9 +47084,28 @@ pub mod denovo_pipeline {
                 self.unspliced.entry(chrom.to_string()).or_default().push(rec);
             }
 
+            /// One fetch window of `chrom` (r1566): the first is kept, a second marks the chromosome unusable for `mono`.
+            pub fn mono_window_add(&mut self, chrom: &str, lo: u64, hi: u64) {
+                self.mono_window
+                    .entry(chrom.to_string())
+                    .and_modify(|w| *w = None)
+                    .or_insert(Some((lo, hi)));
+            }
+
             /// Fold another region's evidence in; a record already held (same key) is not counted twice, so regions whose
             /// reads overlap, and the windows of one region, add up to the per-chromosome evidence.
             pub fn absorb(&mut self, other: TssEvidence) {
+                for (chrom, w) in other.mono_window {
+                    match w {
+                        Some((lo, hi)) => self.mono_window_add(&chrom, lo, hi),
+                        None => {
+                            self.mono_window.insert(chrom, None);
+                        }
+                    }
+                }
+                for (chrom, v) in other.mono {
+                    self.mono.entry(chrom).or_default().extend(v);
+                }
                 for (chrom, recs) in other.unspliced {
                     for (minus, o5, o3) in recs {
                         let (s0, e0) = if minus { ((-o3 - 1) as u64, (-o5) as u64) } else { ((o5 - 1) as u64, o3 as u64) };
@@ -47122,6 +47148,26 @@ pub mod denovo_pipeline {
                 seq_len: usize,
                 base_at: impl Fn(usize) -> Option<u8>,
             ) {
+                // r1566: the --polish-mono-primed evidence, with that BAM pass's own admission rule (no N, span > 0)
+                if self.collect_mono
+                    && !(flags.is_unmapped() || flags.is_secondary() || flags.is_supplementary() || flags.is_qc_fail())
+                {
+                    use noodles_sam::alignment::record::cigar::op::Kind;
+                    let (mut span, mut spliced) = (0i64, false);
+                    for op in ops {
+                        match op.kind() {
+                            Kind::Skip => spliced = true,
+                            Kind::Match | Kind::Deletion | Kind::SequenceMatch | Kind::SequenceMismatch => {
+                                span += op.len() as i64
+                            }
+                            _ => {}
+                        }
+                    }
+                    if !spliced && span > 0 {
+                        let a = ref_start as i64;
+                        self.mono.entry(chrom.to_string()).or_default().push((a, a + span));
+                    }
+                }
                 if flags.is_unmapped()
                     || flags.is_secondary()
                     || flags.is_supplementary()
