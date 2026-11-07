@@ -31,3 +31,14 @@ positional cut by construction. O2 consumes the copy table: B's extra copies wou
 
 ## Prediction
 Bar 1 FAIL (reach on the 25 is at most 16, and merged-back pieces lose some), bars 2-4 PASS.
+
+## Result (2026-11-07, jobs 4452474 arm A / 4452502 arm B, `/anvme/workspace/v138da13-rustle/r1571/`)
+**FAIL (bars 1, 3).** Arm A (HEAD mcl_families, minimap2-gate) reproduces the base run's score exactly (0.802 / 0.740,
+1,615 hits; 7,986 copies vs 7,987 in October: today's duplicate-locus fix). Arm B: 3,328 loci cut into 6,693 pieces,
+54,541 crossers dropped; piece_merge rejoined 3 rows (8 family x locus groups with >= 2 pieces).
+1. A's 71 absorbed pairs: 27 recovered, 44 still missed (21 absorbed, 14 split, 9 unlinked). FAIL (bar <= 35).
+   (The pairdiag absorbed class alone falls 71 -> 21; strict reading reported, since a merged-away piece leaves its
+   gene "unlinked", not recovered.)
+2. Precision 0.800 vs 0.802: PASS.  3. Recall 0.718 vs 0.740: FAIL.  4. Copies 8,347 vs <= 8,385: PASS.
+Collateral: 154 pairs hit by A are missed by B, 152 of them `split`: replacing full-length representatives by partial
+pieces cut family edges. Net -48 hits. Prediction right on bar 1, wrong on bar 3.
