@@ -54,8 +54,10 @@ row_of = {r['tid']: r for r in rows}
 copy_iv = collections.defaultdict(list)  # (chrom, strand) -> [(start, end)]
 for r in rows: copy_iv[(r['chrom'], r['strand'])].append((int(r['start']), int(r['end'])))
 for k in copy_iv: copy_iv[k].sort()
+copy_maxlen = collections.defaultdict(int, {k: max(e - s for s, e in v) for k, v in copy_iv.items()})
 def overlaps_copy(chrom, strand, s, e):
-    v = copy_iv.get((chrom, strand), []); i = bisect.bisect_left(v, (s - 2_000_000, 0))
+    # the longest copy as lookback (a fixed 2 Mb missed longer copies; audit 2026-11-07, kept in step with src/semifam.rs)
+    v = copy_iv.get((chrom, strand), []); i = bisect.bisect_left(v, (s - copy_maxlen[(chrom, strand)], 0))
     while i < len(v) and v[i][0] < e:
         if v[i][1] > s: return True
         i += 1
@@ -154,6 +156,9 @@ with open(OUT + '.semi.tsv', 'w') as w:
                                   n_reads=c['reads'], exons=','.join(f"{s0}-{e0}" for s0, e0 in ex), max_family_identity=f"{idn:.4f}", source='semisec',
                                   gene_id=seed, member_status='silent', locus_start=str(ex[0][0]), locus_end=str(ex[-1][1]))
                         new_rows.append(r1)
+                        # a later candidate aligning to the same span is not attached a second time
+                        bisect.insort(copy_iv[(c['chrom'], strand)], (ex[0][0], ex[-1][1]))
+                        copy_maxlen[(c['chrom'], strand)] = max(copy_maxlen[(c['chrom'], strand)], ex[-1][1] - ex[0][0])
         verdicts[v] += 1
         w.write(f"{c['chrom']}\t{c['strand']}\t{c['start']}\t{c['end']}\t{c['reads']}\t{c['silent']}\t{c.get('class', '')}\t{c['best']}\t{seed or ''}\t{fam or ''}\t{cov:.2f}\t{idn:.3f}\t{nex}\t{v}\n")
 # copy_idx within family

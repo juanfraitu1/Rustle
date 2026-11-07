@@ -577,10 +577,11 @@ fn a_copies_fa_missing_a_record_aborts() {
     let d = scratch("nofa");
     let fam = write(&d, "cat.copies.tsv", GWFAM1_TSV);
     // only the FIRST of GWFAM1's two copies
+    // copy 0 at its exons' length (49 + 89 bp), so only the missing record is wrong
     let fa = write(
         &d,
         "partial.copies.fa",
-        ">GWFAM1|0|c1:250-460|+|nexon=2\nACGTACGTAC\n",
+        &format!(">GWFAM1|0|c1:250-460|+|nexon=2\n{}\n", "ACGT".repeat(35)[..138].to_string()),
     );
     let (o, _out) = run(&d, &["--families", &fam, "--copies-fa", &fa]);
     assert!(!o.status.success(), "an incomplete --copies-fa must abort");
@@ -605,6 +606,23 @@ fn a_copies_fa_record_disagreeing_with_the_tsv_aborts() {
     let (o, _out) = run(&d, &["--families", &fam, "--copies-fa", &fa]);
     assert!(!o.status.success());
     assert!(stderr(&o).contains("but copies.tsv says"), "{}", stderr(&o));
+}
+
+/// Round-11 audit: a `--copies-fa` sequence whose length is not its copy's exon sum (same header) would put every PSV
+/// site after the disagreeing exon at the wrong genome position. Refused.
+#[test]
+fn a_copies_fa_sequence_of_the_wrong_length_aborts() {
+    let d = scratch("falength");
+    let fam = write(&d, "cat.copies.tsv", GWFAM1_TSV);
+    let a = "ACGT".repeat(40);
+    let fa = write(
+        &d,
+        "short.copies.fa",
+        &format!(">GWFAM1|0|c1:250-460|+|nexon=2\n{}\n>GWFAM1|1|c1:380-550|+|nexon=2\n{}\n", &a[..138], &a[..136]),
+    );
+    let (o, _out) = run(&d, &["--families", &fam, "--copies-fa", &fa]);
+    assert!(!o.status.success());
+    assert!(stderr(&o).contains("is 136 bp but its copies.tsv exons sum to 138 bp"), "{}", stderr(&o));
 }
 
 /// Flags that would CHANGE the roster are refused up front, so `--families` can never quietly assign
@@ -932,5 +950,71 @@ fn a_family_less_region_without_a_cross_chromosome_window_still_registers_ties_o
     assert!(
         err.contains("⚠ 3 of those tied molecules have a tied placement OUTSIDE every supplied family"),
         "the 3 read_same_* molecules tied inside the family-less region c1:0-600 must be registered as tied outside:\n{err}"
+    );
+}
+
+/// Round-6 audit (2026-11-07): a region bound to a single-chromosome family (GWFAM3, c1:0-240) whose read window also
+/// covers a cross-chromosome family's copies (GWFAM1, made cross-chromosome by a c2 copy) must not register a molecule
+/// tied only between GWFAM1's own copies as tied outside: the registry is process-wide by read name, so GWFAM1's own
+/// sweep would then mark its `read_same_*` rows `tie_outside_catalog = 1` (demoting an Assigned verdict).
+#[test]
+fn a_tie_between_a_cross_chromosome_familys_own_copies_is_not_outside_in_a_neighbours_region() {
+    let d = scratch("xchrom_neighbour_region");
+    let regions = write(&d, "regions.txt", "c1:0-600\nc2:0-320\n");
+    let only = write(&d, "only.txt", "GWFAM1\nGWFAM3\n");
+    let tsv = std::fs::read_to_string(format!("{FIX}/out_default.copies.tsv")).unwrap();
+    let fa = std::fs::read_to_string(format!("{FIX}/out_default.copies.fa")).unwrap();
+    let genome = std::fs::read_to_string(format!("{FIX}/genome.fa")).unwrap();
+    let chrom = |name: &str| -> String {
+        genome
+            .split('>')
+            .find(|r| r.starts_with(name))
+            .unwrap()
+            .lines()
+            .skip(1)
+            .collect()
+    };
+    let (c1, c2) = (chrom("c1"), chrom("c2"));
+    let tsv_x = write(
+        &d,
+        "x.copies.tsv",
+        &format!(
+            "{tsv}GWFAM1\t2\tCAND_c2\tc2\t270\t320\t1\t+\t0\t270-320\t0\n\
+             GWFAM3\t0\tCAND_c1\tc1\t0\t240\t1\t+\t0\t0-240\t0\n"
+        ),
+    );
+    let fa_x = write(
+        &d,
+        "x.copies.fa",
+        &format!(
+            "{fa}>GWFAM1|2|c2:270-320|+|nexon=1\n{}\n>GWFAM3|0|c1:0-240|+|nexon=1\n{}\n",
+            &c2[270..320],
+            &c1[0..240]
+        ),
+    );
+    let out = d.join("o").to_str().expect("utf-8 path").to_string();
+    let o = Command::new(env!("CARGO_BIN_EXE_copy_assign"))
+        .args(["--bam", &format!("{FIX}/reads.bam"), "--fasta", &format!("{FIX}/genome.fa")])
+        .args(["--regions", &regions, "--families", &tsv_x, "--copies-fa", &fa_x])
+        .args(["--only-families", &only, "--out", &out])
+        .output()
+        .expect("copy_assign failed to spawn");
+    let err = stderr(&o);
+    assert!(o.status.success(), "{err}");
+    assert!(err.contains("GWFAM1 spans 2 chromosomes"), "{err}");
+    let t = read(&out, "assignments.tsv");
+    let head: Vec<&str> = t.lines().next().unwrap().split('\t').collect();
+    let at = |n: &str| head.iter().position(|c| *c == n).unwrap();
+    let (i_read, i_fam, i_out) = (at("read_name"), at("family_id"), at("tie_outside_catalog"));
+    let same: Vec<Vec<&str>> = t
+        .lines()
+        .skip(1)
+        .map(|l| l.split('\t').collect::<Vec<_>>())
+        .filter(|f| f[i_read].starts_with("read_same_"))
+        .collect();
+    assert_eq!(same.len(), 3, "{t}");
+    assert!(
+        same.iter().all(|f| f[i_out] == "0"),
+        "read_same_* are tied only between GWFAM1's own copies (family column {i_fam}):\n{t}"
     );
 }

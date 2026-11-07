@@ -353,11 +353,12 @@ fn run(raw: &[String]) -> Result<()> {
             }
         }
     }
-    if let Some(nr) = args.net_reads.as_deref() {
+    for (flag, p) in [("--net-reads", args.net_reads.as_deref()), ("--all-clusters", args.all_clusters.as_deref())] {
+        let Some(nr) = p else { continue };
         match std::fs::remove_file(nr) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e).with_context(|| format!("removing the earlier --net-reads {nr}")),
+            Err(e) => return Err(e).with_context(|| format!("removing the earlier {flag} {nr}")),
         }
     }
     let tmp = PathBuf::from(format!("{}.tmp", args.out));
@@ -1810,8 +1811,14 @@ fn project_structures(
         })
         .collect();
     let genome = IndexedFasta::open(&args.fasta).with_context(|| format!("opening {} (with its .fai)", args.fasta))?;
+    // a contig the FASTA lacks (names differ from --index's) used to give an empty reference and a wrong structure;
+    // the closure's type is st::outer's, so the first miss is recorded here and is an error after the pass
+    let missing: std::cell::RefCell<Option<String>> = Default::default();
     let fetch = |c: &str, s: u64, e: u64| -> Vec<u8> {
-        let mut v = genome.fetch(c, s as i64, e as i64).unwrap_or_default();
+        let Some(mut v) = genome.fetch(c, s as i64, e as i64) else {
+            missing.borrow_mut().get_or_insert_with(|| c.to_string());
+            return Vec::new();
+        };
         v.make_ascii_uppercase();
         v
     };
@@ -1824,6 +1831,9 @@ fn project_structures(
             (c.id.clone(), st::outer(&c.union, recs, fc, &fetch))
         })
         .collect();
+    if let Some(c) = missing.borrow().as_ref() {
+        anyhow::bail!("contig {c} is not in {} (its .fai): the FASTA and the index name contigs differently", args.fasta);
+    }
     // the segment pass. A segment is named `<start>_<end>` (its working-frame span), as the reference implementation names it: minimap2
     // breaks equally good hits by a hash of the read name, so the name is part of the result. Names repeat across candidates, so the
     // segments go in rounds, each round one minimap2 call holding every name at most once (one round unless two candidates share a span).

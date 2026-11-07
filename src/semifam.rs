@@ -84,8 +84,9 @@ impl Index {
         }
         out
     }
+    /// the same lookback as `over` (a fixed 2 Mb missed overlaps with copies longer than that; audit 2026-11-07)
     fn any(&self, s: i64, e: i64) -> bool {
-        let mut i = self.v.partition_point(|x| x.0 < s - 2_000_000);
+        let mut i = self.v.partition_point(|x| x.0 < s - self.maxlen);
         while i < self.v.len() && self.v[i].0 < e {
             if self.v[i].1 > s {
                 return true;
@@ -93,6 +94,13 @@ impl Index {
             i += 1;
         }
         false
+    }
+    /// add an attached copy, so a later candidate aligning to the same span is not attached a second time
+    fn insert(&mut self, s: i64, e: i64, tid: String) {
+        let x = (s, e, tid);
+        let i = self.v.partition_point(|y| *y < x);
+        self.v.insert(i, x);
+        self.maxlen = self.maxlen.max(e - s);
     }
 }
 
@@ -128,7 +136,7 @@ fn main() -> Result<()> {
         let st = r[c_strand].chars().next().unwrap_or('+');
         copy_iv.entry((r[c_chrom].clone(), st)).or_default().push((r[c_start].parse()?, r[c_end].parse()?, r[c_tid].clone()));
     }
-    let copy_idx: HashMap<(String, char), Index> = copy_iv.into_iter().map(|(k, v)| (k, Index::new(v))).collect();
+    let mut copy_idx: HashMap<(String, char), Index> = copy_iv.into_iter().map(|(k, v)| (k, Index::new(v))).collect();
     // de novo loci (all records, in families or not)
     let mut loci: HashMap<String, Locus> = HashMap::new();
     let mut order: Vec<String> = Vec::new();
@@ -229,13 +237,14 @@ fn main() -> Result<()> {
         let mut wr = std::io::BufWriter::new(std::fs::File::create(tmp.join("reg.fa"))?);
         let mut chrom_len: HashMap<String, i64> = HashMap::new();
         let mut len_of = |chrom: &str| -> i64 {
-            *chrom_len.entry(chrom.to_string()).or_insert_with(|| genome.contig_length(chrom).unwrap_or(0) as i64)
+            *chrom_len.entry(chrom.to_string()).or_insert_with(|| genome.contig_length(chrom).map_or(-1, |l| l as i64))
         };
         for (i, p) in plan.iter().enumerate() {
             if let Plan::Align { chrom, strand, exons, .. } = p {
                 let mut t: Vec<u8> = Vec::new();
                 for (s0, e0) in exons {
-                    t.extend(genome.fetch(chrom, *s0, *e0).unwrap_or_default());
+                    // a contig the genome lacks used to give an empty template, then a silent `no_alignment`
+                    t.extend(genome.fetch(chrom, *s0, *e0).with_context(|| format!("{chrom} not in --genome {}", args.genome))?);
                 }
                 t.make_ascii_uppercase();
                 if *strand == '-' {
@@ -244,9 +253,11 @@ fn main() -> Result<()> {
                 let c = &cands[i];
                 let cc = &c.fields["chrom"];
                 let rs = (c.fields["start"].parse::<i64>()? - args.pad).max(0);
-                let re_ = (c.fields["end"].parse::<i64>()? + args.pad).min(len_of(cc));
+                let clen = len_of(cc);
+                anyhow::ensure!(clen >= 0, "{cc} not in --genome {} (contig names differ from the candidates table?)", args.genome);
+                let re_ = (c.fields["end"].parse::<i64>()? + args.pad).min(clen);
                 region.insert(i, (rs, re_));
-                let mut r = genome.fetch(cc, rs, re_).unwrap_or_default();
+                let mut r = genome.fetch(cc, rs, re_).with_context(|| format!("{cc} not in --genome {}", args.genome))?;
                 r.make_ascii_uppercase();
                 writeln!(wt, ">c{i}")?;
                 wt.write_all(&t)?;
@@ -256,6 +267,9 @@ fn main() -> Result<()> {
                 writeln!(wr)?;
             }
         }
+        // minimap2 reads these next: a write error must not leave it a short file
+        wt.flush()?;
+        wr.flush()?;
     }
     let out = std::process::Command::new("minimap2")
         .args(["-c", "-x", "splice", "--secondary=yes", "-N", "200", "-p", "0.05", "-t", &args.threads.to_string()])
@@ -381,6 +395,10 @@ fn main() -> Result<()> {
                                 let f = f.unwrap();
                                 fam = f.clone();
                                 nex = ex.len();
+                                copy_idx
+                                    .entry((c.fields["chrom"].clone(), strand))
+                                    .or_insert_with(|| Index::new(Vec::new()))
+                                    .insert(ex[0].0, ex.last().unwrap().1, seed.clone());
                                 new_rows.push(mk_row(vec![
                                     ("family_id", f),
                                     ("copy_idx", "0".into()),
@@ -414,6 +432,7 @@ fn main() -> Result<()> {
             c.fields["chrom"], c.fields["strand"], c.fields["start"], c.fields["end"], c.fields["reads"], c.fields["silent"], class, c.fields["best"], seed_name, fam
         )?;
     }
+    w.flush()?;
     drop(w);
     let mut cnt: HashMap<String, usize> = HashMap::new();
     for r in &rows {
@@ -430,6 +449,7 @@ fn main() -> Result<()> {
     for r in rows.iter().chain(new_rows.iter()) {
         writeln!(w, "{}", r.join("\t"))?;
     }
+    w.flush()?;
     let mut vs: Vec<_> = verdicts.iter().collect();
     vs.sort();
     eprintln!(
@@ -440,4 +460,21 @@ fn main() -> Result<()> {
         rows.len() + new_rows.len()
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `any` sees a copy longer than 2 Mb (the old fixed lookback missed it), and a span added with `insert` blocks a
+    /// second attachment to the same place (audit 2026-11-07, third pass).
+    #[test]
+    fn overlap_lookback_covers_long_copies_and_attached_spans() {
+        let mut ix = Index::new(vec![(1_000_000, 4_000_000, "long".into()), (10_000_000, 10_001_000, "short".into())]);
+        assert!(ix.any(3_500_000, 3_501_000), "inside a 3 Mb copy, 2.5 Mb past its start");
+        assert!(!ix.any(5_000_000, 5_001_000));
+        ix.insert(5_000_000, 5_001_000, "SS".into());
+        assert!(ix.any(5_000_500, 5_002_000), "the attached span now counts as a copy");
+        assert!(ix.any(10_000_500, 10_000_600));
+    }
 }

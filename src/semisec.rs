@@ -535,10 +535,12 @@ fn main() -> Result<()> {
         let (sci, ss, se) = read_seed[&*c.best.name];
         writeln!(w, "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}:{ss}-{se}\t{class}\t{orf}\t{cov}\t{pr}", contigs[c.ci], c.strand, c.s, c.e, c.reads, c.nprim, c.nprim < MIN_READS, c.best.name, c.best.as_, contigs[sci])?;
     }
+    w.flush()?; // a dropped BufWriter swallows the last write's error (audit 2026-11-07)
     let mut w = std::io::BufWriter::new(std::fs::File::create(format!("{o}/seeds.tsv"))?);
     for (ci, st, s, e, n) in &seeds {
         writeln!(w, "{}\t{st}\t{s}\t{e}\t{n}", contigs[*ci])?;
     }
+    w.flush()?;
     // primary intervals, sorted per contig, as little-endian u32 (start, end) pairs; the .tsv gives contig, offset, count
     let mut wb = std::io::BufWriter::new(std::fs::File::create(format!("{o}/prim_iv.bin"))?);
     let mut wi = std::io::BufWriter::new(std::fs::File::create(format!("{o}/prim_iv.tsv"))?);
@@ -554,6 +556,8 @@ fn main() -> Result<()> {
         }
         off += iv.v.len();
     }
+    wb.flush()?;
+    wi.flush()?;
     let mut w = std::fs::File::create(format!("{o}/stats.tsv"))?;
     writeln!(w, "seeds\t{}\nsecondaries\t{n_sec}\nkept_hits\t{n_kept}\nrepeat_hits_dropped\t{n_repeat}\ncandidates\t{}\nsilent\t{}\nratio\t{}", seeds.len(), cands.len(), silent.len(), args.ratio)?;
     eprintln!("[semisec] {} silent classed; done in {:.0} s", silent.len(), t0.elapsed().as_secs_f64());

@@ -8,7 +8,7 @@ HERE=$(cd "$(dirname "$0")" && pwd); REPO=$(cd "$HERE/../.." && pwd)
 T=$(mktemp -d /mnt/linuxdisk/tmp/test_run_sh.XXXXXX); trap 'rm -rf "$T"' EXIT
 BIN=$T/bin; W=$T/work; mkdir -p "$BIN" "$W/mol"
 BAM=/mnt/linuxdisk/home/juanfraitu/winloci_data/A119b.t2t.bam
-printf '#as_table\tbam=%s\trecords=1\tmolecules=1\n' "$(readlink -f "$BAM")" > "$W/mol/mol.tsv"      # a table the driver accepts without building one
+printf '#as_table\tbam=%s\tbam_bytes=%s\trecords=1\tmolecules=1\n' "$(readlink -f "$BAM")" "$(stat -Lc %s "$BAM")" > "$W/mol/mol.tsv"      # a table the driver accepts without building one
 cat > "$BIN/copy_assign" <<'EOS'
 #!/bin/bash
 out=""; while [ $# -gt 0 ]; do case "$1" in --out) out=$2; shift 2;; *) shift;; esac; done

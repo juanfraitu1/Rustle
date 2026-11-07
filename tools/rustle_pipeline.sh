@@ -253,6 +253,14 @@ stage_sd() {
   key=$("$BIN/utilities" sd-scan --version-key) || { echo "[rustle_pipeline] sd: $BIN/utilities has no sd-scan; rebuild it" >&2; exit 2; }
   md5=$(md5sum < "$FASTA" | cut -c1-32)
   dir=${RUSTLE_SD_CACHE_DIR:-$OUT.cache}/sd/$md5-$(printf '%s' "$key" | md5sum | cut -c1-8)
+  # one stage per cache entry at a time (held until this stage exits): two misses on a shared cache used to rescan into
+  # the same files, truncating the tables the run that finished first was reading
+  # (opened for append, read-only when another user's lock file is not ours to write: a shared-cache hit then still runs;
+  # NFS needs the writable fd for an exclusive lock, a read-only one locks shared)
+  mkdir -p "${dir%/*}"
+  # (the braces keep the 2>/dev/null to this open: on a bare exec it would silence the rest of the stage)
+  local ro=0
+  if { exec 8>> "$dir.lock"; } 2>/dev/null; then flock 8; else exec 8< "$dir.lock" && flock -s 8; ro=1; fi
   if [ "$CACHE" = 1 ] && [ -s "$dir/DONE" ]; then
     hit=1
     while IFS=$'\t' read -r n b || [ -n "$n" ]; do
@@ -262,6 +270,8 @@ stage_sd() {
   if [ "$hit" = 1 ]; then
     echo "[rustle_pipeline] $(date +%H:%M:%S) sd: cached ($dir)" >&2
   else
+    # a shared lock (the lock file is not ours to write) does not keep a second scanner out: scan only under our own lock
+    [ "$ro" = 0 ] || { echo "[rustle_pipeline] sd: $dir is not a cache hit and $dir.lock is not writable by this user: scan with your own RUSTLE_SD_CACHE_DIR" >&2; exit 2; }
     mkdir -p "$dir"
     rm -f "$dir/DONE" "$dir/DONE.tmp"
     echo "[rustle_pipeline] $(date +%H:%M:%S) sd: utilities sd-scan on $FASTA -> $dir" >&2
@@ -290,6 +300,17 @@ fi
 [[ "$MAX_WINDOW_RECORDS" =~ ^[0-9]+$ ]] || { echo "[rustle_pipeline] --max-window-records must be a whole number (got '$MAX_WINDOW_RECORDS')" >&2; exit 2; }
 if [ "$LOW_MEM" = 1 ]; then INDEX_GB=1; export RUSTLE_REGION_THREADS=1; [ "$MAX_WINDOW_RECORDS" -gt 0 ] || MAX_WINDOW_RECORDS=500000; fi
 [[ "$INDEX_GB" =~ ^[1-9][0-9]*$ ]] || { echo "[rustle_pipeline] --index-gb must be a positive integer (got '$INDEX_GB')" >&2; exit 2; }
+# skip lists that `merged` and the --candidates assign do not apply: refused here, before assemble and families run (round-23 audit);
+# the stage functions refuse them again. Same `case "$STAGE"` form as the checks above.
+case "$STAGE" in
+  *) if [ "$MAX_WINDOW_RECORDS" -gt 0 ] || [ -n "${RUSTLE_ANNOTATED_ONLY:-}" ] || [ -n "${RUSTLE_EXCLUDE_BED:-}" ]; then
+       if [ "$STAGE" = merged ]; then
+         echo "[rustle_pipeline] merged applies no --max-window-records / --low-mem / RUSTLE_ANNOTATED_ONLY / RUSTLE_EXCLUDE_BED: use \`all\` for them" >&2; exit 2
+       elif [ "$CANDIDATES" = 1 ] && { [ "$STAGE" = all ] || [ "$STAGE" = assign ]; }; then
+         echo "[rustle_pipeline] --candidates does not apply --max-window-records / --low-mem / RUSTLE_ANNOTATED_ONLY / RUSTLE_EXCLUDE_BED: drop one of them" >&2; exit 2
+       fi
+     fi;;
+esac
 export TMPDIR=${TMPDIR:-/tmp}
 if [ "$CACHE" = 1 ]; then export RUSTLE_CACHE_DIR="$OUT.cache"; else unset RUSTLE_CACHE_DIR; fi
 INSPECT_CAT=(); INSPECT_ASSIGN=()
@@ -548,7 +569,7 @@ stage_assemble() {
     # older than the BAM; otherwise rebuilt under a temporary name and renamed into place (a concurrent run never reads
     # a half-written table; rename keeps the inode and mtime the .asbin sidecar is keyed on).
     local table=${AS_TABLE:-}
-    as_table_ok() { head -1 "$1" 2>/dev/null | grep -qF "bam=$(readlink -f "$BAM")$(printf '\t')" && [ ! "$1" -ot "$BAM" ]; }
+    as_table_ok() { head -1 "$1" 2>/dev/null | grep -qF "bam=$(readlink -f "$BAM")$(printf '\t')bam_bytes=$(stat -Lc %s "$BAM")$(printf '\t')" && [ ! "$1" -ot "$BAM" ]; }
     if [ -z "$table" ]; then
       # next to the BAM when a valid table is there or the directory takes a new file (-w alone misses a full file quota);
       # otherwise PREFIX.molecules.tsv, which the check below then reuses like any other table
@@ -587,13 +608,22 @@ stage_assemble() {
   # complete truth families 204 -> 209, 3,031 placeholder-strand models now shadowed by their same-strand spliced model.
   # After the pool branches on purpose: they reassign seed_env wholesale (the first ship, b8d29f0d, was inert for the good pool).
   seed_env+=("RUSTLE_READ_STRAND=${RUSTLE_READ_STRAND:-1}")
+  # the exact flags of this run, for tools/rustle_reassemble.sh's pass 2 (it must not re-derive them from the defaults)
+  printf '%s\n' "$POLISH" > "$OUT.assemble.polish"
+  # ... and its seeding environment and contig scope, one word per line (pass 2 must seed and scope as pass 1 did)
+  printf '%s\n' "${seed_env[@]}" > "$OUT.assemble.seed_env"
+  printf '%s\n' "${scope[@]}" > "$OUT.assemble.scope"
   # PREFIX.final.gtf (2026-11-02, registers 1487-1491): the assembly with the three end layers (median 5' ends, 3' UTR extension,
   # single-exon models from end clusters), each PASSED on held-out chromosomes, but each changed the families stage when it read
   # them (r1490 / r1491). So the layered assembly is a SECOND run, in parallel, written only as PREFIX.final.gtf: PREFIX.gtf and
   # PREFIX.families.gtf (every later stage's input) are byte-identical to a run without it. RUSTLE_ASSEMBLY_LAYERS=off skips it.
   local layers=()
   case "${RUSTLE_ASSEMBLY_LAYERS:-on}" in
-    on) layers=(--polish-tss-end median --polish-tes-extend on --mono-model cluster)
+    on) # a layer the environment already set (RUSTLE_POLISH_TSS_END / _TES_EXTEND / RUSTLE_MONO_MODEL) is in $POLISH for both
+        # runs, and a second copy of the flag stops clap: the user's value wins (audit 2026-11-07, fourth pass)
+        case "$POLISH" in *--polish-tss-end*) ;; *) layers+=(--polish-tss-end median) ;; esac
+        case "$POLISH" in *--polish-tes-extend*) ;; *) layers+=(--polish-tes-extend on) ;; esac
+        case "$POLISH" in *--mono-model*) ;; *) layers+=(--mono-model cluster) ;; esac
         # RUSTLE_FINAL_SUBCHAIN=drop|off (register 1498 PASS; unset = drop): --polish-subchain drop as a fourth layer of PREFIX.final.gtf only
         case "${RUSTLE_FINAL_SUBCHAIN:-drop}" in
           drop) case "$POLISH" in *--polish-subchain*) ;; *) layers+=(--polish-subchain drop) ;; esac ;;
@@ -603,6 +633,15 @@ stage_assemble() {
     off) ;;
     *) echo "[rustle_pipeline] RUSTLE_ASSEMBLY_LAYERS must be on or off (got '$RUSTLE_ASSEMBLY_LAYERS')" >&2; exit 2 ;;
   esac
+  # the three end layers read the --polish-tss evidence pass: with RUSTLE_POLISH_TSS=off only the sub-chain layer is kept
+  # (it needs no --polish-tss; round-23 audit), and with no layer left there is no layered assembly to build
+  if [ "${#layers[@]}" -gt 0 ] && [ "$POLISH_TSS" = off ]; then
+    local kept=() i
+    for (( i=0; i<${#layers[@]}; i+=2 )); do [ "${layers[i]}" = --polish-subchain ] && kept+=("${layers[i]}" "${layers[i+1]}"); done
+    if [ "${#kept[@]}" -gt 0 ]; then say "assemble: RUSTLE_POLISH_TSS=off, so $OUT.final.gtf has only ${kept[*]} (the end layers need --polish-tss)"
+    else say "assemble: RUSTLE_POLISH_TSS=off, so no layered $OUT.final.gtf (its end layers need --polish-tss); RUSTLE_ASSEMBLY_LAYERS=off silences this"; fi
+    layers=("${kept[@]}")
+  fi
   # r1564 PASS (2026-11-07): contigs swept in parallel (--region-threads; low-mem mode sets 1 = serial), A119b assemble
   # 2,588 -> 1,685 s, six products byte-identical, RSS 16 GB. The read budget is 20M records here, not assign's 4M:
   # at 4M chr1/chr2/chr13 (5-6M records each) run alone and the sweep stays near serial.
@@ -613,8 +652,14 @@ stage_assemble() {
       --bam "$BAM" --fasta "$FASTA" --out "$OUT.final_run" > "$OUT.final.log" 2>&1 &
     fin_pid=$!
   fi
+  # set -e ends the stage when the base run fails: the background layered run must not outlive it holding memory and threads
+  local rc=0
   env "${seed_env[@]}" RUSTLE_REGION_READ_BUDGET=20000000 "$BIN/copy_assign" --assemble-only --region-threads "${RUSTLE_REGION_THREADS:-8}" "${scope[@]}" --assembly-junctions strict $POLISH --gtf-tpm \
-    --bam "$BAM" --fasta "$FASTA" --out "$OUT" > "$OUT.assemble.log" 2>&1
+    --bam "$BAM" --fasta "$FASTA" --out "$OUT" > "$OUT.assemble.log" 2>&1 || rc=$?
+  if [ "$rc" != 0 ]; then
+    if [ -n "$fin_pid" ]; then kill "$fin_pid" 2>/dev/null || true; wait "$fin_pid" 2>/dev/null || true; rm -f "$OUT".final_run.*; fi
+    echo "[rustle_pipeline] assemble failed (exit $rc, see $OUT.assemble.log)" >&2; exit "$rc"
+  fi
   if [ -n "$fin_pid" ]; then
     if wait "$fin_pid" && [ -s "$OUT.final_run.gtf" ]; then
       mv -f "$OUT.final_run.gtf" "$OUT.final.gtf"
@@ -629,8 +674,8 @@ stage_assemble() {
   if [ "$SEED_POOL" = good ] && grep -qE 'table IGNORED|the table may come from a different BAM' "$OUT.assemble.log"; then
     echo "[rustle_pipeline] --seed-pool good: copy_assign did not apply the best-AS table ($(grep -m1 -E 'table IGNORED|the table may come from a different BAM' "$OUT.assemble.log" | cut -c1-300)); the assembly is not the good pool: delete $table and $table.asbin, then run again (an absent table is rebuilt; see $OUT.assemble.log)" >&2; exit 3
   fi
-  # copy_assign writes PREFIX.families.gtf a few ms BEFORE PREFIX.gtf; on a filesystem with sub-second mtimes fam_gtf_guard's
-  # `-ot` then calls it older (seen on NFS, 2026-10-29). Stamp it with PREFIX.gtf's mtime: same assembly, same age.
+  # copy_assign writes PREFIX.families.gtf and PREFIX.gtf a few ms apart; on a filesystem with sub-second mtimes fam_gtf_guard's
+  # `-ot` can then call it older (seen on NFS, 2026-10-29). Stamp it with PREFIX.gtf's mtime: same assembly, same age.
   [ "$FAM_GTF" = "$OUT.gtf" ] || [ ! -s "$FAM_GTF" ] || touch -r "$OUT.gtf" "$FAM_GTF"
   say "assemble: $(awk -F'\t' '$3=="transcript"' "$OUT.gtf" | wc -l) transcripts"
   if [ "$BRIDGE_MODE" = f1units ]; then
@@ -737,7 +782,7 @@ stage_catalog() {
 stage_candidates() {
   [ -n "$INDEX" ] || { echo "candidates needs --index (splice .mmi of the primary genome)" >&2; exit 2; }
   [ -s "$OUT.fam.copies.tsv" ] || { echo "candidates needs $OUT.fam.copies.tsv (run the families stage)" >&2; exit 2; }
-  rm -f "$OUT".aug.{fa,fa.fai,copies.tsv,copies.fa,regions.txt,families.txt,bam,bam.bai,mm2.log}
+  rm -f "$OUT".aug.{fa,fa.fai,copies.tsv,copies.fa,regions.txt,families.txt,bam,bam.bai,mm2.log} "$OUT".cand.candidates.tsv
   if [ "$(awk 'NR > 1 && NF' "$OUT.fam.copies.tsv" | wc -l)" = 0 ]; then
     say "candidates: $OUT.fam.copies.tsv lists no copy (no family): nothing to do"; return 0
   fi
@@ -767,6 +812,7 @@ stage_candidates() {
 # 2026-10-02. The three helpers are defined inside the stage (they are its code alone: figures/samples.py's driver_stage_code
 # then keeps them out of the other stages' code hashes).
 stage_assign() {
+  unset RUSTLE_READTHROUGH_JUNCTIONS   # assemble-only: copy_assign refuses it on every assign call (round-23 audit)
   # fam_regions all|only|skip [LIST]: copy_assign's --regions for the families of PREFIX.fam.copies.regions (`{fid}\t{chrom}:
   # {lo}-{hi}`, the copies' hull +- 5 kb per family and contig, as mcl_families writes it): every row, the rows of the
   # families LIST names (one id per line), or the other rows, MERGED per contig into disjoint intervals (an interval that
@@ -865,10 +911,19 @@ stage_assign() {
   fi
   [ -s "$OUT.fam.copies.tsv" ] || { echo "assign needs $OUT.fam.copies.tsv (run the families stage with an mcl_families that writes the copy table), or pass --legacy-catalog" >&2; exit 2; }
   if [ "$(awk 'NR > 1 && NF' "$OUT.fam.copies.tsv" | wc -l)" = 0 ]; then
+    rm -f "$OUT".assign.*.tsv "$OUT".assign.*.txt "$OUT".assign_cand.* "$OUT".assign_rest.*   # an earlier run's products
     say "assign: $OUT.fam.copies.tsv lists no copy (no family): nothing to assign"; return 0
   fi
   [ -s "$OUT.fam.copies.regions" ] || { echo "assign needs $OUT.fam.copies.regions (the families stage writes it beside the copy table)" >&2; exit 2; }
+  # flagged candidates but no augmented families: the candidates stage did not finish; assigning without them would be silent
+  if cand_ready && [ ! -s "$OUT.aug.families.txt" ] && awk -F'\t' 'NR > 1 && $5 == 1 { f = 1 } END { exit !f }' "$OUT.cand.candidates.tsv"; then
+    echo "[rustle_pipeline] $OUT.cand.candidates.tsv has flagged candidates but $OUT.aug.families.txt is missing (the candidates stage did not finish): run it again, or drop --candidates" >&2; exit 2
+  fi
   if cand_ready && [ -s "$OUT.aug.families.txt" ]; then
+    # the candidates path applies none of the skip lists below: refused rather than silently ignored (round-10 audit)
+    if [ "$MAX_WINDOW_RECORDS" -gt 0 ] || [ -n "${RUSTLE_ANNOTATED_ONLY:-}" ] || [ -n "${RUSTLE_EXCLUDE_BED:-}" ]; then
+      echo "[rustle_pipeline] --candidates does not apply --max-window-records / --low-mem / RUSTLE_ANNOTATED_ONLY / RUSTLE_EXCLUDE_BED: drop one of them" >&2; exit 2
+    fi
     assign_with_candidates; return 0
   fi
   if [ "$CANDIDATES" != 1 ] && [ -s "$OUT.aug.families.txt" ] && [ ! "$OUT.aug.families.txt" -ot "$OUT.fam.copies.tsv" ]; then
@@ -878,15 +933,17 @@ stage_assign() {
   rm -f "$OUT".assign.*.tsv "$OUT".assign_cand.* "$OUT".assign_rest.*   # an earlier split run's tables
   local mem=()
   # --tied-prefilter (byte-identical): each region is read light first and only the AS-tied molecules' records are loaded in full
-  [ -n "${RUSTLE_READTHROUGH_JUNCTIONS:-}" ] || mem+=(--tied-prefilter)
-  # --max-window-records N (--low-mem: 500,000): a family whose merged copy windows (copy +- 50 kb, what copy_assign reads) hold more
+  mem+=(--tied-prefilter)
+  # --max-window-records N (--low-mem: 500,000): a family whose merged copy windows (copy +- 50 kb clipped to its region, what copy_assign reads) hold more
   # than N records copy_assign would keep (rDNA arrays, acrocentric short arms) is not assigned, and its regions are not swept: listed
   # with the count reached in PREFIX.assign.depth_skipped.tsv (`utilities window-depth`). Only reads such a family shares with others
   # can change: their placement on its copies is no longer seen.
   rm -f "$OUT.assign.depth_skipped.tsv" "$OUT.assign.depth_skipped.txt"
   if [ "$MAX_WINDOW_RECORDS" -gt 0 ]; then
+    # clipped to the regions copy_assign sweeps (every family's: the skip lists only shrink them, so still an upper bound)
+    fam_regions all > "$OUT.assign.depth_regions.txt"
     "$BIN/utilities" window-depth --bam "$BAM" --copies "$OUT.fam.copies.tsv" --max "$MAX_WINDOW_RECORDS" \
-      --out "$OUT.assign.depth_skipped.tsv" 2>> "$OUT.assign.depth.log"
+      --regions "$OUT.assign.depth_regions.txt" --out "$OUT.assign.depth_skipped.tsv" 2>> "$OUT.assign.depth.log"
     if [ -s "$OUT.assign.depth_skipped.tsv" ]; then
       cut -f1 "$OUT.assign.depth_skipped.tsv" > "$OUT.assign.depth_skipped.txt"   # --skip-families is passed once below
       say "assign: $(wc -l < "$OUT.assign.depth_skipped.tsv") famil(ies) with a copy window over $MAX_WINDOW_RECORDS records are not assigned ($OUT.assign.depth_skipped.tsv)"
@@ -914,6 +971,9 @@ stage_assign() {
   else
     fam_regions all > "$OUT.regions.txt"
   fi
+  if [ ! -s "$OUT.regions.txt" ]; then
+    say "assign: every family is on a skip list ($OUT.assign.skipped.txt): nothing to assign"; return 0
+  fi
   "$BIN/copy_assign" --bam "$BAM" --fasta "$FASTA" --regions "$OUT.regions.txt" --families "$OUT.fam.copies.tsv" \
     --copies-fa "$OUT.fam.copies.fa" "${ASSIGN_FAST[@]}" "${mem[@]}" "${INSPECT_ASSIGN[@]}" --out "$OUT.assign" > "$OUT.assign.log" 2>&1 \
     || { local rc=$?; say "assign: copy_assign failed (exit $rc), see $OUT.assign.log"; exit "$rc"; }
@@ -924,9 +984,15 @@ stage_assign() {
 # 6.8x on the heaviest family) and `--region-threads` (cross-contig rayon pool; byte-identical by construction) —
 # are ON here by default instead of opt-in. Products: PREFIX.assign_fam.* (the catalog assign keeps PREFIX.assign.*).
 stage_assign_fam() {
+  # this phase reads every family: the skip lists of the `assign` stage are not applied, so they are refused (round-10 audit)
+  if [ "$MAX_WINDOW_RECORDS" -gt 0 ] || [ -n "${RUSTLE_ANNOTATED_ONLY:-}" ] || [ -n "${RUSTLE_EXCLUDE_BED:-}" ]; then
+    echo "[rustle_pipeline] merged applies no --max-window-records / --low-mem / RUSTLE_ANNOTATED_ONLY / RUSTLE_EXCLUDE_BED: use \`all\` for them" >&2; exit 2
+  fi
   say "assign: per-read copy assignment on $OUT.fam.copies (families table; --skip-poa-diagnostic --region-threads $THREADS)"
   samtools view -H "$BAM" | awk '$1=="@SQ"{sub("SN:","",$2); sub("LN:","",$3); print $2":0-"$3}' > "$OUT.regions.txt"
-  "$BIN/copy_assign" --bam "$BAM" --fasta "$FASTA" --regions "$OUT.regions.txt" \
+  # RUSTLE_READTHROUGH_JUNCTIONS is assemble-only (copy_assign refuses it here): dropped for this call alone, so the
+  # merged.env record written after this phase still names it and a rerun resumes (round-24 audit)
+  env -u RUSTLE_READTHROUGH_JUNCTIONS "$BIN/copy_assign" --bam "$BAM" --fasta "$FASTA" --regions "$OUT.regions.txt" \
     --families "$OUT.fam.copies.tsv" --copies-fa "$OUT.fam.copies.fa" \
     --skip-poa-diagnostic --region-threads "$THREADS" "${INSPECT_ASSIGN[@]}" --out "$OUT.assign_fam" > "$OUT.assign_fam.log" 2>&1
   say "assign: $(awk -F'\t' 'NR>1 && $4=="assigned"' "$OUT.assign_fam.assignments.tsv" | wc -l) assigned rows of $(awk 'NR>1' "$OUT.assign_fam.assignments.tsv" | wc -l) (one row per read x family)"
@@ -955,7 +1021,7 @@ stage_merged() {
   local env_ok=0
   if [ -f "$OUT.merged.env" ] && [ "$(cat "$OUT.merged.env")" = "$(merged_env)" ]; then env_ok=1; fi
   # removed before any phase runs (a run that dies midway must not leave the record vouching for its products), and once one
-  # phase runs every later phase runs too (its input changed), as in run_all
+  # phase runs every later phase runs too (its input changed), as in stage_all
   rm -f "$OUT.merged.env"
   if [ "$env_ok" = 1 ] && [ -s "$OUT.gtf" ]; then
     say "merged: phase 1 assemble SKIPPED ($OUT.gtf present, env matches)"
@@ -1003,22 +1069,36 @@ stage_flag() {
 # 8 gives one part for a mammalian genome (the figures' index, ~13 GB to hold); --index-gb 1 / --low-mem writes ~1-Gbp parts
 # that flag loads one at a time (minimap2 --split-prefix merges their hits: near-identical, not byte-identical).
 stage_index() {
-  if [ -s "$OUT.splice.mmi" ]; then say "index: $OUT.splice.mmi present"; return 0; fi
+  # reused only when built from this FASTA with this part size (PREFIX.splice.mmi.key; round-10 audit)
+  local key; key=$(printf 'fasta=%s\nindex_gb=%s\n' "$(readlink -f "$FASTA")" "$INDEX_GB")
+  if [ -s "$OUT.splice.mmi" ] && [ "$(cat "$OUT.splice.mmi.key" 2>/dev/null)" = "$key" ]; then say "index: $OUT.splice.mmi present"; return 0; fi
+  rm -f "$OUT.splice.mmi.key"
   say "index: minimap2 -x splice -I ${INDEX_GB}G -d $OUT.splice.mmi"
   "${RUSTLE_MINIMAP2:-minimap2}" -x splice -I "${INDEX_GB}G" -t "$THREADS" -d "$OUT.splice.mmi.tmp" "$FASTA" > "$OUT.index.log" 2>&1
   mv "$OUT.splice.mmi.tmp" "$OUT.splice.mmi"
+  printf '%s\n' "$key" > "$OUT.splice.mmi.key"
 }
-# all_env: what a finished `all` stage was run with; a stage is skipped only when it matches (and its product is there)
-all_env() {
+# stage_all_env STAGE: what a finished `all` stage was run with; a stage is skipped only when it matches (and its product is there)
+stage_all_env() {
   merged_env
   printf 'candidates=%s\nlegacy=%s\ngff=%s\nindex=%s\nindex_gb=%s\nregion_threads=%s\npoa=%s\n' "$CANDIDATES" "$LEGACY_CATALOG" \
     "$GFF" "${INDEX:-$OUT.splice.mmi}" "$INDEX_GB" "${RUSTLE_REGION_THREADS:-8}" "${RUSTLE_POA_DIAGNOSTIC:-0}"
   printf 'max_window_records=%s\n' "$MAX_WINDOW_RECORDS"
+  # settings only one stage reads go only into that stage's record (a flag-only option re-runs flag alone; round-23 audit),
+  # and the driver itself everywhere (a default flipped here reaches no binary stat; round-10 audit)
+  case "$1" in
+    flag) printf 'confirm=%s\nforeign=%s\n' "${CONFIRM[*]-}" "${FOREIGN[*]-}";;
+    candidates) printf 'delta=%s\ncand_max=%s\n' "$DELTA" "$CAND_MAX";;
+    catalog|assign) printf 'inspect=%s\n' "$INSPECT";;
+  esac
+  [ -f "$0" ] && stat -L -c "driver %s %Y" "$0"; true
 }
-# run_all: every stage as its own driver call under /usr/bin/time (PREFIX.<stage>.time: wall seconds, peak RSS of the stage's
-# process tree, exit). Resume: a stage whose product exists, whose time record says exit 0 and whose settings match PREFIX.all.env
-# is skipped — until one stage runs, after which every later stage runs too. A failing stage stops the run (its record stays).
-run_all() {
+# stage_all: every stage as its own driver call under /usr/bin/time (PREFIX.<stage>.time: wall seconds, peak RSS of the stage's
+# process tree, exit). Resume: a stage whose product exists and is not newer than its time record (a direct stage call rewrote
+# it), whose time record says exit 0 and whose OWN settings record PREFIX.<stage>.env matches is skipped — until one stage runs,
+# after which every later stage runs too. A stage's record is removed before it runs and written only when it succeeds, so a
+# failed or killed stage is redone and the stages before it are not; `--from` writes no record for the stages it skips.
+stage_all() {
   local plan=(assemble:"$OUT.gtf" families:"$OUT.fam.copies.tsv")
   if [ "$LEGACY_CATALOG" = 1 ]; then plan+=(catalog:"$OUT.cat.copies.tsv")
   elif [ "$CANDIDATES" = 1 ]; then plan+=(candidates:"$OUT.cand.candidates.tsv"); fi
@@ -1031,19 +1111,18 @@ run_all() {
     elif [ -z "$INDEX" ]; then plan+=(index:"$OUT.splice.mmi"); INDEX=$OUT.splice.mmi; args+=(--index "$OUT.splice.mmi"); fi
     plan+=(flag:"$OUT.flag.missing_copy.tsv")
   fi
-  env_now=$(all_env)
   local started=1; [ -n "$FROM_STAGE" ] && started=0
   for item in "${plan[@]}"; do
-    st=${item%%:*}; prod=${item#*:}
+    st=${item%%:*}; prod=${item#*:}; env_now=$(stage_all_env "$st")
     if [ "$started" = 0 ]; then
       if [ "$st" = "$FROM_STAGE" ]; then started=1; else say "all: $st skipped (--from $FROM_STAGE)"; continue; fi
     fi
-    if [ "$RESUME" = 1 ] && [ "$ran" = 0 ] && [ -s "$prod" ] && [ -f "$OUT.all.env" ] && [ "$(cat "$OUT.all.env")" = "$env_now" ] \
-       && grep -qx $'exit\t0' "$OUT.$st.time" 2>/dev/null; then
+    if [ "$RESUME" = 1 ] && [ "$ran" = 0 ] && [ -s "$prod" ] && [ -f "$OUT.$st.env" ] && [ "$(cat "$OUT.$st.env")" = "$env_now" ] \
+       && grep -qx $'exit\t0' "$OUT.$st.time" 2>/dev/null && [ ! "$prod" -nt "$OUT.$st.time" ]; then
       say "all: $st SKIPPED ($prod present, settings unchanged)"; continue
     fi
     ran=1
-    rm -f "$OUT.all.env"
+    rm -f "$OUT.$st.env" "$OUT.all.env"   # all.env: the single record of builds before 2026-11-07
     say "all: $st"
     local rc=0
     if [ -x /usr/bin/time ]; then
@@ -1054,10 +1133,9 @@ run_all() {
     fi
     { cat "$OUT.$st.time.tmp" 2>/dev/null | grep -E '^(wall_s|peak_rss_kb)'; printf 'exit\t%s\n' "$rc"; } > "$OUT.$st.time"; rm -f "$OUT.$st.time.tmp"
     [ "$rc" = 0 ] || { say "all: $st FAILED (exit $rc); see $OUT.$st.time and the stage's log"; exit "$rc"; }
-    printf '%s\n' "$env_now" > "$OUT.all.env"
+    printf '%s\n' "$env_now" > "$OUT.$st.env"
     if [ -n "$TO_STAGE" ] && [ "$st" = "$TO_STAGE" ]; then say "all: stopped after $st (--to $TO_STAGE); product $prod"; return 0; fi
   done
-  printf '%s\n' "$env_now" > "$OUT.all.env"
   say "all: done. stage, wall, peak memory:"
   for item in "${plan[@]}"; do
     st=${item%%:*}
@@ -1069,7 +1147,7 @@ case "$STAGE" in
   assemble) stage_assemble;; families) stage_families;; candidates) stage_candidates;; catalog) stage_catalog;;
   assign) stage_assign;; flag) stage_flag;; index) stage_index;;
   # --legacy-catalog: `assign` reads the legacy catalog, so `all` builds it; --candidates: `all` runs the (opt-in) candidates stage
-  all) run_all;;
+  all) stage_all;;
   *) echo "unknown stage $STAGE" >&2; exit 2;;
 esac
 say "done"

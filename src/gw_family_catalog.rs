@@ -12,7 +12,7 @@
 //! arbitrary `core_recip≥0.13` similarity threshold that over-merges: DNFAM0 = 728 members chr1→chrY).
 //! Writes `<out>.families.tsv` + `<out>.copies.tsv`.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
 use std::io::Write;
 
@@ -391,11 +391,11 @@ fn emit_catalog(
     refine_params: &RefineParams,
 ) -> Result<Vec<Vec<DenovoTranscript>>> {
     use std::collections::BTreeSet;
-    let mut fh = std::fs::File::create(format!("{out}.families.tsv"))?;
-    let mut ch = std::fs::File::create(format!("{out}.copies.tsv"))?;
+    let mut fh = std::fs::File::create(format!("{out}.families.tsv.tmp"))?;
+    let mut ch = std::fs::File::create(format!("{out}.copies.tsv.tmp"))?;
     // The exon-sum (spliced, FLNC-derived) sequence of every copy, in transcription orientation (for the
     // RNA path); for the DNA path it is the genomic locus sequence. Annotation-free family-validation substrate.
-    let mut sh = std::fs::File::create(format!("{out}.copies.fa"))?;
+    let mut sh = std::fs::File::create(format!("{out}.copies.fa.tmp"))?;
     // `n_edges`/`density`/`lambda`/`cut_certified` are APPENDED last, so existing header-keyed readers
     // keep working unchanged. They are a REPORT on the emitted family, never an input to it:
     //   lambda        = minimum number of E_r edges whose removal splits this family (0 = n<2)
@@ -425,7 +425,7 @@ fn emit_catalog(
     // other members. Measured against Soto 2025's families: precision 0.6308 at d=1 against 0.2156 at
     // d=2 and 0.0118 at d=4, holding within every family-size stratum. REPORTED ONLY — like `lambda`
     // and `max_family_identity`, nothing in the pipeline branches on it.
-    let mut ph = std::fs::File::create(format!("{out}.pairs.tsv"))?;
+    let mut ph = std::fs::File::create(format!("{out}.pairs.tsv.tmp"))?;
     writeln!(
         ph,
         "family_id\tcopy_i\tcopy_j\tchrom_i\tstart_i\tend_i\tchrom_j\tstart_j\tend_j\
@@ -574,6 +574,14 @@ fn emit_catalog(
             }
         }
     }
+    // all four in place only once every row is written: a run that died mid-table used to leave a short catalog that a
+    // direct `assign --legacy-catalog` then read
+    for f in [fh, ch, sh, ph] {
+        f.sync_all()?;
+    }
+    for ext in ["families.tsv", "copies.tsv", "copies.fa", "pairs.tsv"] {
+        std::fs::rename(format!("{out}.{ext}.tmp"), format!("{out}.{ext}"))?;
+    }
     eprintln!(
         "[gw-catalog] wrote {} families ({} cross-chromosome) -> {out}.families.tsv + {out}.copies.tsv",
         fams.len(),
@@ -616,11 +624,17 @@ fn emit_catalog(
 ///
 /// `--no-refine` still wins over everything (the documented escape hatch when minimap2 is unavailable).
 /// Is the genome-anchored repeat-hub veto requested? Mirrors `denovo_pipeline::repeat_gate_threshold`.
-fn repeat_gate_on() -> bool {
-    std::env::var("RUSTLE_ER_REPEAT_GATE")
-        .ok()
-        .and_then(|v| v.parse::<u32>().ok())
-        .is_some_and(|m| m > 0)
+/// A `RUSTLE_*` number: `default` when unset; an error when set but not a number (`0,4` used to give the default silently,
+/// while the driver's settings record still named the string).
+fn env_num<T: std::str::FromStr>(name: &str, default: T) -> Result<T> {
+    match std::env::var(name) {
+        Ok(v) => v.trim().parse().map_err(|_| anyhow::anyhow!("{name}={v:?} is not a number")),
+        Err(_) => Ok(default),
+    }
+}
+
+fn repeat_gate_on() -> Result<bool> {
+    Ok(env_num::<u32>("RUSTLE_ER_REPEAT_GATE", 0)? > 0)
 }
 
 fn refine_enabled(o1_homology: bool, no_refine_flag: bool) -> bool {
@@ -772,15 +786,8 @@ fn main() -> Result<()> {
         //     raising it rejects "two families share one duplicated block" edges that fuse distinct families.
         //   RUSTLE_GENOME_GAMMA — γ-quasi-clique density for family blocks. Default 0.20. Raising it demands
         //     denser within-family connectivity, splitting blocks held together by a few bridge edges.
-        if let Ok(v) = std::env::var("RUSTLE_GENOME_MIN_COVERAGE") {
-            if let Ok(x) = v.parse::<f64>() {
-                refine_params.min_coverage = x;
-            }
-        }
-        let gamma: f64 = std::env::var("RUSTLE_GENOME_GAMMA")
-            .ok()
-            .and_then(|v| v.parse::<f64>().ok())
-            .unwrap_or(0.20);
+        refine_params.min_coverage = env_num("RUSTLE_GENOME_MIN_COVERAGE", refine_params.min_coverage)?;
+        let gamma: f64 = env_num("RUSTLE_GENOME_GAMMA", 0.20)?;
         eprintln!(
             "[gw-catalog-genome] grouping: min_identity={:.2} min_coverage={:.2} gamma={:.2}",
             refine_params.min_identity, refine_params.min_coverage, gamma
@@ -861,11 +868,7 @@ fn main() -> Result<()> {
     // criterion that decides borderline members. Exposed so a member's exclusion can be attributed to
     // coverage rather than inferred -- e.g. NPIPB12, whose 13 homology edges all reach >= 0.89 identity but
     // top out at 0.25 coverage (bench/soto/merge_quality_analysis.md §24).
-    if let Ok(v) = std::env::var("RUSTLE_GENOME_MIN_COVERAGE") {
-        if let Ok(x) = v.parse::<f64>() {
-            refine_params.min_coverage = x;
-        }
-    }
+    refine_params.min_coverage = env_num("RUSTLE_GENOME_MIN_COVERAGE", refine_params.min_coverage)?;
     // `--protein-tail` also promotes protein homology to a genome-wide E_r DEFINITION edge in the
     // homology-primary catalog (in addition to feeding the `--refine` block below): it recovers coding
     // paralogs that have diverged past the nucleotide seeds' ~0.65 identity floor.
@@ -889,7 +892,7 @@ fn main() -> Result<()> {
     // count how many distinct places each representative occurs in. It reads the same field the
     // genomic-span route uses. Set ONLY when the gate is on, so the OFF path stays byte-identical --
     // verified 2026-08-26: with the flag unset, copies.tsv and families.tsv md5s are unchanged.
-    if repeat_gate_on() {
+    if repeat_gate_on()? {
         refine_params.intron_fasta = Some(args.fasta.clone());
     }
     // The genomic-span edge union (`RUSTLE_ER_UNION_GENOMIC_SPAN=1`) computes a second E_r edge set on each rep's genomic
@@ -923,10 +926,7 @@ fn main() -> Result<()> {
             piece_records: args.piece_records,
             only: args.piece.clone(),
         };
-        let gamma = std::env::var("RUSTLE_GENOME_GAMMA")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0.20);
+        let gamma = env_num("RUSTLE_GENOME_GAMMA", 0.20)?;
         match resumable(detect_homology_catalog_piecewise(
             bam,
             &args.fasta,
@@ -963,10 +963,7 @@ fn main() -> Result<()> {
             // γ-quasi-clique density floor. Same knob the --from-genome path reads, so the two E_r
             // callers cannot drift apart. Default 0.20; 0.40 is the high-precision setting, which splits
             // low-density blocks instead of admitting them as one family.
-            std::env::var("RUSTLE_GENOME_GAMMA")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0.20),
+            env_num("RUSTLE_GENOME_GAMMA", 0.20)?,
         ))?
     } else if args.cross_chrom {
         // CONFLICT catalogs build no E_r graph, so there is no λ to certify: an EMPTY certificate vector
@@ -1079,6 +1076,10 @@ fn main() -> Result<()> {
     // Sort + write the family catalog (families.tsv/copies.tsv/copies.fa). Shared by the RNA path
     // and the DNA --from-genome path; returns the sorted families for the downstream sections.
     let fams = emit_catalog(&args.out, fams, certs, &refine_params)?;
+    // written below only under their option: an earlier run's must not sit beside this catalog
+    for ext in ["seed.tsv", "joint_edges.tsv", "joint_families.tsv", "joint_rule.tsv"] {
+        let _ = std::fs::remove_file(format!("{}.{ext}", args.out));
+    }
     if args.joint_dna_rna {
         write_joint_rna_dna_certificate(&args.out, &fams, &args.fasta, &refine_params)?;
     }
@@ -1086,6 +1087,10 @@ fn main() -> Result<()> {
     // influence it. No-op (and no `.seed.tsv`) when the flag is absent.
     project_seeds(&args.seed, &fams, &args.out, args.min_copies)?;
 
+    // the optional tables below are written only when their option is on and non-empty: clear an earlier run's first
+    for ext in ["collapsed.tsv", "expressed_collapsed.tsv", "dna_family.tsv", "allproj.tsv", "famcn.tsv"] {
+        let _ = std::fs::remove_file(format!("{}.{ext}", args.out));
+    }
     // K=0-collapsed families re-admitted by Task 3 (`--collapse-enumerate`): copy-NUMBER only, kept fully
     // separate from families.tsv/copies.tsv so the OFF path (flag off or nothing collapsed) writes no file
     // and byte-identical-OFF holds.
@@ -1188,7 +1193,7 @@ fn main() -> Result<()> {
                 (format!("GWFAM{fi}"), loci)
             })
             .collect();
-        let proj_by_fam = match rustle::genome_projection::project_families_batch(
+        let proj_by_fam = rustle::genome_projection::project_families_batch(
             &consensuses,
             &args.fasta,
             &known,
@@ -1196,13 +1201,8 @@ fn main() -> Result<()> {
             0.80,
             &refine_params.minimap2,
             args.threads,
-        ) {
-            Ok(m) => m,
-            Err(e) => {
-                eprintln!("[gw-catalog] batch famCN projection failed ({e}); famCN/totalCN fall back to n_rna_copies");
-                HashMap::new()
-            }
-        };
+        )
+        .context("batch famCN projection (famcn.tsv would read as 'no extra copy')")?;
         let mut ff = std::fs::File::create(format!("{}.famcn.tsv", args.out))?;
         writeln!(
             ff,
@@ -1279,7 +1279,7 @@ fn main() -> Result<()> {
             &refine_params.minimap2,
             args.threads,
         )
-        .unwrap_or_default();
+        .context("project-all-families: projecting the family consensuses (minimap2)")?;
         let spans_by_fam: std::collections::HashMap<&String, &Vec<(String, u64, u64)>> =
             known.iter().collect();
         let mut rows: Vec<String> = Vec::new();
@@ -1294,7 +1294,7 @@ fn main() -> Result<()> {
                     args.threads,
                 )
                 .map(|(p, _)| p.len())
-                .unwrap_or(0);
+                .with_context(|| format!("project-all-families: reading {}:{}-{} from {bam}", l.chrom, l.start, l.end))?;
                 if n_support < 3 {
                     continue;
                 }
@@ -1306,6 +1306,7 @@ fn main() -> Result<()> {
             }
         }
         rows.sort(); // `proj` is a HashMap (random iteration order); sort so allproj.tsv is reproducible run-to-run
+        eprintln!("[gw-catalog] project-all-families: {} loci pass (id>=0.98, >=3 reads)", rows.len());
         if !rows.is_empty() {
             let mut af = std::fs::File::create(format!("{}.allproj.tsv", args.out))?;
             writeln!(

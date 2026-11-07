@@ -26,7 +26,7 @@ genes = sorted(g for g in expressed if G[g]['exons'] and ('--keep-rna' in a or G
 best = None
 # the cache holds pairs already filtered at --cov over THESE genes of THIS genome: a different --cov, --fasta, annotation, --gtf
 # or --keep-rna gives another key, and a cache with another key (or the older bare-dict format) is recomputed (audit 2026-11-07)
-CACHE_KEY = hashlib.sha256(repr((COV, os.path.realpath(FASTA) if FASTA else None, genes)).encode()).hexdigest()
+CACHE_KEY = hashlib.sha256(repr((COV, os.path.realpath(FASTA) if FASTA else None, [(g, G[g]['strand'], sorted(G[g]['exons'])) for g in genes])).encode()).hexdigest()  # exons too: same ids, other annotation version
 if CACHE and os.path.exists(CACHE):
     c = pickle.load(open(CACHE, 'rb'))
     if isinstance(c, dict) and c.get('key') == CACHE_KEY: best = c['best']

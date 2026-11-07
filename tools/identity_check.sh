@@ -17,13 +17,15 @@ export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$REPO/target}
 BIN=$CARGO_TARGET_DIR/release
 mkdir -p "$GOLD"
 
+W=$(mktemp -d "${TMPDIR:-/tmp}/identity_syn.XXXXXX")   # per run: two concurrent checks used to share /tmp/identity_syn
 echo "[identity] 1/3 release test suite"
-bash tools/rlock.sh heavy cargo test --release > ${TMPDIR:-/tmp}/identity_test.log 2>&1 || { echo "[identity] TEST SUITE FAILED"; tail -5 ${TMPDIR:-/tmp}/identity_test.log; exit 1; }
-passed=$(grep -E "test result" ${TMPDIR:-/tmp}/identity_test.log | awk -F'[.;] ' '{s+=$2} END{print s}')
+# a release build + suite (and the real slice's families run) take far longer than rlock's 600 s default timeout
+export RLOCK_TIMEOUT=${RLOCK_TIMEOUT:-3600}
+bash tools/rlock.sh heavy cargo test --release > "$W/identity_test.log" 2>&1 || { echo "[identity] TEST SUITE FAILED ($W/identity_test.log)"; tail -5 "$W/identity_test.log"; exit 1; }
+passed=$(grep -E "test result" "$W/identity_test.log" | awk -F'[.;] ' '{s+=$2} END{print s}')
 echo "[identity] suite: $passed tests passed"
 
 echo "[identity] 2/3 synthetic MCL end-to-end"
-W=$(mktemp -d "${TMPDIR:-/tmp}/identity_syn.XXXXXX")   # per run: two concurrent checks used to share /tmp/identity_syn
 W=$W python3 - <<'EOF'
 import os
 import random
@@ -57,8 +59,7 @@ EOF
 ( cd $W && env -u RUSTLE_CACHE_DIR "$BIN/mcl_families" --from-gtf in.gtf --fasta genome.fa --threads 2 \
     --min-exonic-bp 1 --min-shared-exon-frac 0.60 --emit-units --emit-relations --out out.fam > mcl.log 2>&1 ) || { echo "[identity] MCL RUN FAILED"; cat $W/mcl.log; exit 1; }
 if [ "$MODE" = golden ]; then
-  cp $W/out.fam.copies.tsv $W/out.fam.copies.fa $W/out.fam.clusters.tsv $W/out.fam.params.tsv $W/out.fam.relations.tsv $W/out.fam.members_by_locus.tsv $W/out.fam.loci.gff3 $GOLD/
-  echo "[identity] golden saved to $GOLD"
+  :   # saved at the end, with the real slice's, so a failed step leaves the old golden set whole
 else
   for f in out.fam.copies.tsv out.fam.copies.fa out.fam.clusters.tsv out.fam.params.tsv out.fam.relations.tsv out.fam.members_by_locus.tsv out.fam.loci.gff3; do
     cmp -s $W/$f "$GOLD/$f" && echo "[identity] IDENTICAL $f" || { echo "[identity] DIFFERENT $f"; exit 1; }
@@ -74,8 +75,6 @@ if [ "${FULL:-0}" = 1 ]; then
     bash tools/rlock.sh heavy bash -c "samtools view -b $BAM $REGION > $R/slice.bam && samtools index $R/slice.bam"
     bash tools/rlock.sh heavy bash -c "cd $R && '$BIN/copy_assign' --assemble-only --genome-wide --assembly-junctions strict --bam slice.bam --fasta '$FASTA' --out slice --threads 4 > assemble.log 2>&1"
     bash tools/rlock.sh heavy bash -c "cd $R && env -u RUSTLE_CACHE_DIR '$BIN/mcl_families' --from-gtf slice.families.gtf --fasta '$FASTA' --threads 4 --min-exonic-bp 1 --min-shared-exon-frac 0.60 --emit-units --out slice.fam > families.log 2>&1"
-    for f in slice.gtf slice.fam.copies.tsv slice.fam.clusters.tsv; do cp "$R/$f" "$GOLD/real_$f"; done   # the names check reads
-    echo "[identity] real-data golden saved"
   else
     bash tools/rlock.sh heavy bash -c "samtools view -b $BAM $REGION > $R/slice.bam && samtools index $R/slice.bam"
     bash tools/rlock.sh heavy bash -c "cd $R && '$BIN/copy_assign' --assemble-only --genome-wide --assembly-junctions strict --bam slice.bam --fasta '$FASTA' --out slice --threads 4 > assemble.log 2>&1"
@@ -84,5 +83,12 @@ if [ "${FULL:-0}" = 1 ]; then
       cmp -s $R/$f "$GOLD/real_$f" && echo "[identity] IDENTICAL real $f" || { echo "[identity] DIFFERENT real $f"; exit 1; }
     done
   fi
+fi
+if [ "$MODE" = golden ]; then
+  cp $W/out.fam.copies.tsv $W/out.fam.copies.fa $W/out.fam.clusters.tsv $W/out.fam.params.tsv $W/out.fam.relations.tsv $W/out.fam.members_by_locus.tsv $W/out.fam.loci.gff3 $GOLD/
+  if [ "${FULL:-0}" = 1 ]; then
+    for f in slice.gtf slice.fam.copies.tsv slice.fam.clusters.tsv; do cp "$R/$f" "$GOLD/real_$f"; done   # the names check reads
+  fi
+  echo "[identity] golden saved to $GOLD"
 fi
 echo "[identity] ALL GREEN ($MODE)"

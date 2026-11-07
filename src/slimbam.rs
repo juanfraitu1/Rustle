@@ -32,9 +32,12 @@ fn passes(sec: i32, p: i32, ratio: f64, margin: i32) -> bool {
     sec as f64 >= (ratio * p as f64).min((p - margin) as f64)
 }
 
-/// A secondary (AS, ms) survives against its read's primary (AS, ms) when either tag passes; no primary: kept.
+/// A secondary (AS, ms) survives against its read's primary (AS, ms) when either tag passes; no primary: kept. The ms
+/// test needs ms on both (a missing tag reads 0, and 0 >= min(0.8 x 0, 0 - margin) would keep every secondary).
 fn keep_secondary(sec: (i32, i32), prim: Option<(i32, i32)>, ratio: f64, margin: i32) -> bool {
-    prim.map_or(true, |p| passes(sec.0, p.0, ratio, margin) || passes(sec.1, p.1, ratio, margin))
+    prim.map_or(true, |p| {
+        passes(sec.0, p.0, ratio, margin) || (sec.1 > 0 && p.1 > 0 && passes(sec.1, p.1, ratio, margin))
+    })
 }
 
 const MS: noodles_sam::alignment::record::data::field::Tag = noodles_sam::alignment::record::data::field::Tag::new(b'm', b's');
@@ -65,7 +68,9 @@ fn main() -> Result<()> {
     eprintln!("[slimbam] {} primary reads ({:.0} s)", prim.len(), t0.elapsed().as_secs_f64());
     let mut r = rustle::bam::open_bam(&a.bam, a.threads)?;
     let header = r.read_header()?;
-    let file = std::fs::File::create(&a.out).with_context(|| a.out.clone())?;
+    // written beside the final name and renamed when complete: a killed job never leaves a short BAM under --out
+    let tmp = format!("{}.tmp", a.out);
+    let file = std::fs::File::create(&tmp).with_context(|| tmp.clone())?;
     let workers = std::num::NonZeroUsize::new(a.threads.max(1)).unwrap();
     let mut w = noodles_bam::io::Writer::from(noodles_bgzf::MultithreadedWriter::with_worker_count(workers, file));
     w.write_header(&header)?;
@@ -84,6 +89,7 @@ fn main() -> Result<()> {
         w.write_record(&header, &rec)?;
     }
     w.into_inner().finish()?;
+    std::fs::rename(&tmp, &a.out).with_context(|| format!("renaming {tmp} to {}", a.out))?;
     eprintln!(
         "[slimbam] records {n_in}; secondaries {n_sec}, kept {n_sec_kept}; written {} ({:.0} s)",
         n_in - n_sec + n_sec_kept,
@@ -100,6 +106,7 @@ mod tests {
     fn keeps_the_union_of_the_semisec_cut_and_the_o2_tie_window_on_as_or_ms() {
         let p = Some((1000, 1000));
         assert!(keep_secondary((800, 0), p, 0.8, 10), "AS ratio 0.8 exactly");
+        assert!(!keep_secondary((100, 0), Some((1000, 0)), 0.8, 10), "no ms tags: the AS cut alone decides");
         assert!(!keep_secondary((799, 799), p, 0.8, 10), "both tags below");
         assert!(keep_secondary((500, 800), p, 0.8, 10), "ms alone passes (a spliced copy losing on intron cost)");
         assert!(keep_secondary((1000, 1000), p, 0.8, 10), "exact tie");

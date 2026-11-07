@@ -948,4 +948,12 @@ fn a_list_runs_no_evidence_pass() {
         "{}",
         err(&o)
     );
+    // (3) two windows whose boundary crosses a locus: both would write its models under one transcript_id
+    std::fs::write(&regions, "c1:1-1500\nc1:1501-3000\n").unwrap();
+    let (o, _) = two_regions("split_locus", &["--bridge-units-list", l]);
+    assert!(
+        !o.status.success() && err(&o).contains("was assembled by two regions"),
+        "{}",
+        err(&o)
+    );
 }

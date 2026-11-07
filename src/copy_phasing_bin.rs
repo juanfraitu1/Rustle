@@ -183,6 +183,11 @@ fn run(a: &Args) -> Result<()> {
     use std::io::Write;
     let by_fam = load_copies(&a.copies)?;
     let (net, n_net) = load_net(&a.net, &a.families)?;
+    // a family asked for that neither the net nor the copy table holds (a typo) used to give headers only and exit 0
+    if let Some(fs) = &a.families {
+        let missing: Vec<&String> = fs.iter().filter(|f| !n_net.contains_key(*f) && !by_fam.contains_key(*f)).collect();
+        anyhow::ensure!(missing.is_empty(), "--families: {missing:?} in neither {} nor {}", a.net, a.copies);
+    }
     // the run's read table: every used net read, sorted, so ReadId order = name order
     let table: Vec<String> = net.values().flatten().cloned().collect::<BTreeSet<_>>().into_iter().collect();
     let names: HashMap<Vec<u8>, ReadId> = table.iter().enumerate().map(|(i, n)| (n.as_bytes().to_vec(), i as ReadId)).collect();
@@ -214,14 +219,16 @@ fn run(a: &Args) -> Result<()> {
     writeln!(lo, "family\tlocus\tn_reads\tnear_best\tweaker_only")?;
     writeln!(o2f, "family\tread\tassigned\tn_piles")?;
     let nm = |r: ReadId| table[r as usize].as_str();
-    let empty = Vec::new();
     let dumping = dump_fh.is_some();
     // one family's products as text (families run in parallel; the text is written in family order)
     let family_text = |fam: &String, reads: &BTreeSet<String>| -> Result<[String; 11]> {
         use std::fmt::Write as _;
         let mut t: [String; 11] = Default::default(); // ct cf cl rd ft lh lf lo o2 dump log
         let ids: BTreeSet<ReadId> = reads.iter().map(|r| names[r.as_bytes()]).collect();
-        let copies = by_fam.get(fam).unwrap_or(&empty);
+        // a --net family the --copies table lacks used to run with no copies and write an all-zero row
+        let copies = by_fam
+            .get(fam)
+            .with_context(|| format!("family {fam} is in --net but not in --copies (tables from different runs?)"))?;
         let piles = pile_records(&bam, copies, &ids, &prim, &names, a.params.window)?;
         let ftmp = tmp.join(fam.replace('/', "_"));
         std::fs::create_dir_all(&ftmp)?;

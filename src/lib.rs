@@ -57,12 +57,10 @@ pub use family::denovo_pipeline::denovo_assemble;
 
 pub use family::fam_from_gtf::annotation_families;
 
-pub use family::family_detect::family_rescue;
 pub use family::family_detect::mosaic;
 pub use family::family_detect::read_conflict;
 
 pub use family::candidates::absent_copy;
-pub use family::candidates::detect;
 
 /// Backwards-compatible alias: the `candidate_copies` binary's library module.
 pub use family::candidates as candidate_copies;

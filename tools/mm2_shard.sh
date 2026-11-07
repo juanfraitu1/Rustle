@@ -94,12 +94,14 @@ fi
 remaining() { if [ -z "$DEADLINE" ]; then echo 1000000000; else echo $(( DEADLINE - $(date +%s) )); fi; }
 
 # ---------------------------------------------------------------- input classification
-is_plain_fasta() {  # regular, non-empty, not gz, not an .mmi, first byte '>'
+is_plain_fasta() {  # regular, non-empty, not gz, not an .mmi, first byte '>', last byte a newline
   local f=$1 c
   [ -f "$f" ] && [ -s "$f" ] || return 1
   case "$f" in *.gz|*.mmi) return 1;; esac
   c=$(head -c 1 "$f")
-  [ "$c" = ">" ]
+  [ "$c" = ">" ] || return 1
+  # the shards are rewritten line by line (a final newline added), so a file without one never reassembles
+  [ -z "$(tail -c 1 "$f")" ]
 }
 
 # split "$@" (minimap2 argv) into FLAGS (all but the last two), TARGET, QUERY, THREADS, RUNFLAGS (FLAGS minus -t) and
@@ -262,9 +264,10 @@ engine() {
     if ! parent_alive; then log "parent (pid $PPID) is gone: stopping before shard $i"; return $EX_BUDGET; fi
     local rem; rem=$(remaining)
     local est; est=$(estimate "$qdir" "$bp")
-    if [ "$rem" -le 0 ] || { [ -n "$est" ] && [ "$est" -gt "$rem" ]; }; then
+    # with (nearly) a whole budget left the shard is started when only the estimate's +20% margin exceeds it (the deadline
+    # below then decides, exit 76); an estimate past the budget even without that margin (est*5/6, ~ raw + 4 s) stops it now (round-23 audit)
+    if [ "$rem" -le 0 ] || { [ -n "$est" ] && [ "$est" -gt "$rem" ] && ! { whole_budget "$rem" && [ $(( est * 5 / 6 )) -le "$rem" ]; }; }; then
       log "budget: shard $i/$nshard not started (remaining ${rem}s, estimate ${est:-?}s); $(done_count "$qdir" "$nshard")/$nshard shards done"
-      [ "$rem" -gt 0 ] && whole_budget "$rem" && return $EX_TOOBIG
       return $EX_BUDGET
     fi
     local t1; t1=$(date +%s)

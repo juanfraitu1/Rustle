@@ -127,6 +127,10 @@ enum Cmd {
         /// Count the records one by one (exact, slow on deep genomes) instead of the index estimate (the default).
         #[arg(long)]
         exact: bool,
+        /// copy_assign's `--regions` file (`chrom:lo-hi` per line): each copy's window is clipped to the region holding
+        /// the copy, as copy_assign clips it. Without it the window is the unclipped copy +- pad (an upper bound).
+        #[arg(long)]
+        regions: Option<String>,
         #[arg(long)]
         out: String,
     },
@@ -227,7 +231,9 @@ fn main() -> Result<()> {
             minimap2,
             threads,
         } => parcn::run(&copies_fa, &mat, &pat, &out, &minimap2, threads),
-        Cmd::WindowDepth { bam, copies, max, molecules, pad, exact, out } => window_depth(&bam, &copies, max, molecules.as_deref(), pad, exact, &out),
+        Cmd::WindowDepth { bam, copies, max, molecules, pad, exact, regions, out } => {
+            window_depth(&bam, &copies, max, molecules.as_deref(), pad, exact, regions.as_deref(), &out)
+        }
         Cmd::PsvDiscover { families, copies_fa, out, engine, blocks, only, threads } => {
             psv_discover(&families, &copies_fa, &out, &engine, blocks, only.as_deref(), threads)
         }
@@ -269,6 +275,12 @@ fn main() -> Result<()> {
     }
 }
 
+/// GTF attribute `key "value"` as a whole attribute: `reads` never matches inside `matched_reads "..."`, nor
+/// `transcript_id` the tail of `ref_transcript_id` (audit 2026-11-07, third pass: three readers, one rule).
+fn gtf_attr<'a>(s: &'a str, k: &str) -> Option<&'a str> {
+    s.split(';').map(str::trim).find_map(|a| a.strip_prefix(k)?.strip_prefix(" \"")?.split('"').next())
+}
+
 fn end_artifacts_run(gtf: &str, fasta: &str, out: &str, mode: &str, flags: Option<&str>, rule: &str) -> Result<()> {
     use anyhow::Context;
     use rayon::prelude::*;
@@ -276,10 +288,7 @@ fn end_artifacts_run(gtf: &str, fasta: &str, out: &str, mode: &str, flags: Optio
     use std::collections::{BTreeMap, HashSet};
     use std::io::Write;
     let text = std::fs::read_to_string(gtf).with_context(|| format!("read {gtf}"))?;
-    let attr = |s: &str, k: &str| -> Option<String> {
-        let p = s.find(&format!("{k} \""))? + k.len() + 2;
-        Some(s[p..p + s[p..].find('"')?].to_string())
-    };
+    let attr = |s: &str, k: &str| gtf_attr(s, k).map(String::from);
     // transcript_id -> (chrom, strand, reads, exons 0-based half-open); gene_id per transcript
     let mut m: BTreeMap<String, (String, char, u64, Vec<(i64, i64)>)> = BTreeMap::new();
     let mut gene: BTreeMap<String, String> = BTreeMap::new();
@@ -396,10 +405,7 @@ fn sample_counts_run(gtf: &str, bams: &str, samples: &str, out: &str) -> Result<
     use std::io::Write;
     let (bams, names): (Vec<&str>, Vec<&str>) = (bams.split(',').collect(), samples.split(',').collect());
     ensure!(bams.len() == names.len(), "sample-counts: {} BAMs but {} sample names", bams.len(), names.len());
-    // `key "value"` as a whole attribute (not the tail of ref_transcript_id)
-    let attr = |s: &str, k: &str| -> Option<String> {
-        s.split(';').map(str::trim).find_map(|a| a.strip_prefix(k)?.strip_prefix(" \"")?.split('"').next().map(String::from))
-    };
+    let attr = |s: &str, k: &str| gtf_attr(s, k).map(String::from);
     let mut by: BTreeMap<String, Tx> = BTreeMap::new();
     let mut order: Vec<String> = Vec::new();
     for line in std::fs::read_to_string(gtf).with_context(|| format!("read {gtf}"))?.lines() {
@@ -499,6 +505,9 @@ mod gff_to_gtf {
         let mut exons: HashMap<String, Vec<(u64, u64, String, String)>> = HashMap::new();
         let mut order: Vec<String> = Vec::new();
         let mut info: HashMap<String, (String, String)> = HashMap::new();
+        // gene / pseudogene features: an exon whose Parent is one of these (a pseudogene with no transcript) is its own
+        // transcript of that gene; it used to get gene_id "" and locus-bed merged all of them into one locus
+        let mut genes: HashMap<String, String> = HashMap::new();
 
         for line in reader.lines() {
             let line = line?;
@@ -525,7 +534,10 @@ mod gff_to_gtf {
                     v.push((s, e, f[1].to_string(), f[6].to_string()));
                 }
             } else if let Some(id) = a.get("ID") {
-                if !matches!(f[2], "gene" | "pseudogene" | "CDS" | "region") {
+                if matches!(f[2], "gene" | "pseudogene") {
+                    let name = a.get("gene").or_else(|| a.get("Name")).copied().unwrap_or("");
+                    genes.insert(id.to_string(), name.to_string());
+                } else if !matches!(f[2], "CDS" | "region") {
                     let gene = a
                         .get("gene")
                         .or_else(|| a.get("Name"))
@@ -549,7 +561,11 @@ mod gff_to_gtf {
         for tid in &order {
             let ex = exons.get_mut(tid).expect("ordered id must have exons");
             ex.sort();
-            let (gid, gname) = info.get(tid).cloned().unwrap_or_default();
+            let (gid, gname) = match (info.get(tid), genes.get(tid)) {
+                (Some(i), _) => i.clone(),
+                (None, Some(name)) => (tid.clone(), name.clone()),
+                (None, None) => Default::default(),
+            };
             let (src_f, strand) = (ex[0].2.clone(), ex[0].3.clone());
             let at = format!("transcript_id \"{tid}\"; gene_id \"{gid}\"; gene_name \"{gname}\"");
             writeln!(
@@ -580,12 +596,7 @@ mod locus_bed {
 
     type Locus = (String, i64, i64, String, u64, u32);
 
-    fn attr<'a>(s: &'a str, key: &str) -> Option<&'a str> {
-        let pat = format!("{key} \"");
-        let i = s.find(&pat)? + pat.len();
-        let j = s[i..].find('"')? + i;
-        Some(&s[i..j])
-    }
+    use super::gtf_attr as attr;
 
     fn loci(path: &str) -> Result<(Vec<String>, HashMap<String, Locus>)> {
         let f = std::fs::File::open(path).with_context(|| format!("opening {path}"))?;
@@ -605,7 +616,7 @@ mod locus_bed {
             let Some(t) = attr(fs[8], "transcript_id") else {
                 continue;
             };
-            if let Some(g) = attr(fs[8], "gene_id") {
+            if let Some(g) = attr(fs[8], "gene_id").filter(|g| !g.is_empty()) {
                 gene_of
                     .entry(t.to_string())
                     .or_insert_with(|| g.to_string());
@@ -1922,7 +1933,30 @@ fn psv_discover(
     Ok(())
 }
 
-fn window_depth(bam: &str, copies: &str, max: u64, molecules: Option<&str>, pad: u64, exact: bool, out: &str) -> Result<()> {
+/// Each copy's read window, copy +- pad, clipped to the region holding the copy when `regions` is given (copy_assign's
+/// clip); a copy no region holds keeps the unclipped window.
+fn clip_copy_windows(rows: &[(String, String, u64, u64)], pad: u64, regions: &[(String, u64, u64)]) -> Vec<(String, String, u64, u64)> {
+    rows.iter()
+        .map(|(f, c, s, e)| {
+            let (mut lo, mut hi) = (s.saturating_sub(pad), e + pad);
+            if let Some((_, rlo, rhi)) = regions.iter().find(|(rc, rlo, rhi)| rc == c && rlo <= s && e <= rhi) {
+                (lo, hi) = (lo.max(*rlo), hi.min(*rhi));
+            }
+            (f.clone(), c.clone(), lo, hi)
+        })
+        .collect()
+}
+
+fn window_depth(
+    bam: &str,
+    copies: &str,
+    max: u64,
+    molecules: Option<&str>,
+    pad: u64,
+    exact: bool,
+    regions: Option<&str>,
+    out: &str,
+) -> Result<()> {
     let text = std::fs::read_to_string(copies)?;
     let mut lines = text.lines();
     let hdr: Vec<&str> = lines.next().unwrap_or_default().split('\t').collect();
@@ -1935,6 +1969,20 @@ fn window_depth(bam: &str, copies: &str, max: u64, molecules: Option<&str>, pad:
         let f: Vec<&str> = l.split('\t').collect();
         rows.push((f[cf].to_string(), f[cc].to_string(), f[cs].parse::<u64>()?, f[ce].parse::<u64>()?));
     }
+    let (rows, pad) = match regions {
+        Some(path) => {
+            let mut regs = Vec::new();
+            for l in std::fs::read_to_string(path)?.lines().filter(|l| !l.trim().is_empty()) {
+                // the first token, as copy_assign's parse_region reads a --regions line
+                let tok = l.split_whitespace().next().unwrap_or_default();
+                let (c, r) = tok.rsplit_once(':').ok_or_else(|| anyhow::anyhow!("{path}: bad region {l}"))?;
+                let (a, b) = r.split_once('-').ok_or_else(|| anyhow::anyhow!("{path}: bad region {l}"))?;
+                regs.push((c.to_string(), a.parse::<u64>()?, b.parse::<u64>()?));
+            }
+            (clip_copy_windows(&rows, pad, &regs), 0)
+        }
+        None => (rows, pad),
+    };
     let multi = molecules.map(rustle::denovo_assemble::MultiPlacement::from_path).transpose()?;
     let t0 = std::time::Instant::now();
     let deep = if exact {
@@ -1956,4 +2004,50 @@ fn window_depth(bam: &str, copies: &str, max: u64, molecules: Option<&str>, pad:
         t0.elapsed().as_secs_f64()
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod audit_tests {
+    /// `reads` is read as a whole attribute (not inside `matched_reads`); pseudogene exons whose Parent is the gene keep
+    /// that gene, and locus-bed keeps two such pseudogenes apart (audit 2026-11-07, third pass).
+    #[test]
+    fn whole_attributes_and_pseudogene_genes() {
+        let a = r#"transcript_id "t1"; matched_reads "7"; reads "3"; ref_transcript_id "x""#;
+        assert_eq!(super::gtf_attr(a, "reads"), Some("3"));
+        assert_eq!(super::gtf_attr(a, "transcript_id"), Some("t1"));
+        assert_eq!(super::gtf_attr(r#"matched_reads "7""#, "reads"), None);
+
+        let dir = tempfile::tempdir().unwrap();
+        let gff = dir.path().join("a.gff");
+        std::fs::write(
+            &gff,
+            "c1\tRefSeq\tpseudogene\t10000\t11000\t.\t+\t.\tID=gene-AP1;Name=AP1\n\
+             c1\tRefSeq\texon\t10000\t11000\t.\t+\t.\tID=exon-1;Parent=gene-AP1\n\
+             c1\tRefSeq\tpseudogene\t90000\t91000\t.\t-\t.\tID=gene-BP2;Name=BP2\n\
+             c1\tRefSeq\texon\t90000\t91000\t.\t-\t.\tID=exon-2;Parent=gene-BP2\n",
+        )
+        .unwrap();
+        let gtf = dir.path().join("a.gtf");
+        super::gff_to_gtf::run(gff.to_str().unwrap(), "c1", gtf.to_str().unwrap()).unwrap();
+        let text = std::fs::read_to_string(&gtf).unwrap();
+        assert!(text.contains(r#"gene_id "gene-AP1"; gene_name "AP1""#), "{text}");
+        assert!(text.contains(r#"gene_id "gene-BP2"; gene_name "BP2""#), "{text}");
+        let bed = dir.path().join("a.bed");
+        super::locus_bed::run(gtf.to_str().unwrap(), bed.to_str().unwrap(), None, 0.5).unwrap();
+        let rows = std::fs::read_to_string(format!("{}.loci.bed", bed.display())).unwrap();
+        assert_eq!(rows.lines().filter(|l| !l.starts_with('#')).count(), 2, "{rows}");
+    }
+}
+
+#[cfg(test)]
+mod window_depth_tests {
+    /// copy_assign reads a copy's window clipped to the region holding the copy; window-depth counts the same window.
+    #[test]
+    fn a_copy_window_is_clipped_to_the_region_holding_the_copy() {
+        let rows = vec![("F".to_string(), "c5".to_string(), 1_000_000, 1_002_000), ("F".to_string(), "c9".to_string(), 500, 900)];
+        let regs = vec![("c5".to_string(), 995_000, 1_017_000)];
+        let w = super::clip_copy_windows(&rows, 50_000, &regs);
+        assert_eq!((w[0].2, w[0].3), (995_000, 1_017_000));
+        assert_eq!((w[1].2, w[1].3), (0, 50_900), "no region holds it: the unclipped window");
+    }
 }

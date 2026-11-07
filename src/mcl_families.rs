@@ -16,7 +16,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use rustle::annotation_families::{
-    build_clusters, fold_parts_into_loci, fold_parts_into_loci_opt, graph_from_paf_loci_stranded, loci_from_exon_blocks, parse_gene_key,
+    build_clusters, fold_graph, fold_parts_into_loci, fold_parts_into_loci_opt, graph_from_paf_loci_stranded, loci_from_exon_blocks, parse_gene_key,
     mcl_pair_rule_counted, sd_blocks, Cluster, CoreStatus, GeneKey, GraphParams, PairRule, SdPairs,
 };
 use rustle::fam_from_gtf::{
@@ -888,7 +888,7 @@ fn write_hierarchy(
             }
         }
         if merged.is_empty() {
-            merged.push((m.1, m.2)); // no exon record: the span (as `--exonless-span` does)
+            merged.push((m.1.saturating_sub(1), m.2)); // no exon record: the span, 0-based half-open (as `exonless_span`)
         }
         merged
     };
@@ -1319,7 +1319,11 @@ fn main() -> Result<()> {
     let mut gtf_collided: Vec<(String, String)> = Vec::new();
     let mut exon_gate_used: Option<(u64, String)> = None;
     let mut gtf_genome: Option<rustle::genome::GenomeIndex> = None;
+    // before the all-vs-all, not after it: a refused margin used to run (and cache) a non-exact gated PAF first
+    validate_exon_gate_margin(&args)?;
     if let Some(gtf) = args.from_gtf.clone() {
+        // the gated PAF is rewritten below but params.tsv only at the end: an old one must not vouch for a failed run's PAF
+        let _ = std::fs::remove_file(format!("{}.params.tsv", args.out));
         let fasta = args
             .fasta
             .clone()
@@ -1371,7 +1375,6 @@ fn main() -> Result<()> {
     if args.no_reject_self_hits {
         args.reject_self_hits = false;
     }
-    validate_exon_gate_margin(&args)?;
     if args.from_gtf.is_none() && !args.paf.is_empty() {
         check_gated_paf(&args)?;
     }
@@ -1648,8 +1651,11 @@ fn main() -> Result<()> {
         let f = move |k: &GeneKey| s.contains(k);
         Box::new(f) as Box<dyn Fn(&GeneKey) -> bool>
     });
+    // cluster statistics and the copy table's identity see folded records through their representative
+    let g_folded = loci.as_ref().filter(|_| args.fold_within_clusters).map(|m| fold_graph(&g, m));
+    let g_stats = g_folded.as_ref().unwrap_or(&g);
     let clusters: Vec<Cluster> =
-        build_clusters(&g, &parts, args.min_size, pred.as_ref().map(|b| b.as_ref()));
+        build_clusters(g_stats, &parts, args.min_size, pred.as_ref().map(|b| b.as_ref()));
     clock.lap("clusters");
 
     // .tmp + rename: a killed job must not leave a partial clusters.tsv (audit 2026-11-07, second pass)
@@ -1979,7 +1985,7 @@ fn main() -> Result<()> {
             &args.out,
             fasta,
             &clusters,
-            &g,
+            g_stats,
             &core_records,
             gtf_loci_list.as_deref().unwrap_or(&[]),
             rmsk.as_ref(),
@@ -3271,11 +3277,6 @@ mod tests {
         assert!(leaving_introns(&b, &i, &[]).is_empty());
     }
 
-    /// `--from-gtf` loci: a locus is a `gene_id` group spanning all its transcripts; its representative is the
-    /// transcript with the most reads, ties to the longer span, then to the LAST transcript_id; a gene without
-    /// exons is not a locus; the representative's exons come back sorted.
-    #[test]
-
     /// `--emit-relations` end to end on the fixture of `tests/fixtures/bridge_units`, with the loci this binary's own
     /// `gtf_loci` gives (the graph's nodes): the units of `copy_assign --bridge-regroup f1units --bridge-units-list`, its
     /// clusters and fold table, and the two tables equal the dev prototype's (`relations.py`, d90a33da) byte for byte.
@@ -3828,9 +3829,6 @@ mod tests {
         );
     }
 
-    /// `--from-gtf` loci: a locus is a `gene_id` group spanning all its transcripts; its representative is the
-    /// transcript with the most reads, ties to the longer span, then to the LAST transcript_id; a gene without
-    /// exons is not a locus; the representative's exons come back sorted.
     #[test]
     /// PREREG REPRULE-3: `--chain-gate 2` carries G1's other >= 2-read transcript (T1: its exon set differs from the
     /// representative's); T0 has one read and is not a chain; G2's two transcripts share one exon set, so no chain.
@@ -3860,6 +3858,37 @@ c1\tr\texon\t1001\t1100\t.\t-\t.\tgene_id \"G2\"; transcript_id \"Tb\";
         assert!(off.iter().all(|l| l.chains.is_empty()));
     }
 
+    /// Malformed `--from-gtf` input is refused, not fused: a gene on two contigs, a transcript_id in two genes; and a
+    /// transcript line without exon lines never becomes the representative.
+    #[test]
+    fn gtf_loci_refuses_a_gene_on_two_contigs_and_skips_an_exonless_representative() {
+        let two = "\
+c1\tr\ttranscript\t101\t200\t.\t+\t.\tgene_id \"G\"; transcript_id \"T1\"; reads \"1\";
+c1\tr\texon\t101\t200\t.\t+\t.\tgene_id \"G\"; transcript_id \"T1\";
+c2\tr\ttranscript\t5001\t6000\t.\t+\t.\tgene_id \"G\"; transcript_id \"T2\"; reads \"1\";
+c2\tr\texon\t5001\t6000\t.\t+\t.\tgene_id \"G\"; transcript_id \"T2\";
+";
+        let e = gtf_loci(std::io::Cursor::new(two), Representative::MostReads).unwrap_err().to_string();
+        assert!(e.contains("gene_id G has exons on"), "{e}");
+        let shared = "\
+c1\tr\ttranscript\t101\t200\t.\t+\t.\tgene_id \"G1\"; transcript_id \"T\"; reads \"1\";
+c1\tr\ttranscript\t101\t200\t.\t+\t.\tgene_id \"G2\"; transcript_id \"T\"; reads \"1\";
+c1\tr\texon\t101\t200\t.\t+\t.\tgene_id \"G2\"; transcript_id \"T\";
+";
+        let e = gtf_loci(std::io::Cursor::new(shared), Representative::MostReads).unwrap_err().to_string();
+        assert!(e.contains("transcript_id T is in two genes"), "{e}");
+        let exonless = "\
+c1\tr\ttranscript\t101\t400\t.\t+\t.\tgene_id \"G\"; transcript_id \"T1\"; reads \"10\";
+c1\tr\ttranscript\t101\t200\t.\t+\t.\tgene_id \"G\"; transcript_id \"T2\"; reads \"5\";
+c1\tr\texon\t101\t200\t.\t+\t.\tgene_id \"G\"; transcript_id \"T2\";
+";
+        let loci = gtf_loci(std::io::Cursor::new(exonless), Representative::MostReads).unwrap();
+        assert_eq!((loci[0].rep.as_str(), loci[0].rep_exons.len()), ("T2", 1));
+    }
+
+    /// `--from-gtf` loci: a locus is a `gene_id` group spanning all its transcripts; its representative is the
+    /// transcript with the most reads, ties to the longer span, then to the LAST transcript_id; a gene without
+    /// exons is not a locus; the representative's exons come back sorted.
     #[test]
     fn gtf_loci_takes_the_most_read_transcript_ties_to_the_longer_span_then_the_last_id() {
         let gtf = "\

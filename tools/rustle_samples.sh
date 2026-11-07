@@ -24,7 +24,9 @@ done
 case "$STAGE" in all|pool|copy-table) ;; *) die "multi-sample runs use the stages all or pool (got '$STAGE')";; esac
 [ -n "$OUT" ] || die "need --out"
 # PREFIX.copy_counts.tsv from PREFIX.samples/<S>.assign.quant.tsv: family_id copy_index copy_tid, then <S>_reads <S>_abundance
-# (n_reads_hard, abundance); a sample without a quant file (or a copy it lacks) gets 0.
+# (n_reads_hard, abundance); a sample without a quant file (or a copy it lacks) gets 0, a family on that sample's assign skip
+# list (PREFIX.samples/<S>.assign.skipped.txt: --max-window-records on ITS reads, --low-mem, RUSTLE_ANNOTATED_ONLY,
+# RUSTLE_EXCLUDE_BED) gets NA: it was not assigned, which is not zero reads.
 copy_table() {
   local names=$1 SD=$OUT.samples tmp=$OUT.copy_counts.tsv.tmp n i=0
   : > "$tmp.ids"
@@ -37,13 +39,16 @@ copy_table() {
     else
       say "copy table: no $f, sample $n counted 0"
     fi
+    if [ -s "$SD/$n.assign.skipped.txt" ]; then awk -v OFS='\t' -v k=$i 'NF { print "#skip", $1, k }' "$SD/$n.assign.skipped.txt" >> "$tmp.ids"; fi
   done
   awk -F'\t' -v OFS='\t' -v m=$i -v names="$names" '
-    { id = $1 OFS $2 OFS $3; if (!(id in seen)) { seen[id] = 1; order[++n] = id }; r[id, $4] = $5; a[id, $4] = $6 }
+    $1 == "#skip" { sk[$2, $3] = 1; next }
+    { id = $1 OFS $2 OFS $3; if (!(id in seen)) { seen[id] = 1; order[++n] = id; fam[id] = $1 }; r[id, $4] = $5; a[id, $4] = $6 }
     END { split(names, nm, ","); h = "family_id" OFS "copy_index" OFS "copy_tid"
           for (j = 1; j <= m; j++) h = h OFS nm[j] "_reads" OFS nm[j] "_abundance"; print h
           for (x = 1; x <= n; x++) { l = order[x]
-            for (j = 1; j <= m; j++) l = l OFS ((order[x], j) in r ? r[order[x], j] : 0) OFS ((order[x], j) in a ? a[order[x], j] : 0)
+            for (j = 1; j <= m; j++) { z = ((fam[order[x]], j) in sk) ? "NA" : 0
+              l = l OFS ((order[x], j) in r ? r[order[x], j] : z) OFS ((order[x], j) in a ? a[order[x], j] : z) }
             print l } }' "$tmp.ids" > "$tmp"
   rm -f "$tmp.ids"; mv -f "$tmp" "$OUT.copy_counts.tsv"
 }
@@ -64,7 +69,8 @@ sq0=""
 for i in "${!B[@]}"; do
   b=${B[$i]}
   [ -r "$b" ] || die "cannot read BAM '$b'"
-  [ -f "$b.bai" ] || [ -f "${b%.bam}.bai" ] || [ -f "$b.csi" ] || die "BAM '$b' has no index (.bai / .csi): samtools index it"
+  # the binaries open BAM.bai and nothing else (a .csi or x.bai passed here, then failed in every per-sample stage)
+  [ -f "$b.bai" ] || die "BAM '$b' has no $b.bai: samtools index it"
   sq=$(samtools view -H "$b" | grep '^@SQ' | md5sum | cut -d' ' -f1)
   [ -z "$sq0" ] || [ "$sq" = "$sq0" ] || die "BAM '$b' (${S[$i]}) has other @SQ lines than '${B[0]}': samples must share the genome"
   sq0=$sq
@@ -76,8 +82,10 @@ if [ -s "$POOLED" ] && [ -f "$POOLED.bai" ] && [ "$(cat "$OUT.pool.key" 2>/dev/n
   say "pool: $POOLED reused (same BAMs)"
 else
   say "pool: read-name check over ${#B[@]} samples"
-  dup=$(for i in "${!B[@]}"; do samtools view -F 0x900 "${B[$i]}" | cut -f1 | LC_ALL=C sort -u -T "${TMPDIR:-/tmp}" | awk -v s="${S[$i]}" '{print $1 "\t" s}'; done |
-        LC_ALL=C sort -k1,1 -T "${TMPDIR:-/tmp}" | awk -F'\t' '!hit && $1 == p && $2 != q {hit = $1 " in " q " and " $2} {p = $1; q = $2} END {print hit}')
+  # `|| exit 3` per BAM: the loop's status is its LAST iteration's, and set -e is off inside $(...)
+  dup=$(for i in "${!B[@]}"; do samtools view -F 0x900 "${B[$i]}" | cut -f1 | LC_ALL=C sort -u -T "${TMPDIR:-/tmp}" | awk -v s="${S[$i]}" '{print $1 "\t" s}' || exit 3; done |
+        LC_ALL=C sort -k1,1 -T "${TMPDIR:-/tmp}" | awk -F'\t' '!hit && $1 == p && $2 != q {hit = $1 " in " q " and " $2} {p = $1; q = $2} END {print hit}') \
+    || die "read-name check failed (samtools view / sort; see above)"
   [ -z "$dup" ] || die "read name $dup: samples must not share read names"
   rm -f "$OUT.pool.key"
   # `a && b` is exempt from set -e: without the die a failed merge went on to index and key the OLD pool

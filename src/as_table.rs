@@ -25,7 +25,7 @@
 //!
 //! Replaces the `samtools view | awk | sort | awk` pipeline (`as_scan.sh`, 113 min on a 96 GB human
 //! BAM) with one pass; rows are written in name order so two tables diff cleanly. Missing `AS` counts
-//! as 0, as the shell pipeline did. Memory is one entry per molecule (a 21 M-molecule human BAM ≈ 2 GB).
+//! as 0, as the shell pipeline did. Memory is one entry per molecule (~206 B each, measured 2026-11-07: a 21 M-molecule human BAM ≈ 4-5.5 GB peak).
 //!
 //! It also writes `<out>.asbin`, the binary sidecar `copy_assign` loads instead of the text when it still
 //! describes the TSV (size, mtime, inode, header, sampled content; `load_as_table`): a human table loads in
@@ -199,13 +199,15 @@ fn main() -> Result<()> {
     let mut names: Vec<&String> = mols.keys().collect();
     names.sort_unstable();
     let mut out = std::io::BufWriter::with_capacity(1 << 20, std::fs::File::create(&args.out)?);
-    // provenance header (skipped by `global_best_as`): the driver reuses a table only when `bam=` is its BAM
+    // provenance header (skipped by `global_best_as`): the driver reuses a table only when `bam=` is its BAM and
+    // `bam_bytes=` its size (a BAM replaced at the same path by an older file kept its mtime: `cp -p`, `rsync -a`)
     let bam_abs = std::fs::canonicalize(&args.bam)
         .map(|p| p.display().to_string())
         .unwrap_or_else(|_| args.bam.clone());
+    let bam_bytes = std::fs::metadata(&args.bam)?.len();
     writeln!(
         out,
-        "#as_table\tbam={bam_abs}\trecords={n_records}\tmolecules={}",
+        "#as_table\tbam={bam_abs}\tbam_bytes={bam_bytes}\trecords={n_records}\tmolecules={}",
         mols.len()
     )?;
     for name in names {

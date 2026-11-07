@@ -10,7 +10,7 @@
 //! ⚠ Representation only: built FROM O1's output, never used to define or detect families (register L472, L1086).
 //! Say "a graph view of an O1 family", never "a family is one VG" (docs/O1_O2_COMPOSITION.md).
 //!
-//! usage: family_gfa --prefix <out>.fam --outdir DIR [--families MCL1,MCL4] [--relations <out>.fam.relations.tsv]
+//! usage: family_gfa --prefix <out>.fam --outdir DIR [--families MCL1,MCL4]
 //!
 //! Spec: docs/superpowers/specs/2026-09-30-family-gfa-design.md
 
@@ -386,12 +386,12 @@ fn load(prefix: &str, select: &[String], extra: &[Key]) -> Result<Inputs> {
 // ------------------------------------------------------------------------------------------------------------------
 
 #[derive(Parser, Debug)]
-#[command(about = "Graph view of O1 families: an exon-block GFA per family (and per fusion across families)")]
+#[command(about = "STUB (loads and checks inputs only, writes nothing yet): graph view of O1 families, an exon-block GFA per family")]
 struct Args {
     /// Families-stage prefix: reads PREFIX.clusters.tsv, .loci.gff3, .loci.fa and .loci.paf.
     #[arg(long)]
     prefix: String,
-    /// Output directory (created if missing).
+    /// Output directory. STUB: not written yet (plan: docs/superpowers/plans/2026-09-30-family-gfa.md).
     #[arg(long)]
     outdir: PathBuf,
     /// Comma-separated family ids (default: every family in PREFIX.clusters.tsv).
@@ -409,6 +409,8 @@ fn main() -> Result<()> {
         inp.pafs.len(),
         inp.no_cigar
     );
+    // shortcut: the GFA writer is not built yet; say so rather than exit 0 as if --outdir held the graphs
+    eprintln!("family_gfa: STUB, inputs loaded and checked; nothing written to {}", a.outdir.display());
     Ok(())
 }
 

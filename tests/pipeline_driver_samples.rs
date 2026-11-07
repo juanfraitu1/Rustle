@@ -169,3 +169,29 @@ fn the_copy_table_keeps_columns_when_a_sample_has_no_quant() {
          F1\t0\tt0\t0\t0\t0\t0\t9\t0.75\n"
     );
 }
+
+#[test]
+fn a_family_a_sample_skipped_is_na_not_zero_in_the_copy_table() {
+    // round-12 audit: --max-window-records runs on each sample's own reads, so one sample can skip a family another
+    // assigns; its missing rows are "not assigned", not 0 reads
+    let d = scratch("copytable_skip");
+    std::fs::create_dir_all(d.join("run.samples")).unwrap();
+    let h = "family_id\tcopy_index\tcopy_tid\tcopy_chrom\tabundance\tn_reads_hard\n";
+    std::fs::write(d.join("run.samples/B.assign.quant.tsv"), format!("{h}F1\t0\tt0\tc1\t0.75\t9\nF2\t0\tt1\tc1\t1\t4\n")).unwrap();
+    std::fs::write(d.join("run.samples/A.assign.quant.tsv"), format!("{h}F2\t0\tt1\tc1\t1\t5\n")).unwrap();
+    std::fs::write(d.join("run.samples/A.assign.skipped.txt"), "F1\n").unwrap();
+    let o = Command::new("bash")
+        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tools/rustle_samples.sh"))
+        .args(["copy-table", "--samples", "A,B", "--out"])
+        .arg(d.join("run"))
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", err(&o));
+    let t = std::fs::read_to_string(d.join("run.copy_counts.tsv")).unwrap();
+    assert_eq!(
+        t,
+        "family_id\tcopy_index\tcopy_tid\tA_reads\tA_abundance\tB_reads\tB_abundance\n\
+         F2\t0\tt1\t5\t1\t4\t1\n\
+         F1\t0\tt0\tNA\tNA\t9\t0.75\n"
+    );
+}

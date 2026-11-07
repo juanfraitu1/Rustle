@@ -5488,9 +5488,10 @@ pub mod arms {
             minimap2: &str,
             threads: usize,
             min_identity: f64,
-        ) -> Vec<ExpressedCollapsedFamily> {
+        ) -> anyhow::Result<Vec<ExpressedCollapsedFamily>> {
+            use anyhow::Context as _;
             if candidates.is_empty() {
-                return Vec::new();
+                return Ok(Vec::new());
             }
             let consensuses: Vec<(String, Vec<u8>)> = candidates
                 .iter()
@@ -5509,7 +5510,7 @@ pub mod arms {
                 minimap2,
                 threads,
             )
-            .unwrap_or_default();
+            .context("projecting the re-admission consensuses (minimap2)")?; // a failure used to read as "nothing re-admitted"
             let mut out = Vec::new();
             for (id, chrom, lo, hi, _seq) in candidates {
                 let loci = match proj.get(id) {
@@ -5531,7 +5532,7 @@ pub mod arms {
                     out.push(f);
                 }
             }
-            out
+            Ok(out)
         }
 
         /// Soft-mask (RepeatMasker lowercase) fraction of a reference sequence: lowercase bases over total. The repeat
@@ -5567,9 +5568,10 @@ pub mod arms {
             threads: usize,
             min_identity: f64,
             max_softmask: f64,
-        ) -> Vec<ExpressedCollapsedFamily> {
+        ) -> anyhow::Result<Vec<ExpressedCollapsedFamily>> {
+            use anyhow::Context as _;
             if candidates.is_empty() {
-                return Vec::new();
+                return Ok(Vec::new());
             }
             let consensuses: Vec<(String, Vec<u8>)> = candidates
                 .iter()
@@ -5588,8 +5590,10 @@ pub mod arms {
                 minimap2,
                 threads,
             )
-            .unwrap_or_default();
-            let fa = crate::genome::IndexedFasta::open(fasta_path).ok();
+            .context("projecting the re-admission consensuses (minimap2)")?; // a failure used to read as "nothing re-admitted"
+            let fa = crate::genome::IndexedFasta::open(fasta_path)
+                .map(Some)
+                .with_context(|| format!("opening {fasta_path} (with its .fai) for the soft-mask repeat gate"))?;
             let mut out = Vec::new();
             for (id, chrom, lo, hi, _seq) in candidates {
                 // repeat gate: reject re-admitted loci that are repeat-dominated (soft-mask >= max_softmask).
@@ -5625,7 +5629,7 @@ pub mod arms {
                     projection: loci,
                 });
             }
-            out
+            Ok(out)
         }
 
         #[cfg(test)]
@@ -7053,6 +7057,15 @@ pub mod arms {
                             c.family_id, c.copy_idx, rec.chrom, rec.start, rec.end, rec.strand, rec.n_exon,
                             c.chrom, c.start, c.end, c.strand, c.exons.len()
                         );
+                        }
+                        // the PSV columns map copy offsets to genome positions through the exons: a sequence of
+                        // another length misplaces every site after the first disagreeing exon (round-11 audit)
+                        let exonic: u64 = c.exons.iter().map(|(s, e)| e - s).sum();
+                        if !rec.seq.is_empty() && rec.seq.len() as u64 != exonic {
+                            bail!(
+                                "--copies-fa record for {} copy {} is {} bp but its copies.tsv exons sum to {} bp",
+                                c.family_id, c.copy_idx, rec.seq.len(), exonic
+                            );
                         }
                         if rec.seq.is_empty() {
                             bail!(
@@ -12650,7 +12663,7 @@ pub mod arms {
         //! disambiguated by deterministic SUN witnesses. Consumes only copies.fa + the assemblies; never wires
         //! into the RNA-exclusive core. See docs/superpowers/specs/2026-07-14-assembly-parcn-design.md.
         //!
-        //! **STATUS:** OTHER-BINARY — binary `parcn` (Cargo.toml:116-118, path src/parcn.rs); no flag inside it gates the module — the whole binary is the opt-in  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
+        //! **STATUS:** OTHER-BINARY — `utilities parcn` (src/utilities.rs; the former `parcn` binary); no flag inside it gates the module — the whole binary is the opt-in  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
         use std::collections::BTreeMap;
 
@@ -20069,6 +20082,11 @@ pub mod copy_assign {
         ) -> EmResult {
             let logl: Vec<Vec<f64>> = evidence.iter().map(|ev| ev.logl.clone()).collect();
             let mut pi = vec![1.0 / k.max(1) as f64; k];
+            // no reads: `m_step` of an empty gamma is an empty vector, but callers index abundance by copy
+            // (`copy_abundance.len() == copies`); the uniform start is the estimate, as in `soft_quantify_em`
+            if evidence.is_empty() {
+                return EmResult { posteriors: Vec::new(), abundances: pi, labels: Vec::new(), n_iter: 0, loglik_trace: Vec::new() };
+            }
 
             let mut loglik_trace = Vec::new();
             let mut gamma = e_step(&logl, &pi);
@@ -20336,6 +20354,13 @@ pub mod copy_assign {
                 assert!(r.labels.iter().all(|l| matches!(l, EmLabel::Certified)));
                 // all identifiable
             }
+            #[test]
+            fn em_with_no_reads_returns_one_uniform_abundance_per_copy() {
+                let r = em_assign(&[], 3, 0.05, 1e-6, 100);
+                assert_eq!(r.abundances, vec![1.0 / 3.0; 3]);
+                assert!(r.posteriors.is_empty());
+            }
+
             #[test]
             fn em_k0_reads_stay_soft_and_abundance_proportional() {
                 // no distinguishing feature: logl equal across copies, min_p >= alpha -> SoftZone, posterior == pi.
@@ -21824,6 +21849,14 @@ pub mod copy_assign {
                             n_aligned += num as u64;
                             for k in 0..num {
                                 let (qq, tt) = (q + k, t + k);
+                                // an assembly-gap N is no base: it must not open a column or count against its copy
+                                if tt < copy.len() && copy[tt].eq_ignore_ascii_case(&b'N') {
+                                    n_aligned -= 1;
+                                    if ch == b'X' {
+                                        n_x -= 1;
+                                    }
+                                    continue;
+                                }
                                 if tt < copy.len() && qq < qlen {
                                     let b = copy[tt].to_ascii_uppercase();
                                     let (pos, base) = if minus {
@@ -22797,8 +22830,9 @@ pub mod copy_assign {
             (len_a as u128) * (len_b as u128) <= GLOBAL_DP_MAX_CELLS
         }
 
-        /// `discover_psvs_oriented`; `blocks` = keep only columns inside `significant_block_mask` blocks. OPT-IN
-        /// (`RUSTLE_PSV_BLOCKS=1`): PREREG_psv_significant_blocks_2026-10-12 B2 FAILED (25.7% of pairs in
+        /// `discover_psvs_oriented`; `blocks` = keep only columns inside `significant_block_mask` blocks. On under the
+        /// default Semiglobal engine (`psv_engine_from`); with the Global engine only via `RUSTLE_PSV_BLOCKS=1`, where
+        /// PREREG_psv_significant_blocks_2026-10-12 B2 FAILED (25.7% of pairs in
         /// minimap2-supported stretches kept; bar 99%) — although 95.6% of the independently position-verified ones are
         /// kept and most of the rest were the global DP's own misalignments (mismatch 1 < gap open 32).
         pub fn discover_psvs_oriented_with(
@@ -22968,8 +23002,9 @@ pub mod copy_assign {
         /// this REPLACES the spliced-sequence discovery: units whose exon composition differs (read-limited chains,
         /// 89 bp to 19 kb) sent the spliced star projection to thousands of non-homologous "PSV" columns and min_p
         /// 3e-270 on a wrong call (register 683); the genomic spans of SEDEF core hulls are collinear, so the
-        /// pairwise alignment is a thin band. If the forward alignment covers less than half of the shorter span the
-        /// reverse complement is tried (an inverted duplication), with positions mapped back accordingly.
+        /// pairwise alignment is a thin band. shortcut: only the FORWARD orientation is aligned (no reverse-complement
+        /// retry, unlike `discover_psvs_oriented`), so an inverted duplication annotated on one strand gets a forced
+        /// global alignment; add the retry if `--psv-genomic` is used on inverted SD pairs.
         /// ⭐ O2-8c′ (§6ep): per-copy SEDEF core hulls, registered by `catalog_input` from the optional `core_hull`
         /// column and read by `discover_genomic_psvs`. A process-wide side table keyed by copy `tid`: adding a field
         /// to `DenovoTranscript` would touch 81 constructors for an opt-in lever (same rationale as the env-var
@@ -23704,17 +23739,27 @@ pub mod copy_assign {
                 return vec![1.0 / k as f64; k];
             }
             let (ln_match, ln_mis) = ((1.0 - error).ln(), (error / 3.0).ln());
-            // per-read log P(read | copy c) over the covered PSV columns.
+            // a copy without an allele at a covered column scores a random base there, ln(1/4) (between a match and a
+            // mismatch): it used to add 0, above a matching copy's ln(1 - error), and took the mass; dropping such columns
+            // for every copy (round 16) threw away the columns that tell the other copies apart (round-23 audit)
+            let ln_none = 0.25f64.ln();
+            let has = |j: usize| copy_alleles.iter().any(|ca| matches!(ca.get(j), Some(Some(_))));
+            // per-read log P(read | copy c) over the covered PSV columns; a read covering none any copy carries has
+            // posterior = theta at every step (same fixed point without it, but it slowed convergence within `iters`): left out
             let loglik: Vec<Vec<f64>> = read_obs
                 .iter()
+                .filter(|obs| obs.iter().enumerate().any(|(j, o)| o.is_some() && has(j)))
                 .map(|obs| {
                     copy_alleles
                         .iter()
                         .map(|ca| {
                             let mut ll = 0.0;
                             for (j, o) in obs.iter().enumerate() {
-                                if let (Some(ob), Some(Some(al))) = (o, ca.get(j)) {
-                                    ll += if ob == al { ln_match } else { ln_mis };
+                                if let Some(ob) = o {
+                                    ll += match ca.get(j) {
+                                        Some(Some(al)) => if ob == al { ln_match } else { ln_mis },
+                                        _ => ln_none,
+                                    };
                                 }
                             }
                             ll
@@ -23722,6 +23767,9 @@ pub mod copy_assign {
                         .collect()
                 })
                 .collect();
+            if loglik.is_empty() {
+                return vec![1.0 / k as f64; k];
+            }
             let mut theta = vec![1.0 / k as f64; k];
             for _ in 0..iters {
                 let mut sum = vec![0.0; k];
@@ -23734,7 +23782,7 @@ pub mod copy_assign {
                         sum[c] += (logpost[c] - m).exp() / z;
                     }
                 }
-                let n = read_obs.len() as f64;
+                let n = loglik.len() as f64;
                 for c in 0..k {
                     theta[c] = sum[c] / n;
                 }
@@ -23973,7 +24021,7 @@ pub mod copy_assign {
             let mut merge_target: Vec<usize> = (0..copies.len()).collect();
             let mut current_indices: Vec<usize> = (0..copies.len()).collect();
             let mut current_copies: Vec<&DenovoTranscript> = copies.to_vec();
-            loop {
+            let last = loop {
                 let detail = assign_family_detailed_once(
                     &current_copies,
                     reads,
@@ -23984,7 +24032,7 @@ pub mod copy_assign {
                 );
                 let weak = find_weak_copies(&detail, &current_copies, reads, p, genome);
                 if weak.is_empty() {
-                    break;
+                    break detail;
                 }
                 // `weak` is reported in *current* index space; convert back to original indices for the merge map.
                 let (remove_current, target_current) = weak[0];
@@ -23998,12 +24046,11 @@ pub mod copy_assign {
                 }
                 current_indices.remove(remove_current);
                 current_copies.remove(remove_current);
-            }
+            };
 
             if current_indices.len() == copies.len() {
-                // Nothing was pruned — use the detail from the last full-size iteration.
-                let mut detail =
-                    assign_family_detailed_once(copies, reads, p, genome, mol_names, read_chroms);
+                // Nothing was pruned — the loop's only detail is the full-size one (it was computed a second time)
+                let mut detail = last;
                 detail.copy_indices = current_indices;
                 return detail;
             }
@@ -24048,7 +24095,15 @@ pub mod copy_assign {
                 // After merging, a read is resolvable to an output if the bulk of its posterior mass lands in that
                 // single bucket.  Keep the original status when the mass is split across outputs.
                 let conf = post_out[best_out];
-                let (status, best_out) = if conf >= 0.9 {
+                // promote only when the MERGE supplied the mass: a read already >= 0.9 on its own copy that the
+                // gate left ambiguous (it failed the significance test) keeps the gate's call (audit R2)
+                // ... unless its runner-up copy was merged into its best: the copy it failed against is gone (round-23 audit)
+                let own = a.posterior.get(a.best_copy).copied().unwrap_or(0.0);
+                let rival_merged = (0..a.posterior.len())
+                    .filter(|&i| i != a.best_copy)
+                    .max_by(|&i, &j| a.posterior[i].total_cmp(&a.posterior[j]).then(j.cmp(&i)))
+                    .is_some_and(|r| resolve(r) == Some(best_out));
+                let (status, best_out) = if conf >= 0.9 && (own < 0.9 || rival_merged) {
                     (AssignStatus::Assigned, best_out)
                 } else {
                     (a.status, best_out)
@@ -24125,6 +24180,12 @@ pub mod copy_assign {
                     .iter()
                     .map(|&t| (1.96 * (t * (1.0 - t) / n).sqrt()).min(0.5))
                     .collect()
+            };
+            // the read-star leaves the EM no observations (uniform abundance): the one-pass path's L4 rule, here too
+            let (copy_abundance, copy_abundance_ci) = if p.molecule_pool && mol_names.is_some() {
+                star_soft_abundance(&results, current_indices.len())
+            } else {
+                (copy_abundance, copy_abundance_ci)
             };
 
             // Remap copy-level conversions to surviving output indices; drop any whose focal copy was removed.
@@ -24423,6 +24484,8 @@ pub mod copy_assign {
                         groups[name]
                             .iter()
                             .copied()
+                            // a record without SEQ (a secondary written `*`) cannot be aligned to the copies
+                            .filter(|&i| !reads[i].seq.is_empty())
                             .filter(|&i| {
                                 has_block_in_any_copy_on(&reads[i], copies, chrom_of(i))
                                     || best_overlap_copy_on(&reads[i], copies, chrom_of(i))
@@ -24783,12 +24846,25 @@ pub mod copy_assign {
                     segs.push((seg_q0, qpos, seg_r0, rpos));
                     if segs.len() > 1 {
                         let c = copies[cand[bk]];
-                        if let Some(&(q0, q1, _, _)) = segs.iter().find(|&&(_, _, r0, r1)| r0 < c.end && c.start < r1) {
+                        // coordinates only mean the same place on the copy's own chromosome
+                        let same_chrom = chrom_of(ri).map_or(true, |rc| rc == c.chrom.as_str());
+                        if let Some(&(q0, q1, _, _)) = segs.iter().filter(|_| same_chrom).find(|&&(_, _, r0, r1)| r0 < c.end && c.start < r1) {
                             for x in 0..rlen { if (x < q0 || x >= q1) && !best_cov[x] { explained[x] = true; } }
                         }
                     }
                 }
-                let n_explained_unaligned = explained.iter().zip(best_cov.iter()).filter(|(e, b)| **e && !**b).count();
+                // only bases OUTSIDE the best hit's query span are the `unaligned` this credit offsets: a partner covering
+                // the best hit's own internal insertions explains nothing that `unaligned` counted (audit R3)
+                let (q_first, q_last) = (
+                    best_cov.iter().position(|&b| b).unwrap_or(rlen),
+                    best_cov.iter().rposition(|&b| b).map_or(0, |i| i + 1),
+                );
+                let n_explained_unaligned = explained
+                    .iter()
+                    .zip(best_cov.iter())
+                    .enumerate()
+                    .filter(|(x, (e, b))| **e && !**b && (*x < q_first || *x >= q_last))
+                    .count();
                 // row 726 (second form): a partner may explain a TAIL, never the body — when the partners cover
                 // more of the read than the best family candidate, the molecule is the partner locus's, not
                 // the family's: nothing is explained and the certificate rejects it on its unaligned bases
@@ -24914,8 +24990,10 @@ pub mod copy_assign {
                 for (k, &ci) in cand.iter().enumerate() {
                     full[ci] = post[k];
                 }
+                // whole-family PSV identity (the field's doc): from the family's profiles, not the read-star ones, which
+                // hold only the columns where this read's candidates differ (0.0 for any pair; round-11 audit)
                 let sibling_identity = nearest_sibling_k
-                    .map(|k| copy_pair_identity(&profiles[bk_all], &profiles[k]))
+                    .map(|k| copy_pair_identity(&fp.profiles[cand[bk_all]], &fp.profiles[cand[k]]))
                     .unwrap_or(1.0);
                 let mut a = Assignment {
                     best_copy: cand[bk],
@@ -24991,7 +25069,8 @@ pub mod copy_assign {
                         // adjustment — that adjustment is about `bk`'s own coverage gaps, not transferable);
                         // only set `origin_rejected` if NONE of them pass either.
                         let consistent_elsewhere = p.origin_consistency_check && cand.iter().enumerate().any(|(k, &ci)| {
-                            if ci == a.best_copy {
+                            // a catalog partner is not a family origin: it must not lift a sole candidate to Assigned
+                            if ci == a.best_copy || partner_k.contains(&k) {
                                 return false;
                             }
                             let Some(&Some((ox, oaligned, onm_all, oblk_all, oi, od, ou))) = unit_edits.get(ci) else { return false };
@@ -25008,7 +25087,6 @@ pub mod copy_assign {
                             let osd = (on * r0 * (1.0 - r0)).sqrt().max(1e-9);
                             let oz = (onm as f64 - omean) / osd;
                             let op_tail = 0.5 * (1.0 - erf_approx(oz / std::f64::consts::SQRT_2));
-                            let _ = k;
                             !(onm as f64 > omean && op_tail < p.alpha)
                         });
                         a.origin_rejected = !consistent_elsewhere;
@@ -25032,7 +25110,7 @@ pub mod copy_assign {
                         a.status = AssignStatus::Assigned;
                         a.resolvable = true;
                         let mut one = vec![0.0f64; copies.len()];
-                        one[cand[0]] = 1.0;
+                        one[cand[bk]] = 1.0; // the best candidate (cand[0] may be a partner, which carries no mass)
                         a.posterior = one;
                     } else if p.sole_candidate {
                         // the certificate rejected the only candidate: its verdict stands (Ambiguous, origin_rejected);
@@ -25599,7 +25677,6 @@ pub mod copy_assign {
             use super::super::AssignStatus;
             use super::*;
 
-            #[test]
             /// L4: a sole candidate counts 1 to its copy, a K = 0 tie 1/k to each candidate, an orphan or a rejected
             /// molecule nothing; the CI is over the contributing molecules only.
             #[test]
@@ -26211,6 +26288,23 @@ pub mod copy_assign {
                 fill_psv_obs(&read2, &gpos, false, &mut obs2, &mut q2);
                 assert_eq!(obs2[0], Some(b'T'));
                 assert_eq!(q2[0], None);
+            }
+
+            #[test]
+            fn fill_psv_obs_walks_soft_clips_insertions_and_deletions() {
+                // ref 100: S5 M10 (ref 100..110, seq 5..15) I3 (seq 15..18) M10 (ref 110..120, seq 18..28)
+                // D4 (ref 120..124) M10 (ref 124..134, seq 28..38)
+                let seq: Vec<u8> = (0..38).map(|i| b"ACGT"[(i * 7 + i / 4) % 4]).collect();
+                let read = AlignedRead {
+                    ref_start: 100,
+                    cigar: vec![('S', 5), ('M', 10), ('I', 3), ('M', 10), ('D', 4), ('M', 10)],
+                    seq: seq.clone(),
+                    qual: vec![],
+                };
+                let gpos = vec![(0usize, 105u64), (1, 110), (2, 121), (3, 124), (4, 133)];
+                let (mut obs, mut q) = (vec![None; 5], vec![None; 5]);
+                fill_psv_obs(&read, &gpos, false, &mut obs, &mut q);
+                assert_eq!(obs, vec![Some(seq[10]), Some(seq[18]), None, Some(seq[28]), Some(seq[37])]);
             }
 
             // ---- discover_psvs ----
@@ -27023,6 +27117,21 @@ pub mod copy_assign {
                     theta[1]
                 );
                 assert!((theta.iter().sum::<f64>() - 1.0).abs() < 1e-9, "sums to 1");
+            }
+
+            #[test]
+            fn soft_quantify_scores_a_missing_allele_as_a_random_base_and_skips_reads_without_evidence() {
+                // B lacks columns 2-3: it used to score 0 there, above A's matching ln(0.99), and took the mass
+                let copy_alleles = vec![vec![Some(b'A'); 4], vec![Some(b'A'), Some(b'A'), None, None], vec![Some(b'A'), Some(b'A'), Some(b'C'), Some(b'C')]];
+                let mut reads: Vec<Vec<Option<u8>>> = vec![vec![Some(b'A'); 4]; 100];
+                let theta = soft_quantify_em(&reads, &copy_alleles, QUANT_ERROR, 100);
+                assert!(theta[0] > 0.9, "A matches every column, B lacks two, C mismatches two: {theta:?}");
+                // 20 decisive reads + 1980 without PSV coverage: within 100 iterations the decisive ones decide
+                let two = vec![vec![Some(b'A')], vec![Some(b'C')]];
+                reads = vec![vec![Some(b'A')]; 20];
+                reads.extend(std::iter::repeat(vec![None]).take(1980));
+                let theta = soft_quantify_em(&reads, &two, QUANT_ERROR, 100);
+                assert!(theta[0] > 0.99, "{theta:?}");
             }
 
             #[test]
@@ -29642,8 +29751,12 @@ pub mod denovo_pipeline {
         // family's own one-shot pass -- every corrected read in this loop threads the same graph.
         let graph = BubbleGraph::from_copies(&copy_profiles);
 
+        let mut row_of: DetHashMap<usize, usize> = DetHashMap::default();
+        for (k, (ri, _)) in fa.assignments.iter().enumerate() {
+            row_of.entry(*ri).or_insert(k); // the first row, as `position` found it
+        }
         for (read_idx, (new_copy, obs)) in apply.corrected {
-            if let Some(pos) = fa.assignments.iter().position(|(ri, _)| *ri == read_idx) {
+            if let Some(&pos) = row_of.get(&read_idx) {
                 let rf = ReadFeatures {
                     psv_obs: obs.clone(),
                     psv_qual: Vec::new(),
@@ -29700,6 +29813,16 @@ pub mod denovo_pipeline {
         em_eps: f64,
         em_max_iter: usize,
     ) {
+        // under the read-star (molecule observations, the default) the PSV rows of the realigned reads alone would give
+        // the EM a partial view: the read-star soft abundance is recomputed from the corrected verdicts over the (possibly
+        // widened) roster instead (audit R2; round-23 audit: returning early left it stale and one entry short)
+        if p.molecule_pool {
+            (fa.copy_abundance, fa.copy_abundance_ci) = super::copy_assign::copy_assign_pipeline::star_soft_abundance_of(
+                fa.assignments.iter().map(|(_, a)| a),
+                fa.copy_tids.len(),
+            );
+            return;
+        }
         let em = super::copy_assign::em_copy_assign::em_assign_family(
             &fa.read_psv_obs,
             &fa.copy_psv_alleles,
@@ -29840,6 +29963,11 @@ pub mod denovo_pipeline {
         let host = &all_copies[host_idx];
         let host_col_gpos = family_col_genomic_pos(profiles, host_idx);
 
+        // read index -> its first row (was a linear scan per pooled read: O(C x N) at 100k rows)
+        let mut row_of: DetHashMap<usize, usize> = DetHashMap::default();
+        for (k, (ri, _)) in fa.assignments.iter().enumerate() {
+            row_of.entry(*ri).or_insert(k);
+        }
         for pool in pools {
             let pool_reads: Vec<AlignedRead> =
                 pool.iter().map(|&gi| bam_reads[gi].read.clone()).collect();
@@ -29892,12 +30020,13 @@ pub mod denovo_pipeline {
                     super::arms::vg_realign::orient_for_copy(&bam_reads[gi].read.seq, &t.seq);
                 let map = super::arms::vg_realign::align_traceback(&oriented, &t.seq);
                 let obs = super::arms::vg_realign::path_obs_at(&map, &positions, &oriented);
-                if let Some(pos) = fa.assignments.iter().position(|(ri, _)| *ri == gi) {
+                if let Some(&pos) = row_of.get(&gi) {
                     fa.assignments[pos].1.best_copy = new_copy;
                     fa.read_psv_obs[pos] = obs;
                 } else {
                     let mut posterior = vec![0.0; fa.copy_psv_alleles.len()];
                     posterior[new_copy] = 1.0;
+                    row_of.insert(gi, fa.assignments.len());
                     fa.assignments.push((
                         gi,
                         Assignment {
@@ -30261,7 +30390,7 @@ pub mod denovo_pipeline {
         // candidate rep pairs) is the dominant cost on dense regions, so it is skippable with no effect on
         // the emitted families/assignments — only the diagnostic edge count and the `.fallback.tsv` report
         // are lost. Opt out with RUSTLE_SKIP_POA_DIAGNOSTIC=1 (e.g. genome-wide sweeps).
-        let skip_poa = std::env::var_os("RUSTLE_SKIP_POA_DIAGNOSTIC").is_some();
+        let skip_poa = matches!(std::env::var("RUSTLE_SKIP_POA_DIAGNOSTIC"), Ok(v) if v != "0" && !v.is_empty()); // "0" or empty = run it
         let (poa_edges, fallback_pairs) = if skip_poa {
             (Vec::new(), Vec::new())
         } else {
@@ -30510,9 +30639,12 @@ pub mod denovo_pipeline {
             // records keeps `uniq`/`anchored` counting exactly the molecules they counted before the reduction.
             let region_mapq_mol: Vec<u8> = {
                 let mut best: DetHashMap<&str, u8> = DetHashMap::default();
-                for (n, &q) in region_names.iter().zip(region_mapq.iter()) {
+                for ((n, &q), &i) in region_names.iter().zip(region_mapq.iter()).zip(idx_map.iter()) {
                     let e = best.entry(n.as_str()).or_insert(0);
-                    *e = (*e).max(q);
+                    // a supplementary is another SEGMENT of the read (a readthrough tail at MAPQ 60), not its placement
+                    if !bam_reads[i].is_supplementary {
+                        *e = (*e).max(q);
+                    }
                 }
                 region_names.iter().map(|n| best[n.as_str()]).collect()
             };
@@ -30865,6 +30997,8 @@ pub mod denovo_pipeline {
                     let _ = (&novel_pools, &profiles);
                 }
                 recompute_realign_abundance(&mut fa, p, VG_REALIGN_EM_EPS, VG_REALIGN_EM_MAX_ITER);
+                // the patch re-derived statuses and admission appended Assigned rows: families.tsv counts follow
+                recount_after_union(&mut fa, p.molecule_pool);
             }
             (fa, dna_needs, linearize_certs)
         };
@@ -31067,12 +31201,26 @@ pub mod denovo_pipeline {
         }
     }
 
+    /// One record of an admitted molecule is one of its tied placements by the gate's rule: AS within `ratio` of the
+    /// molecule's best, or (`--tie-ms W`) ms within `W` of its best ms. `rec` and `best` are `(AS, ms)`. At the default
+    /// (ratio 1, no `--tie-ms`) this is exact AS equality with the maximum.
+    pub fn is_tied_placement(rec: (i32, i32), best: (i32, i32), ratio: f64, tie_ms: Option<i32>) -> bool {
+        as_within(rec.0, best.0, ratio) || tie_ms.is_some_and(|w| best.1 > 0 && rec.1 >= best.1 - w)
+    }
+
+    /// `score` is within `ratio` of `best`: at most `(1 - ratio) * |best|` below it. For a positive best this is
+    /// `score >= ratio * best`; for a negative AS (a long read's DP score can be) `ratio * best` lies above best, so a
+    /// lower ratio tied FEWER records (round-24 audit). Ratio 1 is `score >= best`.
+    pub fn as_within(score: i32, best: i32, ratio: f64) -> bool {
+        score as f64 >= best as f64 - (1.0 - ratio) * (best as f64).abs()
+    }
+
     /// Per molecule (sorted by name), the indices into `bam_reads` of its AS-TIED placements: the
-    /// non-supplementary records at the molecule's maximum `AS`, for molecules with at least two of them. The
-    /// same tie definition the binary's §6gz registration and `copy_discovery::tie_partner_placements` use
-    /// (exact AS equality — the gate's own `--as-tie-ratio` admits near-ties as MOLECULES, but a placement is a
-    /// tie partner only at the maximum).
-    pub fn tied_record_indices(bam_reads: &[BamRead]) -> BTreeMap<String, Vec<usize>> {
+    /// non-supplementary records that are tied placements by [`is_tied_placement`] at `tie` = `(--as-tie-ratio,
+    /// --tie-ms)`, for molecules with at least two of them. The same rule the binary's §6gz registration uses (round-10
+    /// audit 2026-11-07: this was exact AS equality while the registration followed the gate's ratio / ms window, so a
+    /// molecule registered as tie-outside under `--tie-ms` fell out of the union's scope). Default: exact max AS.
+    pub fn tied_record_indices(bam_reads: &[BamRead], tie: (f64, Option<i32>)) -> BTreeMap<String, Vec<usize>> {
         let mut by_name: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
         for (i, br) in bam_reads
             .iter()
@@ -31085,9 +31233,12 @@ pub mod denovo_pipeline {
             .into_iter()
             .filter_map(|(name, idx)| {
                 let max_as = idx.iter().map(|&i| bam_reads[i].as_score).max()?;
+                let max_ms = idx.iter().map(|&i| bam_reads[i].ms).max()?;
                 let tied: Vec<usize> = idx
                     .into_iter()
-                    .filter(|&i| bam_reads[i].as_score == max_as)
+                    .filter(|&i| {
+                        is_tied_placement((bam_reads[i].as_score, bam_reads[i].ms), (max_as, max_ms), tie.0, tie.1)
+                    })
                     .collect();
                 (tied.len() >= 2).then(|| (name.to_string(), tied))
             })
@@ -31193,8 +31344,8 @@ pub mod denovo_pipeline {
         Outside(String),
     }
 
-    /// A row that the union verdict ties: the same shape the §6gz demotion gives a row (status only; the
-    /// row's own certificate numbers stay, as they do there).
+    /// A row that the union verdict ties: the same shape the §6gz demotion gives a row (status, `resolvable` and
+    /// a uniform posterior over every copy; the row's own certificate numbers stay, as they do there).
     fn tie_row(a: &mut Assignment, n_copies: usize) {
         a.status = AssignStatus::Tied;
         a.resolvable = false;
@@ -31471,6 +31622,7 @@ pub mod denovo_pipeline {
         genome: &GenomeIndex,
         p: &AssignParams,
         copy_label: &dyn Fn(&str, &str, usize) -> String,
+        tie: (f64, Option<i32>),
     ) -> UnionSummary {
         use DetHashMap;
         let mut sum = UnionSummary::default();
@@ -31526,7 +31678,7 @@ pub mod denovo_pipeline {
             }
         }
         let mut groups: BTreeMap<Key, Vec<(String, Vec<usize>)>> = BTreeMap::new();
-        for (name, recs) in tied_record_indices(bam_reads) {
+        for (name, recs) in tied_record_indices(bam_reads, tie) {
             let Some(rows) = rows_of.get(name.as_str()) else {
                 continue;
             };
@@ -31895,7 +32047,7 @@ pub mod denovo_pipeline {
         // --- (1) genome-wide reps ---
         let reads = primary_reads_from_bam(bam_path, threads)?;
         let contigs: DetHashSet<String> = reads.iter().map(|r| r.chrom.clone()).collect();
-        let genome = GenomeIndex::from_fasta_contigs(fasta_path, &contigs)?;
+        let genome = GenomeIndex::from_fasta_contigs_present(fasta_path, &contigs, true)?;
         let reads = maybe_salvage_mischain(&reads, cfg).unwrap_or(reads);
         let skeletons =
             pass1_skeletons_robust(&reads, cfg.pass1_min_reads, cfg.min_terminal_support);
@@ -32145,7 +32297,7 @@ pub mod denovo_pipeline {
         // --- genome-wide reps (same as the same-chrom path) ---
         let reads = primary_reads_from_bam(bam_path, threads)?;
         let contigs: DetHashSet<String> = reads.iter().map(|r| r.chrom.clone()).collect();
-        let genome = GenomeIndex::from_fasta_contigs(fasta_path, &contigs)?;
+        let genome = GenomeIndex::from_fasta_contigs_present(fasta_path, &contigs, true)?;
         let reads = maybe_salvage_mischain(&reads, cfg).unwrap_or(reads);
         let skeletons =
             pass1_skeletons_robust(&reads, cfg.pass1_min_reads, cfg.min_terminal_support);
@@ -34036,7 +34188,7 @@ pub mod denovo_pipeline {
             return Ok((Vec::new(), GenomeIndex::empty(), Vec::new(), None));
         }
         let contigs: DetHashSet<String> = reads.iter().map(|r| r.chrom.clone()).collect();
-        let genome = GenomeIndex::from_fasta_contigs(fasta_path, &contigs)?;
+        let genome = GenomeIndex::from_fasta_contigs_present(fasta_path, &contigs, span.is_none())?;
         let reads = maybe_salvage_mischain(&reads, cfg).unwrap_or(reads);
         let skeletons =
             pass1_skeletons_robust(&reads, cfg.pass1_min_reads, cfg.min_terminal_support);
@@ -34478,7 +34630,7 @@ pub mod denovo_pipeline {
                 &refine.minimap2,
                 threads,
                 0.98,
-            )
+            )?
         } else {
             Vec::new()
         };
@@ -34491,7 +34643,7 @@ pub mod denovo_pipeline {
                 threads,
                 cfg.dna_family_min_identity,
                 cfg.dna_family_max_softmask,
-            )
+            )?
         } else {
             Vec::new()
         };
@@ -37228,7 +37380,7 @@ pub mod denovo_pipeline {
                 Some(path) => {
                     let contigs: DetHashSet<String> =
                         reps.iter().map(|r| r.chrom.clone()).collect();
-                    match GenomeIndex::from_fasta_contigs(path, &contigs) {
+                    match GenomeIndex::from_fasta_contigs_present(path, &contigs, false) {
                         Ok(g) => Some(g),
                         Err(e) => {
                             // best-effort: fall back to exon-sum edges rather than fail the catalog
@@ -39934,7 +40086,6 @@ pub mod denovo_pipeline {
             assert_eq!(fa.copy_map_identity.len(), fa.copy_tids.len());
         }
 
-        #[test]
         /// Anti-FRAGMENTATION invariant: two copies of one family whose ASSEMBLED transcripts cover DISJOINT
         /// exon subsets share almost no exon-sum sequence, so the default (exon-sum) edge does NOT link them.
         /// Computing the edge on the GENOMIC SPAN instead recovers the link. Uses the two-copy fixture whose
@@ -41671,6 +41822,17 @@ pub mod denovo_pipeline {
                 "both reads now favor copy 1 post-correction: abundance = {:?}",
                 fa.copy_abundance
             );
+            // under the read-star the abundance is the read-star soft one of the corrected verdicts, one entry per copy
+            // (round-23 audit: it used to be left as it was, stale and short after an admission)
+            fa.copy_abundance = vec![0.25];
+            let pm = AssignParams { molecule_pool: true, ..AssignParams::default() };
+            recompute_realign_abundance(&mut fa, &pm, 1e-6, 500);
+            let (star, _) = crate::copy_assign::copy_assign_pipeline::star_soft_abundance_of(
+                fa.assignments.iter().map(|(_, a)| a),
+                fa.copy_tids.len(),
+            );
+            assert_eq!(fa.copy_abundance, star, "molecule mode recomputes the read-star soft abundance");
+            assert_eq!(fa.copy_abundance.len(), fa.copy_tids.len());
         }
 
         /// I3 fix: a correction must RE-DERIVE the read's entire `Assignment` (status, posterior,
@@ -44887,6 +45049,7 @@ pub mod denovo_pipeline {
                 &genome,
                 &p,
                 &|fid, _tid, ci| format!("{fid}:{ci}"),
+                (1.0, None),
             );
             (before, after, s, bam)
         }
@@ -45220,7 +45383,7 @@ pub mod denovo_pipeline {
                 rec("b", 300, 99, false),
                 rec("c", 0, 50, false),
             ];
-            let t = tied_record_indices(&bam);
+            let t = tied_record_indices(&bam, (1.0, None));
             assert_eq!(
                 t.get("a"),
                 Some(&vec![0usize, 1]),
@@ -45228,6 +45391,10 @@ pub mod denovo_pipeline {
             );
             assert!(!t.contains_key("b"), "a clear best is not a tie");
             assert!(!t.contains_key("c"), "a single record is not a tie");
+            // --as-tie-ratio 0.99: b's 99 is within the ratio, as the gate and the §6gz registration count it
+            let t = tied_record_indices(&bam, (0.99, None));
+            assert_eq!(t.get("b"), Some(&vec![4usize, 5]));
+            assert_eq!(t.get("a"), Some(&vec![0usize, 1]), "90 < 0.99 * 100");
         }
 
         // ---- the reads a family is assigned: every chromosome that carries one of its copies ------------------
@@ -47709,8 +47876,7 @@ pub mod denovo_pipeline {
         ///
         /// Only the intron chain and the reference span are taken here — never SEQ — so the standing "secondary
         /// records may lack SEQ / carry hard clips" hazard does not apply to this path. (Measured on the Soto BAM:
-        /// minimap2 was run with `-Y`, so all 3,214,558 secondary records carry SEQ and none are hard-clipped; the
-        /// exon parse would fail loudly, not silently, if that ever changed.)
+        /// minimap2 was run with `-Y`, so all 3,214,558 secondary records carry SEQ and none are hard-clipped.)
         pub fn alignment_read_from_record(
             record: &RecordBuf,
             chrom: &str,
@@ -47770,9 +47936,11 @@ pub mod denovo_pipeline {
                     *e = (*as_, *de);
                 }
             }
+            let has_primary: DetHashSet<&str> = aln.iter().filter(|r| !r.1).map(|r| r.0.as_str()).collect();
             aln.iter()
                 .filter(|(name, is_sec, as_, de, _)| {
-                    if !*is_sec {
+                    // the tie reference is the primary: a read whose primary is outside the region has no reference here
+                    if !*is_sec || !has_primary.contains(name.as_str()) {
                         return false;
                     }
                     let (best_as, de_ref) = best[name.as_str()];
@@ -48345,7 +48513,7 @@ pub mod denovo_pipeline {
 
         /// Genome-wide best AS per molecule, from `RUSTLE_GTF_SECONDARY_AS_TABLE=<tsv>` (`name<TAB>best_as[...]`,
         /// one row per molecule, built by one scan of the whole BAM). Loaded once per process; `None` when unset or
-        /// unreadable (then the region-local rule stands, exactly as before).
+        /// parsed empty (then the region-local rule stands, exactly as before); a named table that cannot be read exits 2.
         ///
         /// The TSV is the only source of truth. A binary sidecar `<tsv>.asbin` (see [`load_as_table`]) holds the same
         /// (key, value) pairs and is read instead of the text when it provably describes the current TSV, which takes a
@@ -48357,7 +48525,12 @@ pub mod denovo_pipeline {
                 let path = std::env::var("RUSTLE_GTF_SECONDARY_AS_TABLE").ok().filter(|p| !p.is_empty())?;
                 let sidecar = std::env::var("RUSTLE_AS_TABLE_SIDECAR").map_or(true, |v| v != "0");
                 let t0 = std::time::Instant::now();
-                let (m, src) = load_as_table(&path, sidecar)?;
+                // a table that is named but cannot be read stops the run: falling back to the region-local rule would be a
+                // different assignment regime that looks like success (audit 2026-11-07, fourth pass)
+                let Some((m, src)) = load_as_table(&path, sidecar) else {
+                    eprintln!("[as-table] ERROR: RUSTLE_GTF_SECONDARY_AS_TABLE={path} cannot be read; stopping");
+                    std::process::exit(2);
+                };
                 if m.is_empty() {
                     // an empty or unparseable table must not take the streaming path (whose filter would then
                     // never fire = admit-all secondaries, §6n2's regime); with `None` the buffered region-local
@@ -48690,10 +48863,15 @@ pub mod denovo_pipeline {
             use std::io::BufRead;
             let f = std::fs::File::open(path).ok()?;
             let mut pairs: Vec<(u64, i32)> = Vec::new();
-            for line in std::io::BufReader::with_capacity(1 << 20, f)
-                .lines()
-                .map_while(Result::ok)
-            {
+            for line in std::io::BufReader::with_capacity(1 << 20, f).lines() {
+                // a read error used to end the parse quietly, and the short table was then cached as the sidecar
+                let line = match line {
+                    Ok(l) => l,
+                    Err(e) => {
+                        eprintln!("[as-table] ERROR reading {path}: {e}; table not loaded and no sidecar written");
+                        return None;
+                    }
+                };
                 if line.starts_with('#') {
                     continue; // `as_table` provenance header (`#as_table\tbam=...`)
                 }
@@ -48778,6 +48956,20 @@ pub mod denovo_pipeline {
                         assert_eq!(t.get(&p), hm.get(&p));
                     }
                 }
+            }
+
+            /// A read error mid-file (here a non-UTF-8 byte) loads nothing and caches nothing, instead of the rows before it.
+            #[test]
+            fn as_table_read_error_loads_nothing_and_writes_no_sidecar() {
+                let dir = std::env::temp_dir().join(format!("rustle_as_table_err_{}", std::process::id()));
+                std::fs::create_dir_all(&dir).unwrap();
+                let tsv = dir.join("t.molecules.tsv").display().to_string();
+                let mut bytes = b"#as_table\tbam=/x.bam\nr1\t100\t90\t2\tchr1\t100\n".to_vec();
+                bytes.extend_from_slice(b"r\xff2\t50\t-1\t1\tchr2\t50\nr3\t70\t-1\t1\tchr2\t70\n");
+                std::fs::write(&tsv, bytes).unwrap();
+                assert!(load_as_table(&tsv, true).is_none());
+                assert!(!std::path::Path::new(&as_sidecar_path(&tsv)).exists());
+                std::fs::remove_dir_all(&dir).ok();
             }
 
             /// TSV -> sidecar -> sidecar hit with the same table; a same-size in-place rewrite with the mtime put back, a
@@ -50091,6 +50283,12 @@ pub mod denovo_pipeline {
         ) -> Result<(Vec<PrimaryRead>, Vec<BamRead>)> {
             match reads_in_region_indexed(bam_path, chrom, lo, hi) {
                 Ok(r) => Ok(r),
+                // the scan admits primaries only, with no AS gate: under the default seed pool (secondaries + AS table)
+                // it would silently build a different pool, so a missing or unreadable .bai is an error there
+                Err(e) if gtf_secondary_enabled() || gtf_secondary_as_ratio() > 0.0 => Err(e.context(format!(
+                    "{bam_path}: indexed query of {chrom}:{lo}-{hi} failed; the secondary-admitting seed pool needs a \
+                     usable .bai (samtools index {bam_path})"
+                ))),
                 Err(_) => reads_in_region_scan(bam_path, chrom, lo, hi, threads),
             }
         }
@@ -50618,7 +50816,9 @@ pub mod denovo_pipeline {
                 .iter()
                 .filter_map(|r| r.metadata())
                 .map(|m| m.mapped_record_count() + m.unmapped_record_count())
-                .sum();
+                .sum::<u64>()
+                // unplaced unmapped records are in the file's bytes too: left out, every estimate came out low
+                + index.unplaced_unmapped_record_count().unwrap_or(0);
             anyhow::ensure!(total > 0, "{bai_path} carries no record counts");
             let bytes_per_record = std::fs::metadata(bam_path)?.len() as f64 / total as f64;
             let mut windows: std::collections::BTreeMap<&str, std::collections::BTreeMap<&str, Vec<(u64, u64)>>> =
@@ -51171,8 +51371,8 @@ pub mod denovo_pipeline {
         /// reproduce one.
         pub const NODE_MIN_READS: u32 = 2;
 
-        /// Gate read floor, overridable via `RUSTLE_GATE_MIN_READS` (default [`GATE_MIN_READS`] = 3 ⟹ every
-        /// existing catalog stays byte-identical). Exists because the stage attribution in `docs/o1_ledger.md`
+        /// Gate read floor, overridable via `RUSTLE_GATE_MIN_READS` (default [`NODE_MIN_READS`] = 2 since the
+        /// 2026-08-30 decision above; 3 reproduces a catalog recorded before it). Exists because the stage attribution in `docs/o1_ledger.md`
         /// §6z found that ALL 26 read-floor rejections at the NPIP panel sat at pooled support = 2, i.e. short by
         /// exactly one read. Lowering the floor is a PRECISION trade, not a free recall gain: it admits every
         /// 2-read chain genome-wide, so an arm must be priced with `bench/merge_precision_arms.py` before the
@@ -51489,47 +51689,56 @@ pub mod denovo_pipeline {
         /// Exact, not thresholded: two spans either intersect or they do not. Isoforms of ONE locus overlap each other,
         /// so a genuine full-length isoform — even one that is the only chain carrying some junction pair — is never
         /// flagged. DAZ2's nine chains all overlap within `42879944-42943604` and are unaffected.
-        fn is_chimeric_bridge(i: usize, skeletons: &[Skeleton], neighbours: &[Vec<usize>]) -> bool {
-            let disjoint = |a: &Skeleton, b: &Skeleton| {
-                a.chrom != b.chrom || a.end <= b.start || b.end <= a.start
-            };
-            let nb = &neighbours[i];
-            nb.iter().enumerate().any(|(x, &j)| {
-                nb[x + 1..]
-                    .iter()
-                    .any(|&k| disjoint(&skeletons[j], &skeletons[k]))
-            })
-        }
-
-        /// Read support of the LOCUS each skeleton belongs to (see the doc above). Chimeric bridges are excluded from
-        /// pooling and keep only their own read count, so a 2-read chimera can never inherit a real locus's support.
+        ///
+        /// Neighbours of one skeleton share its chrom (the junction key carries it), and intervals that pairwise
+        /// intersect share a point, so "two neighbours are disjoint" is "the smallest neighbour end <= the largest
+        /// neighbour start". Each junction keeps its two smallest ends and two largest starts, so the test costs
+        /// O(junctions) per skeleton instead of O(degree^2) pairs (a junction shared by 10k reads was 10^8 pairs).
         pub fn locus_support(skeletons: &[Skeleton]) -> Vec<u32> {
-            // adjacency: two skeletons share an exact (chrom, donor, acceptor)
+            // junction -> members, each skeleton once (the exclusion of `i` below needs that; a repeated intron
+            // in one chain would otherwise list it twice)
             let mut by_junction: std::collections::BTreeMap<(&str, u64, u64), Vec<usize>> =
                 std::collections::BTreeMap::new();
             for (i, sk) in skeletons.iter().enumerate() {
                 for &(d, a) in &sk.introns {
-                    by_junction
-                        .entry((sk.chrom.as_str(), d, a))
-                        .or_default()
-                        .push(i);
-                }
-            }
-            let mut neighbours: Vec<Vec<usize>> = vec![Vec::new(); skeletons.len()];
-            for members in by_junction.values() {
-                for (x, &i) in members.iter().enumerate() {
-                    for &j in &members[x + 1..] {
-                        neighbours[i].push(j);
-                        neighbours[j].push(i);
+                    let m = by_junction.entry((sk.chrom.as_str(), d, a)).or_default();
+                    if m.last() != Some(&i) {
+                        m.push(i);
                     }
                 }
             }
-            for nb in neighbours.iter_mut() {
-                nb.sort_unstable();
-                nb.dedup();
+            // per junction: (value, member) of the two smallest ends and the two largest starts
+            type Two = [(u64, usize); 2];
+            let mut stats: std::collections::BTreeMap<(&str, u64, u64), (Two, Two)> =
+                std::collections::BTreeMap::new();
+            for (k, members) in &by_junction {
+                let (mut lo, mut hi): (Two, Two) = ([(u64::MAX, usize::MAX); 2], [(0, usize::MAX); 2]);
+                for &m in members {
+                    let (st, en) = (skeletons[m].start, skeletons[m].end);
+                    if en < lo[0].0 { lo = [(en, m), lo[0]]; } else if en < lo[1].0 { lo[1] = (en, m); }
+                    if hi[0].1 == usize::MAX || st > hi[0].0 { hi = [(st, m), hi[0]]; }
+                    else if hi[1].1 == usize::MAX || st > hi[1].0 { hi[1] = (st, m); }
+                }
+                stats.insert(*k, (lo, hi));
             }
-            let chimeric: Vec<bool> = (0..skeletons.len())
-                .map(|i| is_chimeric_bridge(i, skeletons, &neighbours))
+            let chimeric: Vec<bool> = skeletons
+                .iter()
+                .enumerate()
+                .map(|(i, sk)| {
+                    let (mut min_end, mut max_start) = (None::<u64>, None::<u64>);
+                    for &(d, a) in &sk.introns {
+                        let (lo, hi) = &stats[&(sk.chrom.as_str(), d, a)];
+                        let e = if lo[0].1 == i { lo[1] } else { lo[0] };
+                        let s = if hi[0].1 == i { hi[1] } else { hi[0] };
+                        if e.1 != usize::MAX {
+                            min_end = Some(min_end.map_or(e.0, |x| x.min(e.0)));
+                        }
+                        if s.1 != usize::MAX {
+                            max_start = Some(max_start.map_or(s.0, |x| x.max(s.0)));
+                        }
+                    }
+                    matches!((min_end, max_start), (Some(e), Some(s)) if e <= s)
+                })
                 .collect();
 
             let mut parent: Vec<usize> = (0..skeletons.len()).collect();
@@ -51540,15 +51749,12 @@ pub mod denovo_pipeline {
                 }
                 x
             }
-            for i in 0..skeletons.len() {
-                if chimeric[i] {
-                    continue; // a chimera joins nothing; it is its own locus
-                }
-                for &j in &neighbours[i] {
-                    if chimeric[j] {
-                        continue;
-                    }
-                    let (ri, rj) = (find(&mut parent, i), find(&mut parent, j));
+            // a chimera joins nothing (it is its own locus); every other member of a junction joins its first one
+            for members in by_junction.values() {
+                let mut ok = members.iter().copied().filter(|&m| !chimeric[m]);
+                let Some(first) = ok.next() else { continue };
+                for j in ok {
+                    let (ri, rj) = (find(&mut parent, first), find(&mut parent, j));
                     if ri != rj {
                         parent[ri] = rj;
                     }
@@ -52216,6 +52422,70 @@ pub mod denovo_pipeline {
                 );
             }
 
+            /// The linear chimera test and per-junction union must give what the pairwise graph gave, on any input.
+            #[test]
+            fn locus_support_matches_the_pairwise_graph_on_random_skeletons() {
+                fn brute(sks: &[Skeleton]) -> Vec<u32> {
+                    let n = sks.len();
+                    let share = |i: usize, j: usize| {
+                        sks[i].chrom == sks[j].chrom && sks[i].introns.iter().any(|x| sks[j].introns.contains(x))
+                    };
+                    let nb: Vec<Vec<usize>> = (0..n).map(|i| (0..n).filter(|&j| j != i && share(i, j)).collect()).collect();
+                    let chim: Vec<bool> = (0..n)
+                        .map(|i| nb[i].iter().any(|&j| nb[i].iter().any(|&k| sks[j].end <= sks[k].start)))
+                        .collect();
+                    let mut comp: Vec<usize> = (0..n).collect();
+                    loop {
+                        let mut changed = false;
+                        for i in 0..n {
+                            for &j in &nb[i] {
+                                if !chim[i] && !chim[j] && comp[j] != comp[i] {
+                                    let m = comp[i].min(comp[j]);
+                                    comp[i] = m;
+                                    comp[j] = m;
+                                    changed = true;
+                                }
+                            }
+                        }
+                        if !changed {
+                            break;
+                        }
+                    }
+                    (0..n)
+                        .map(|i| if chim[i] { sks[i].n_reads } else {
+                            (0..n).filter(|&j| comp[j] == comp[i] && !chim[j]).map(|j| sks[j].n_reads).sum()
+                        })
+                        .collect()
+                }
+                let mut x: u64 = 0x9e3779b97f4a7c15;
+                let mut rnd = |m: u64| {
+                    x ^= x << 13;
+                    x ^= x >> 7;
+                    x ^= x << 17;
+                    x % m
+                };
+                for _ in 0..300 {
+                    let n = 1 + rnd(12) as usize;
+                    let sks: Vec<Skeleton> = (0..n)
+                        .map(|_| {
+                            let st = rnd(40) * 10;
+                            let k = rnd(3) as usize;
+                            let mut iv: Vec<(u64, u64)> = Vec::new();
+                            let mut p = st + 5;
+                            for _ in 0..k {
+                                // junctions on a coarse grid so they are shared often
+                                let d = (p / 20 + 1 + rnd(3)) * 20;
+                                iv.push((d, d + 20));
+                                p = d + 25;
+                            }
+                            let en = p + 5 + rnd(30);
+                            sk(if rnd(5) == 0 { "c2" } else { "c1" }, st, en, 1 + rnd(5) as u32, &iv)
+                        })
+                        .collect();
+                    assert_eq!(locus_support(&sks), brute(&sks));
+                }
+            }
+
             /// THE safety property. A single-exon skeleton has no junctions, so it is adjacent to nothing and its
             /// locus support is its own read count. Keying on the empty intron chain would union every unspliced read
             /// on a chromosome (measured: 746 reads across 44.3 Mbp), which is exactly what must not happen.
@@ -52468,6 +52738,9 @@ pub mod denovo_pipeline {
                 ];
                 assert_eq!(tied_secondary_reads(&aln, 0.98).len(), 1);
                 assert_eq!(tied_secondary_reads(&aln, 0.999).len(), 0);
+                // a secondary whose primary is outside the region has no tie reference here: not admitted
+                let aln = vec![("r".to_string(), true, 300, 0.0f32, pr("c1", 5, 105, &[]))];
+                assert_eq!(tied_secondary_reads(&aln, 0.98).len(), 0);
             }
 
             use noodles_core::Position;
@@ -56655,6 +56928,12 @@ pub mod fam_from_gtf {
             let part = genome
                 .fetch_sequence(chrom, s, e)
                 .with_context(|| format!("copies: {chrom}:{s}-{e} is not in --fasta"))?;
+            // fetch clips at the contig end: a short part means the GTF and --fasta disagree on this contig
+            anyhow::ensure!(
+                part.len() as u64 == e - s,
+                "copies: {chrom}:{s}-{e} runs past the end of {chrom} in --fasta (got {} bp): is it the genome the GTF was built on?",
+                part.len()
+            );
             seq.extend_from_slice(&part);
         }
         if strand == '-' {
@@ -57140,6 +57419,11 @@ pub mod fam_from_gtf {
                         if s.gene_reads as f64 > ratio * b.gene_reads as f64 || s.gene_blocks.is_empty() {
                             continue;
                         }
+                        // absorption is a strict order (fewer reads, then the later index), so two loci can never
+                        // absorb each other (ratio >= 1 or two 0-read loci) and both vanish
+                        if s.gene_reads > b.gene_reads || (s.gene_reads == b.gene_reads && small < big) {
+                            continue;
+                        }
                         let ins = inside(&s.gene_blocks, &b.gene_blocks);
                         if (ins as f64) < frac * len_of(&s.gene_blocks) as f64 {
                             continue;
@@ -57261,9 +57545,15 @@ pub mod fam_from_gtf {
                 return Ok(None);
             };
             Ok(if r[2] == "transcript" {
+                let g = attr(r[8], "gene_id \"").unwrap_or(t);
+                // loci.gff3 writes the id as `Name=<id>;` and reads it back split on ';' (round-12 audit)
+                anyhow::ensure!(
+                    !g.contains([';', '=']),
+                    "gene_id \"{g}\" holds ';' or '=', which the loci GFF3 cannot carry: rename it"
+                );
                 Some(Line::Tx {
                     t,
-                    g: attr(r[8], "gene_id \"").unwrap_or(t),
+                    g,
                     strand: r[6],
                     reads: attr(r[8], "reads \"").and_then(|v| v.parse().ok()).unwrap_or(0),
                 })
@@ -57293,7 +57583,9 @@ pub mod fam_from_gtf {
                     if seen_genes.insert(g) {
                         gene_order.push(g);
                     }
-                    gene_of.insert(t, g);
+                    if let Some(old) = gene_of.insert(t, g) {
+                        anyhow::ensure!(old == g, "GTF: transcript_id {t} is in two genes ({old}, {g})");
+                    }
                     strand.insert(t, st);
                     reads.insert(t, n);
                 }
@@ -57305,6 +57597,15 @@ pub mod fam_from_gtf {
         let mut txs_of: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
         for (&t, &g) in &gene_of {
             txs_of.entry(g).or_default().push(t);
+        }
+        // a locus is one span on one contig: a gene_id on two contigs would be fused into a span of the first one
+        for (g, ts) in &txs_of {
+            let mut cs = ts.iter().flat_map(|t| exons.get(t).into_iter().flatten()).map(|x| x.0);
+            if let Some(c0) = cs.next() {
+                if let Some(c1) = cs.find(|c| *c != c0) {
+                    anyhow::bail!("GTF: gene_id {g} has exons on {c0} and {c1}; a gene must lie on one contig");
+                }
+            }
         }
         // one locus per gene, in first-appearance order (each a pure function of the maps above)
         let out: Vec<GtfLocus> = gene_order
@@ -57331,7 +57632,8 @@ pub mod fam_from_gtf {
                         })
                         .unwrap_or(0)
                 };
-                let mut sorted_ts = ts.clone();
+                // a transcript line without exon lines cannot be the representative (it would leave the locus without exons)
+                let mut sorted_ts: Vec<&str> = ts.iter().copied().filter(|t| exons.contains_key(t)).collect();
                 sorted_ts.sort();
                 // `max_by_key` keeps the LAST maximum: over the sorted ids, a full tie goes to the last `transcript_id` under both
                 // rules (`most-junctions` only puts the junction count in front of the `most-reads` key)
@@ -57480,6 +57782,7 @@ pub mod fam_from_gtf {
         // the file and its hash (the same byte stream, hashed on another thread instead of as it is written)
         let write = || -> Result<()> {
             for ((c, s, e), seq) in spans.iter().zip(&seqs) {
+                anyhow::ensure!(seq.len() as u64 == e - s + 1, "{c}:{s}-{e} runs past the end of {c} in {fasta} (GTF and genome disagree)");
                 writeln!(fa, ">{c}:{s}-{e}")?;
                 fa.write_all(seq)?;
                 writeln!(fa)?;
@@ -57611,20 +57914,20 @@ pub mod fam_from_gtf {
         chain_gate_union: bool,
         absorb: Option<(f64, f64)>,
     ) -> Result<GtfLociRun> {
-        use std::collections::HashSet;
         let mut clock = PhaseClock::new();
         let mut loci = gtf_loci_chains_opt(reader, rule, chain_gate, chain_gate_union)?;
         clock.lap("GTF -> loci");
+        anyhow::ensure!(!loci.is_empty(), "--from-gtf: no locus (no transcript line with exon lines)");
+        if absorb.is_none() {
+            let _ = std::fs::remove_file(format!("{out}.loci.absorbed.tsv")); // an earlier --absorb-loci run's table
+        }
+        let mut absorbed_rows: Vec<(String, String)> = Vec::new();
         if let Some((ratio, frac)) = absorb {
             let n = loci.len();
             let (kept, absorbed) = absorb_loci(loci, ratio, frac);
             loci = kept;
-            let mut fh = std::io::BufWriter::new(std::fs::File::create(format!("{out}.loci.absorbed.tsv"))?);
-            writeln!(fh, "absorbed_gene_id\tinto_gene_id")?;
-            for (a, b) in &absorbed {
-                writeln!(fh, "{a}\t{b}")?;
-            }
-            eprintln!("[mcl_families] --absorb-loci ratio {ratio} frac {frac}: {} of {n} loci absorbed -> {} loci", absorbed.len(), loci.len());
+            absorbed_rows = absorbed;
+            eprintln!("[mcl_families] --absorb-loci ratio {ratio} frac {frac}: {} of {n} loci absorbed -> {} loci", absorbed_rows.len(), loci.len());
             clock.lap("absorb loci");
         }
         // Loci are graph nodes keyed by span: two loci with the same (chrom, start, end) used to become one node whose exons
@@ -57640,6 +57943,16 @@ pub mod fam_from_gtf {
                 writeln!(fh, "{a}\t{b}")?;
             }
             fh.flush()?;
+            if absorb.is_some() {
+                // written after the dedupe so an absorbing gene that was then dropped for its span names its keeper
+                let keeper: std::collections::HashMap<&str, &str> = dropped.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
+                let mut fh = std::io::BufWriter::new(std::fs::File::create(format!("{out}.loci.absorbed.tsv"))?);
+                writeln!(fh, "absorbed_gene_id\tinto_gene_id")?;
+                for (a, b) in &absorbed_rows {
+                    writeln!(fh, "{a}\t{}", keeper.get(b.as_str()).copied().unwrap_or(b.as_str()))?;
+                }
+                fh.flush()?;
+            }
             if !dropped.is_empty() {
                 eprintln!("[mcl_families] {} loci share their span with a locus that has more reads: dropped ({out}.loci.collided.tsv)", dropped.len());
             }
@@ -57805,10 +58118,16 @@ pub mod fam_from_gtf {
             .arg(&fa_path)
             .arg(&fa_path)
             .stdout(out_paf)
-            .stderr(std::process::Stdio::null())
-            .status()
+            .stderr(std::process::Stdio::piped())
+            .output()
             .with_context(|| format!("running {mm2}"))?;
-        anyhow::ensure!(status.success(), "minimap2 all-vs-all failed");
+        let tail: Vec<&str> = std::str::from_utf8(&status.stderr).unwrap_or("").lines().rev().take(5).collect();
+        anyhow::ensure!(
+            status.status.success(),
+            "minimap2 all-vs-all failed ({}): {}",
+            status.status,
+            tail.into_iter().rev().collect::<Vec<_>>().join(" | ")
+        );
         clock.lap("minimap2 all-vs-all");
         if let Some(e) = paf_entry.as_ref() {
             let stored = e.staging().and_then(|st| {
@@ -57912,6 +58231,14 @@ pub mod fam_from_gtf {
             let kept: Vec<&str> = kept.iter().map(|l| l.gene_id.as_str()).collect();
             assert_eq!(kept, vec!["big", "peer", "anti", "outside"]);
             assert_eq!(absorbed, vec![("frag".to_string(), "big".to_string()), ("tiny".to_string(), "big".to_string())]);
+            // two equal loci inside each other (ratio 1): one absorbs the other, never both vanish
+            let (kept, absorbed) = absorb_loci(
+                vec![mk("a", "+", 10, vec![(1000, 2000)]), mk("b", "+", 10, vec![(1200, 1900)])],
+                1.0,
+                0.5,
+            );
+            assert_eq!(kept.len(), 1, "{absorbed:?}");
+            assert_eq!(absorbed.len(), 1);
         }
 
         /// The exon gate's input: each representative exon of each locus, 0-based half-open in the locus span's own
@@ -61193,7 +61520,7 @@ pub mod fam_from_gtf {
         pub type GeneKey = (String, u64, u64);
 
         /// One weighted, undirected homology graph over annotated genes.
-        #[derive(Debug, Default)]
+        #[derive(Debug, Default, Clone)]
         pub struct HomologyGraph {
             /// Node index -> gene, in the order the nodes were first seen (stable for a given PAF).
             pub genes: Vec<GeneKey>,
@@ -62965,6 +63292,36 @@ pub mod fam_from_gtf {
             (out, all)
         }
 
+        /// The graph as the cluster statistics and the copy table see it after [`fold_parts_into_loci_opt`]: every edge of
+        /// a folded record moved onto its representative (max weight / identity per pair), edges inside one locus dropped.
+        /// Without it an edge to a folded model of the same family counted as leaving the cluster (`frac_in`), and a pair
+        /// linked only through a folded model had no edge (`density`, `max_family_identity` NA). Round-7 audit 2026-11-07.
+        pub fn fold_graph(g: &HomologyGraph, m: &LocusMap) -> HomologyGraph {
+            let idx: BTreeMap<&GeneKey, usize> = g.genes.iter().enumerate().map(|(i, k)| (k, i)).collect();
+            let rep: Vec<usize> = g
+                .genes
+                .iter()
+                .enumerate()
+                .map(|(i, k)| m.rep_of.get(k).and_then(|r| idx.get(r)).copied().unwrap_or(i))
+                .collect();
+            let remap = |src: &BTreeMap<(usize, usize), f64>| {
+                let mut out: BTreeMap<(usize, usize), f64> = BTreeMap::new();
+                for (&(x, y), &w) in src {
+                    let (a, b) = (rep[x], rep[y]);
+                    if a == b && x != y {
+                        continue;
+                    }
+                    let e = out.entry((a.min(b), a.max(b))).or_insert(w);
+                    *e = e.max(w);
+                }
+                out
+            };
+            let mut f = g.clone();
+            f.edges = remap(&g.edges);
+            f.idents = remap(&g.idents);
+            f
+        }
+
         pub fn build_clusters(
             g: &HomologyGraph,
             parts: &[Vec<usize>],
@@ -63073,7 +63430,6 @@ pub mod fam_from_gtf {
 
             /// §6fo: a PAF record between two annotated loci becomes one SD-like pair in genomic coordinates (both
             /// directions), offsets applied to the loci's 1-based starts.
-            #[test]
             /// The §6fw guard: `links` is true only when one duplication pair holds BOTH intervals, in either
             /// stored direction; unrelated flanks on the same contig, and pairs to another contig, are not links.
             #[test]
@@ -63644,6 +64000,21 @@ pub mod fam_from_gtf {
                     "B1 must not be folded into A1's locus"
                 );
                 assert_eq!((m.n_merged(), m.n_multi), (1, 1));
+                // Round-7 audit: A2 is linked only to the folded A1' (and A1' to its representative A1). Seen through the
+                // folded graph, {A1, A2} has its pair edge (density 1), every incident edge stays inside, and the
+                // identity of A1 to A2 is A1''s.
+                for (k, w) in [((0, 1), 1.0), ((1, 2), 0.8), ((3, 4), 0.9)] {
+                    g.edges.insert(k, w);
+                    g.idents.insert(k, w);
+                }
+                let raw = build_clusters(&g, &folded, 2, None);
+                assert_eq!((raw[0].density, raw[0].frac_in), (0.0, 0.0), "the bug: A2's only edge runs via A1'");
+                let gf = fold_graph(&g, &m);
+                let c = build_clusters(&gf, &folded, 2, None);
+                assert_eq!((c[0].density, c[0].frac_in), (1.0, 1.0));
+                assert_eq!(gf.idents.get(&(0, 2)), Some(&0.8));
+                assert!(!gf.edges.contains_key(&(0, 1)), "an edge inside one locus is dropped");
+                assert_eq!((c[1].density, c[1].frac_in), (1.0, 1.0));
             }
 
             #[test]
@@ -67773,6 +68144,7 @@ pub mod family_detect {
 
             #[test]
             fn memo_serves_its_key_and_a_changed_cap_misses() {
+                let _env = ASTAR_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner()); // the env test flips the variant
                 let a = core_rand_seq(300, 0x0BAD_1001);
                 let b = core_rand_seq(300, 0x0BAD_1002);
                 let astar = core_astar();
@@ -67808,6 +68180,7 @@ pub mod family_detect {
 
             #[test]
             fn memo_order_is_part_of_the_key() {
+                let _env = ASTAR_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner()); // the env test flips the variant
                 // poasta builds its graph from the FIRST sequence, so f(a,b) == f(b,a) is UNPROVEN. The key must
                 // therefore be ordered: swapping the operands must recompute, never reuse.
                 let a = core_rand_seq(280, 0x0BAD_2001);
@@ -67835,6 +68208,7 @@ pub mod family_detect {
             /// `core_astar_defaults_to_true_and_only_zero_disables`, which touches no alignment.
             #[test]
             fn memo_astar_variant_is_part_of_the_key() {
+                let _env = ASTAR_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner()); // the env test flips the variant
                 let a = core_rand_seq(260, 0x0BAD_3001);
                 let b = core_rand_seq(260, 0x0BAD_3002);
                 let current = core_astar();
@@ -72226,7 +72600,7 @@ pub mod missing_copy {
     #[derive(Clone, Debug, PartialEq)]
     pub struct Rearrangement {
         pub name: String,
-        /// reference position of the insertion (0-based, the base after which the read inserts)
+        /// reference position of the insertion (0-based, the reference base right AFTER the insertion point)
         pub ins_ref_pos: u64,
         pub ins_len: usize,
         pub exon: (u64, u64),
@@ -72364,6 +72738,14 @@ pub mod missing_copy {
                     .map(|&(bs, be)| (be.min(exon.1) as i64 - bs.max(exon.0) as i64).max(0))
                     .sum();
                 let duplicated = covered >= (mlen as i64) / 2;
+                // the doc's "not at the insertion point itself": an uncovered stretch that starts or ends where the
+                // insertion sits is those bases IN order beside an intron (`100= 60I 500N` with the insert =
+                // ref[100..160] is `160= 440N`), an alignment representation, not a rearrangement. A covered one
+                // there is a true tandem copy and stays `duplicated`.
+                let at_point = |x: u64| x.abs_diff(ins_ref_pos) <= 10;
+                if !duplicated && (at_point(exon.0) || at_point(exon.1)) {
+                    continue;
+                }
                 out.push(Rearrangement {
                     name: r.name.clone(),
                     ins_ref_pos,
@@ -72455,7 +72837,7 @@ pub mod missing_copy {
         let lp = |x: u64| -> f64 {
             // P(X = x) for X ~ Hypergeom(n, r1, c1)
             let (bb, cc) = (r1 - x, c1 - x);
-            let dd = n - r1 - c1 + x;
+            let dd = n + x - r1 - c1; // add first: n - r1 - c1 underflows when a > d (debug builds panic)
             lf(r1) + lf(n - r1) + lf(c1) + lf(n - c1) - lf(n) - lf(x) - lf(bb) - lf(cc) - lf(dd)
         };
         let lo = r1.saturating_sub(n - c1);
@@ -72660,7 +73042,12 @@ pub mod missing_copy {
         let d = description.to_ascii_lowercase();
         let prefix = ["IGH", "IGK", "IGL", "TRA", "TRB", "TRD", "TRG"];
         let by_name = prefix.iter().any(|p| {
-            n.starts_with(p) && n.len() > 3 && matches!(n.as_bytes()[3], b'V' | b'D' | b'J' | b'C')
+            // segment letter, then a digit, '-', a roman class or nothing (TRBV12, IGHD, TRAC, IGHVII-1-1): TRADD / TRAF3 are not receptor segments
+            n.starts_with(p)
+                && n.len() > 3
+                && matches!(n.as_bytes()[3], b'V' | b'D' | b'J' | b'C')
+                && (n.as_bytes().get(4).map_or(true, |&b| b.is_ascii_digit() || b == b'-' || b == b'I') // IGHVII-1-1: roman class
+                    || matches!(&n.as_bytes()[4..], b"A" | b"B")) // TRGVA / TRGVB (HGNC); TRADD has a D there
         });
         by_name
             || d.contains("immunoglobulin")
@@ -72672,9 +73059,10 @@ pub mod missing_copy {
     /// or a BED. Returns `(id, chrom, start0, end, name)` in file order.
     pub fn load_loci(path: &str) -> anyhow::Result<Vec<(String, String, u64, u64, String)>> {
         use std::io::BufRead;
+        anyhow::ensure!(!path.ends_with(".gz"), "{path}: gzipped annotation is not read here; gunzip it first");
         let f = std::fs::File::open(path).map_err(|e| anyhow::anyhow!("opening {path}: {e}"))?;
         let is_bed = path.ends_with(".bed");
-        let is_gff = path.ends_with(".gff") || path.ends_with(".gff3") || path.ends_with(".gff.gz");
+        let is_gff = path.ends_with(".gff") || path.ends_with(".gff3");
         let mut order: Vec<String> = Vec::new();
         let mut spans: DetHashMap<String, (String, u64, u64, String)> = DetHashMap::default();
         for line in std::io::BufReader::new(f).lines() {
@@ -72692,12 +73080,10 @@ pub mod missing_copy {
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| format!("{}:{}-{}", fs[0], fs[1], fs[2]));
                 let (s, e) = (fs[1].parse::<u64>()?, fs[2].parse::<u64>()?);
-                if spans
-                    .insert(id.clone(), (fs[0].to_string(), s, e, id.clone()))
-                    .is_none()
-                {
-                    order.push(id);
-                }
+                // a repeated name would replace the earlier locus without a word
+                anyhow::ensure!(!spans.contains_key(&id), "{path}: BED name {id} is used twice (loci are keyed by name)");
+                spans.insert(id.clone(), (fs[0].to_string(), s, e, id.clone()));
+                order.push(id);
                 continue;
             }
             if fs.len() < 9 {
@@ -72724,12 +73110,12 @@ pub mod missing_copy {
                     .or(attrs.get("gene"))
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| id.clone());
-                if spans
-                    .insert(id.clone(), (fs[0].to_string(), s, e, name))
-                    .is_none()
-                {
-                    order.push(id);
-                }
+                // a second `gene` line with the same ID used to replace the first locus silently (as the BED branch refuses)
+                anyhow::ensure!(
+                    spans.insert(id.clone(), (fs[0].to_string(), s, e, name)).is_none(),
+                    "{path}: gene ID {id} appears twice"
+                );
+                order.push(id);
             } else {
                 if fs[2] != "exon" && fs[2] != "transcript" {
                     continue;
@@ -72753,14 +73139,22 @@ pub mod missing_copy {
                 }
             }
         }
-        Ok(order
+        let loci: Vec<(String, String, u64, u64, String)> = order
             .into_iter()
             .map(|k| {
                 let (c, s, e, n) = spans.remove(&k).unwrap();
                 let id = if k.contains('\t') { n.clone() } else { k };
                 (id, c, s, e, n)
             })
-            .collect())
+            .collect();
+        // a GTF gene_id on two contigs gives two loci of one id, whose consensus records and hits would be pooled
+        let mut seen = std::collections::HashMap::new();
+        for l in &loci {
+            if let Some(c) = seen.insert(l.0.as_str(), l.1.as_str()) {
+                anyhow::bail!("{path}: locus id {} is on {c} and {} (ids must be unique)", l.0, l.1);
+            }
+        }
+        Ok(loci)
     }
 
     fn gtf_attr<'a>(s: &'a str, key: &str) -> Option<&'a str> {
@@ -72773,6 +73167,7 @@ pub mod missing_copy {
     /// Annotation genes for the hypermutation screen: per chrom, `(start0, end, is_ig_tr)`.
     pub fn load_ig_tr(gff: &str) -> anyhow::Result<DetHashMap<String, Vec<(u64, u64)>>> {
         use std::io::BufRead;
+        anyhow::ensure!(!gff.ends_with(".gz"), "{gff}: gzipped annotation is not read here; gunzip it first");
         let f = std::fs::File::open(gff).map_err(|e| anyhow::anyhow!("opening {gff}: {e}"))?;
         let mut out: DetHashMap<String, Vec<(u64, u64)>> = DetHashMap::default();
         for line in std::io::BufReader::new(f).lines() {
@@ -72973,6 +73368,8 @@ pub mod missing_copy {
             let p = fisher_exact(10, 0, 5, 95);
             assert!(p < 1e-6, "{p}");
             assert!((fisher_exact(5, 5, 5, 5) - 1.0).abs() < 1e-9);
+            // a > d (sub-pile 10 on run A, 2 host reads off it): no underflow in debug builds, p ~ 1
+            assert!(fisher_exact(10, 0, 98, 2) > 0.99);
             let sub: Vec<PileRead> = (0..10)
                 .map(|i| read(&format!("SRR100.{i}"), 0.03, 0, "5=", "ACGTA"))
                 .collect();
@@ -73208,6 +73605,16 @@ pub mod missing_copy {
                 seq: [e1.clone(), vec![b'C'; 60], e2.clone()].concat(),
             };
             assert!(find_rearrangements(&[&read3], &rf, 0, 50).is_empty());
+            // E2 inserted where E2 begins, then an intron over it: the bases are in order (`60= 60I 160N` is
+            // `120= 100N`), the insertion point itself, so no rearrangement
+            let read4 = PileRead {
+                name: "r4".into(),
+                de: 0.002,
+                ref_start: 100,
+                ops: vec![('=', 60), ('I', 60), ('N', 160), ('=', 60)],
+                seq: [rf[100..160].to_vec(), e2.clone(), e3.clone()].concat(),
+            };
+            assert!(find_rearrangements(&[&read4], &rf, 0, 50).is_empty());
             // clustering: three reads with the same rearrangement fire, a lone one does not
             let three: Vec<Rearrangement> = (0..3)
                 .map(|i| Rearrangement {
@@ -73240,6 +73647,9 @@ pub mod missing_copy {
             assert!(is_ig_tr("LOC1", "immunoglobulin lambda variable 3-1-like"));
             assert!(!is_ig_tr("IGF1", "insulin like growth factor 1"));
             assert!(!is_ig_tr("TRAF3", "TNF receptor associated factor 3"));
+            assert!(!is_ig_tr("TRADD", ""), "TRA + D + D is TRADD, not a TRAD segment");
+            assert!(is_ig_tr("TRGVA", "") && is_ig_tr("TRGVB", ""), "the lettered TRG V segments");
+            assert!(is_ig_tr("IGHVII-1-1", "") && is_ig_tr("IGHD", "") && is_ig_tr("TRAC", ""));
         }
 
         #[test]
@@ -73276,6 +73686,13 @@ pub mod missing_copy {
                 load_loci(gff.to_str().unwrap()).unwrap(),
                 vec![("gene-A".into(), "c1".into(), 10, 20, "A".into())]
             );
+            // one id twice: refused, not pooled (GTF gene_id on two contigs) nor replaced (GFF gene ID)
+            let dup = dir.join("d.gtf");
+            std::fs::write(&dup, "c1\tx\texon\t1\t10\t.\t+\t.\tgene_id \"G\"; transcript_id \"T1\";\nc2\tx\texon\t1\t10\t.\t+\t.\tgene_id \"G\"; transcript_id \"T2\";\n").unwrap();
+            assert!(load_loci(dup.to_str().unwrap()).unwrap_err().to_string().contains("locus id G is on c1 and c2"));
+            let dup = dir.join("d.gff");
+            std::fs::write(&dup, "c1\tR\tgene\t11\t20\t.\t+\t.\tID=gene-X\nc2\tR\tgene\t11\t20\t.\t+\t.\tID=gene-X\n").unwrap();
+            assert!(load_loci(dup.to_str().unwrap()).unwrap_err().to_string().contains("gene ID gene-X appears twice"));
             let bed = dir.join("c.bed");
             std::fs::write(&bed, "c1\t5\t9\tL1\n").unwrap();
             assert_eq!(
@@ -73455,7 +73872,9 @@ pub mod missing_copy {
             let mut per_read: DetHashMap<String, (usize, i64, usize)> = DetHashMap::default();
             for line in paf_text.lines() {
                 let f: Vec<&str> = line.split('\t').collect();
-                if f.len() < 13 {
+                // primary lines only: `-N 1` adds secondaries, which would count a read's bases twice in the site
+                // tallies while `per_read` keeps one line per read
+                if f.len() < 13 || f[12..].iter().any(|t| *t == "tp:A:S") {
                     continue;
                 }
                 let cg = match f[12..].iter().find(|t| t.starts_with("cg:Z:")) {
@@ -74746,7 +75165,9 @@ pub mod missing_copy {
                     }
                     let (chrom, s, e) = (&rep.1, rep.2, rep.3);
                     let lo = s.saturating_sub(PAD);
-                    let mut ref_ = genome.fetch(chrom, lo as i64, (e + PAD) as i64).unwrap_or_default();
+                    let mut ref_ = genome
+                        .fetch(chrom, lo as i64, (e + PAD) as i64)
+                        .with_context(|| format!("--psv-clusters: {chrom}:{lo}-{} is not in the FASTA", e + PAD))?;
                     ref_.make_ascii_uppercase();
                     let queries: Vec<(String, Vec<u8>)> =
                         names.iter().filter_map(|n| rseq.get(n).map(|s| (n.clone(), s.clone()))).collect();

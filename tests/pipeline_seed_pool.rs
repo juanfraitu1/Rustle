@@ -29,6 +29,7 @@ esac
 printf 'copy_assign sec=%s ratio=%s table=%s\n' "${RUSTLE_GTF_SECONDARY-unset}" "${RUSTLE_GTF_SECONDARY_AS_RATIO-unset}" "${RUSTLE_GTF_SECONDARY_AS_TABLE-unset}" >> "$STUB_LOG"
 printf 'argv %s\n' "${args[*]}" >> "$STUB_LOG"
 printf 'argc %s\n' "${#args[@]}" >> "$STUB_LOG"
+if [ -n "${STUB_FAIL_BASE:-}" ]; then case "$out" in *final_run) echo $$ > "$STUB_LOG.layered.pid"; sleep 30 ;; *) for _ in $(seq 200); do [ -s "$STUB_LOG.layered.pid" ] && break; sleep 0.05; done; exit 3 ;; esac; fi
 printf 'chr1\tstub\ttranscript\t1\t100\t.\t+\t.\tgene_id "g1"; transcript_id "t1";\n' > "$out.gtf"
 "#;
 
@@ -36,7 +37,7 @@ const AS_TABLE_STUB: &str = r#"#!/bin/bash
 bam=""; out=""
 while [ $# -gt 0 ]; do case "$1" in --bam) bam=$2; shift 2;; --out) out=$2; shift 2;; *) shift;; esac; done
 echo as_table >> "$STUB_LOG"
-printf 'bam=%s\tstub\n' "$(readlink -f "$bam")" > "$out"
+printf 'bam=%s\tbam_bytes=%s\tstub\n' "$(readlink -f "$bam")" "$(stat -Lc %s "$bam")" > "$out"
 "#;
 
 struct Run {
@@ -99,7 +100,10 @@ fn assemble_with(tag: &str, flags: &[&str], env: &[(&str, &str)], fai: Option<&s
         .env_clear()
         .env("PATH", std::env::var("PATH").unwrap_or_default())
         .env("TMPDIR", &dir)
-        .env("STUB_LOG", &stub_log);
+        .env("STUB_LOG", &stub_log)
+        // the layered PREFIX.final.gtf run is a second, parallel copy_assign that writes the same stub log: these tests
+        // read the first run's record, so it is off unless a test asks for it (pipeline_driver_dispatch covers it)
+        .env("RUSTLE_ASSEMBLY_LAYERS", "off");
     for (k, v) in env {
         cmd.env(k, v);
     }
@@ -120,7 +124,7 @@ fn assemble_with(tag: &str, flags: &[&str], env: &[(&str, &str)], fai: Option<&s
     }
 }
 
-const GOOD: &str = "copy_assign sec=1 ratio=0.98 table=<dir>/run.molecules.tsv";
+const GOOD: &str = "copy_assign sec=1 ratio=0.98 table=<dir>/reads.bam.as_table.tsv";
 const PRIMARY: &str = "copy_assign sec=unset ratio=unset table=unset";
 const ALL: &str = "copy_assign sec=1 ratio=unset table=unset";
 
@@ -179,10 +183,10 @@ fn seed_pool_good_is_the_default_spelled_out() {
 fn seed_as_ratio_sets_the_width_of_the_good_pool() {
     let r = assemble("ratio", &["--seed-pool", "good", "--seed-as-ratio", "0.90"], &[]);
     assert_eq!(r.code, 0, "{}", r.stderr);
-    assert_eq!(r.seen, "copy_assign sec=1 ratio=0.90 table=<dir>/run.molecules.tsv");
+    assert_eq!(r.seen, "copy_assign sec=1 ratio=0.90 table=<dir>/reads.bam.as_table.tsv");
     let r1 = assemble("ratio_one", &["--seed-as-ratio", "1"], &[]);
     assert_eq!(r1.code, 0, "{}", r1.stderr);
-    assert_eq!(r1.seen, "copy_assign sec=1 ratio=1 table=<dir>/run.molecules.tsv", "the ratio alone keeps the default pool (good)");
+    assert_eq!(r1.seen, "copy_assign sec=1 ratio=1 table=<dir>/reads.bam.as_table.tsv", "the ratio alone keeps the default pool (good)");
 }
 
 #[test]
@@ -221,7 +225,7 @@ fn the_pool_can_come_from_the_environment_and_a_flag_wins() {
     let r = assemble("flag_over_env", &["--seed-pool", "primary"], &[("RUSTLE_SEED_POOL", "all")]);
     assert_eq!(r.seen, PRIMARY);
     let r = assemble("env_ratio", &[], &[("RUSTLE_SEED_AS_RATIO", "0.95")]);
-    assert_eq!(r.seen, "copy_assign sec=1 ratio=0.95 table=<dir>/run.molecules.tsv");
+    assert_eq!(r.seen, "copy_assign sec=1 ratio=0.95 table=<dir>/reads.bam.as_table.tsv");
     // an exported ratio is a default for the good pool, not an error for the others
     let r = assemble("env_ratio_primary", &["--seed-pool", "primary"], &[("RUSTLE_SEED_AS_RATIO", "0.95")]);
     assert_eq!(r.code, 0, "{}", r.stderr);
@@ -335,7 +339,7 @@ fn the_merged_resume_key_tells_all_and_other_ratios_apart() {
 fn without_a_contig_the_assembly_is_genome_wide() {
     let r = assemble("scope_default", &[], &[]);
     assert_eq!(r.code, 0, "{}", r.stderr);
-    assert!(r.argv.contains(" --genome-wide ") && !r.argv.contains("--region"), "{}", r.argv);
+    assert!(r.argv.contains(" --genome-wide ") && !r.argv.contains("--region "), "{}", r.argv);
 }
 
 #[test]
@@ -368,7 +372,10 @@ fn as_table_names_the_table_the_good_pool_reads_and_builds_it_there_when_absent(
     assert!(r.as_table_ran, "absent table: build it");
     assert_eq!(r.seen, format!("copy_assign sec=1 ratio=0.98 table={}", t.replace(&case_dir("table_absent").to_string_lossy().to_string(), "<dir>")));
     assert!(table.exists(), "the table is written where --as-table says");
-    assert!(!case_dir("table_absent").join("run.molecules.tsv").exists(), "and not at the default place");
+    // PREFIX.molecules.tsv stays the per-run name later tools read: a link to that table, not a second copy
+    let link = case_dir("table_absent").join("run.molecules.tsv");
+    assert!(link.symlink_metadata().unwrap().file_type().is_symlink(), "PREFIX.molecules.tsv is a link");
+    assert_eq!(std::fs::canonicalize(&link).unwrap(), std::fs::canonicalize(&table).unwrap());
 }
 
 #[test]
@@ -376,7 +383,7 @@ fn an_as_table_built_for_this_bam_is_reused_and_one_for_another_bam_is_rebuilt()
     let write = |name: &'static str, bam_of: fn(&Path) -> PathBuf| {
         move |d: &Path| {
             std::fs::create_dir_all(d.join("shared")).unwrap();
-            std::fs::write(d.join("shared").join(name), format!("#as_table\tbam={}\trecords=1\tmolecules=1\n", bam_of(d).display())).unwrap();
+            std::fs::write(d.join("shared").join(name), format!("#as_table\tbam={}\tbam_bytes=0\trecords=1\tmolecules=1\n", bam_of(d).display())).unwrap();
         }
     };
     let same = |d: &Path| d.join("reads.bam");
@@ -388,6 +395,15 @@ fn an_as_table_built_for_this_bam_is_reused_and_one_for_another_bam_is_rebuilt()
     let t = case_dir("table_other").join("shared").join("mol.tsv");
     let r = assemble_with("table_other", &["--as-table", t.to_str().unwrap()], &[], Some(FAI), &write("mol.tsv", other));
     assert!(r.as_table_ran, "a table made from another BAM is rebuilt");
+    // round-9 audit: the same path, but the BAM was replaced by a file of another size (its older mtime kept)
+    let t = case_dir("table_resized").join("shared").join("mol.tsv");
+    let setup = |d: &Path| {
+        std::fs::create_dir_all(d.join("shared")).unwrap();
+        let h = format!("#as_table\tbam={}\tbam_bytes=7\trecords=1\tmolecules=1\n", d.join("reads.bam").display());
+        std::fs::write(d.join("shared").join("mol.tsv"), h).unwrap();
+    };
+    let r = assemble_with("table_resized", &["--as-table", t.to_str().unwrap()], &[], Some(FAI), &setup);
+    assert!(r.as_table_ran, "a table made from a BAM of another size is rebuilt");
 }
 
 #[test]
@@ -442,7 +458,7 @@ fn an_as_table_made_for_a_bam_whose_name_extends_this_one_is_rebuilt() {
     let t = case_dir("table_prefix").join("shared").join("mol.tsv");
     let setup = |d: &Path| {
         std::fs::create_dir_all(d.join("shared")).unwrap();
-        std::fs::write(d.join("shared").join("mol.tsv"), format!("#as_table\tbam={}2\trecords=1\tmolecules=1\n", d.join("reads.bam").display())).unwrap();
+        std::fs::write(d.join("shared").join("mol.tsv"), format!("#as_table\tbam={}2\tbam_bytes=0\trecords=1\tmolecules=1\n", d.join("reads.bam").display())).unwrap();
     };
     let r = assemble_with("table_prefix", &["--as-table", t.to_str().unwrap()], &[], Some(FAI), &setup);
     assert_eq!(r.code, 0, "{}", r.stderr);
@@ -541,4 +557,56 @@ fn a_table_from_another_bam_fails_the_good_pool_and_the_message_names_the_whole_
 fn a_warning_that_has_nothing_to_do_with_the_table_does_not_fail_the_good_pool() {
     let r = assemble("table_benign", &["--seed-pool", "good"], &[("STUB_WARN", "benign")]);
     assert_eq!(r.code, 0, "{}", r.stderr);
+}
+
+/// The layered PREFIX.final.gtf run (2026-11-02): its argv adds the end layers to the first run's; a layer the environment
+/// already set is not passed twice (clap rejects a repeated flag), and RUSTLE_POLISH_TSS=off keeps only the sub-chain layer.
+#[test]
+fn the_layered_run_adds_each_end_layer_once_and_needs_polish_tss() {
+    let final_argv = |r: &Run| -> Vec<String> {
+        r.log.iter().filter(|l| l.starts_with("argv ") && l.contains("final_run")).cloned().collect()
+    };
+    let r = assemble("layers_on", &[], &[("RUSTLE_ASSEMBLY_LAYERS", "on")]);
+    assert_eq!(r.code, 0, "{}", r.stderr);
+    let f = final_argv(&r);
+    assert_eq!(f.len(), 1, "{:?}", r.log);
+    for flag in ["--polish-tss-end median", "--polish-tes-extend on", "--mono-model cluster", "--polish-subchain drop"] {
+        assert!(f[0].contains(flag), "{flag} in {}", f[0]);
+    }
+    let r = assemble("layers_env", &[], &[("RUSTLE_ASSEMBLY_LAYERS", "on"), ("RUSTLE_POLISH_TSS_END", "off")]);
+    assert_eq!(r.code, 0, "{}", r.stderr);
+    let f = final_argv(&r);
+    assert_eq!(f.len(), 1, "{:?}", r.log);
+    assert_eq!(f[0].matches("--polish-tss-end").count(), 1, "{}", f[0]);
+    assert!(f[0].contains("--polish-tss-end off"), "the user's value wins: {}", f[0]);
+    // RUSTLE_POLISH_TSS=off: the end layers need its evidence pass, the sub-chain layer does not (round-23 audit)
+    let r = assemble("layers_no_tss", &[], &[("RUSTLE_ASSEMBLY_LAYERS", "on"), ("RUSTLE_POLISH_TSS", "off")]);
+    assert_eq!(r.code, 0, "{}", r.stderr);
+    let f = final_argv(&r);
+    assert_eq!(f.len(), 1, "{:?}", r.log);
+    assert!(f[0].contains("--polish-subchain drop"), "{}", f[0]);
+    for flag in ["--polish-tss-end", "--polish-tes-extend", "--mono-model"] {
+        assert!(!f[0].contains(flag), "{flag} needs --polish-tss: {}", f[0]);
+    }
+    let r = assemble(
+        "layers_none",
+        &[],
+        &[("RUSTLE_ASSEMBLY_LAYERS", "on"), ("RUSTLE_POLISH_TSS", "off"), ("RUSTLE_FINAL_SUBCHAIN", "off")],
+    );
+    assert_eq!(r.code, 0, "{}", r.stderr);
+    assert!(final_argv(&r).is_empty(), "{:?}", r.log);
+    assert!(r.stderr.contains("no layered"), "{}", r.stderr);
+}
+
+/// A failed base run ends the stage with its exit code at once: the layered run beside it is stopped, not left running.
+#[test]
+fn a_failed_base_assembly_stops_the_layered_run() {
+    let t0 = std::time::Instant::now();
+    let r = assemble("layers_base_fails", &[], &[("RUSTLE_ASSEMBLY_LAYERS", "on"), ("STUB_FAIL_BASE", "1")]);
+    assert_eq!(r.code, 3, "{}", r.stderr);
+    assert!(t0.elapsed().as_secs() < 20, "the driver waited for the layered run: {:?}", t0.elapsed());
+    assert!(!case_dir("layers_base_fails").join("run.final.gtf").exists());
+    let pid = std::fs::read_to_string(case_dir("layers_base_fails").join("stub.log.layered.pid")).expect("layered run started");
+    let alive = Command::new("kill").args(["-0", pid.trim()]).status().unwrap().success();
+    assert!(!alive, "the layered run {pid} outlived the failed stage");
 }

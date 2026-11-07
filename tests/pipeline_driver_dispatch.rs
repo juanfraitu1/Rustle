@@ -41,7 +41,7 @@ fn function_block(name: &str) -> String {
 }
 
 /// The stages the dispatch ran for `stage` (in order) and its exit status. `tag` names the log, so tests do not share one.
-/// `all` runs the driver's real `run_all`, which re-invokes the driver once per stage (`bash "$0" STAGE ..`): `$0` is a stub
+/// `all` runs the driver's real `stage_all`, which re-invokes the driver once per stage (`bash "$0" STAGE ..`): `$0` is a stub
 /// that logs the stage, so the plan and its order are what is checked. An `--index` is given, so no index stage is planned.
 fn dispatch(tag: &str, stage: &str, legacy_catalog: bool, candidates: bool) -> (Vec<String>, i32) {
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("pipeline_driver_dispatch");
@@ -57,14 +57,14 @@ fn dispatch(tag: &str, stage: &str, legacy_catalog: bool, candidates: bool) -> (
     let script = format!(
         "set -euo pipefail\n\
          export LOG=$1; STAGE=$2; LEGACY_CATALOG=$3; CANDIDATES=$4\n\
-         OUT={out}; RESUME=0; NO_FLAG=0; INDEX=given.mmi; LOW_MEM=0; FASTA=genome.fa; ORIG_ARGS=()\n\
+         OUT={out}; RESUME=0; NO_FLAG=0; INDEX=given.mmi; LOW_MEM=0; FASTA=genome.fa; ORIG_ARGS=(); FROM_STAGE=; TO_STAGE=\n\
          say() {{ :; }}\n\
-         all_env() {{ echo env; }}\n\
+         stage_all_env() {{ echo env; }}\n\
          {}\n\
          {}\n\
          {}\n",
         stubs.join("\n"),
-        function_block("run_all"),
+        function_block("stage_all"),
         dispatch_block(),
         out = dir.join(tag).display()
     );
@@ -121,4 +121,62 @@ fn an_unknown_stage_is_refused_with_status_2_and_runs_nothing() {
     let (ran, code) = dispatch("unknown", "no-such-stage", false, false);
     assert_eq!(code, 2);
     assert!(ran.is_empty(), "ran {ran:?}");
+}
+
+/// Round-10 audit (2026-11-07): `all`'s resume. Each stage keeps its own settings record (PREFIX.<stage>.env), written only
+/// when it succeeds. A failed stage is redone without redoing the ones before it (one shared record, removed before every
+/// stage, used to send the next resume back to assemble). A product newer than its stage's time record (a direct stage call
+/// rewrote it) is redone. A settings change redoes everything.
+#[test]
+fn all_resumes_at_the_failed_stage_and_redoes_a_product_rewritten_outside_it() {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("pipeline_driver_dispatch").join("resume");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("create scratch dir");
+    let out = dir.join("run");
+    let log = dir.join("stages.log");
+    let stub_driver = dir.join("driver.sh");
+    std::fs::write(
+        &stub_driver,
+        "echo \"$1\" >> \"$LOG\"\n\
+         [ \"${FAIL_STAGE:-}\" = \"$1\" ] && exit 3\n\
+         case \"$1\" in assemble) p=gtf;; families) p=fam.copies.tsv;; assign) p=assign.assignments.tsv;; flag) p=flag.missing_copy.tsv;; esac\n\
+         echo x > \"$OUT.$p\"\n",
+    )
+    .unwrap();
+    let script = format!(
+        "set -euo pipefail\n\
+         export LOG=$1 OUT={out}; STAGE=all; LEGACY_CATALOG=0; CANDIDATES=0\n\
+         RESUME=1; NO_FLAG=0; INDEX=given.mmi; LOW_MEM=0; FASTA=genome.fa; ORIG_ARGS=(); FROM_STAGE=; TO_STAGE=\n\
+         say() {{ :; }}\n\
+         stage_all_env() {{ echo \"env $SETTING\"; }}\n\
+         {}\n\
+         {}\n",
+        function_block("stage_all"),
+        dispatch_block(),
+        out = out.display()
+    );
+    let run = |setting: &str, fail: &str| -> (Vec<String>, i32) {
+        let _ = std::fs::remove_file(&log);
+        let o = Command::new("bash")
+            .arg("-c")
+            .arg(&script)
+            .arg(&stub_driver)
+            .arg(&log)
+            .env("SETTING", setting)
+            .env("FAIL_STAGE", fail)
+            .output()
+            .expect("bash failed to spawn");
+        let ran = std::fs::read_to_string(&log).unwrap_or_default().lines().map(String::from).collect();
+        (ran, o.status.code().unwrap_or(-1))
+    };
+    assert_eq!(run("a", ""), (vec!["assemble".into(), "families".into(), "assign".into(), "flag".into()], 0));
+    assert_eq!(run("a", ""), (vec![], 0), "nothing changed: every stage is skipped");
+    // a direct `families` call rewrote its product after the recorded run: its time record is older than the product
+    let earlier = std::time::SystemTime::now() - std::time::Duration::from_secs(60);
+    std::fs::File::options().write(true).open(format!("{}.families.time", out.display())).unwrap().set_modified(earlier).unwrap();
+    assert_eq!(run("a", ""), (vec!["families".into(), "assign".into(), "flag".into()], 0));
+    // new settings, assign fails: then the same settings again resume AT assign
+    let (ran, code) = run("b", "assign");
+    assert_eq!((ran, code), (vec!["assemble".into(), "families".into(), "assign".into()], 3));
+    assert_eq!(run("b", ""), (vec!["assign".into(), "flag".into()], 0), "assemble and families are not redone");
 }

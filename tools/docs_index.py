@@ -25,7 +25,7 @@ def last_commits():
         if re.match(r"\d{4}-\d{2}-\d{2}\|", ln):
             cur = ln.split("|")[0]
         elif ln.startswith("docs/") and cur:
-            last.setdefault(pathlib.Path(ln).name, cur)
+            last.setdefault(ln[len("docs/"):], cur)  # by path: two archive dirs may hold the same file name
     return last
 
 def main():
@@ -39,11 +39,11 @@ def main():
     def row(f):
         rel = f.relative_to(DOCS).as_posix()
         cites = []
-        if f.name != "NEGATIVE_RESULTS_REGISTER.md" and (c := reg.count(f.name)):
+        if rel != "NEGATIVE_RESULTS_REGISTER.md" and (c := reg.count(f.name)):
             cites.append(f"register ×{c}")
         if (c := mem.count(f.name)):
             cites.append(f"memory ×{c}")
-        return f"| [`{f.name}`]({rel}) | {title(f)} | {last.get(f.name, 'uncommitted')} | {', '.join(cites) or '—'} |"
+        return f"| [`{f.name}`]({rel}) | {title(f)} | {last.get(rel, 'uncommitted')} | {', '.join(cites) or '—'} |"
     hdr = "| file | title | last commit | cited by |\n|---|---|---|---|"
     print(f"# docs/ index — every document, one line each (generated {datetime.date.today()})\n")
     print("Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or archiving a document. "
@@ -63,7 +63,7 @@ def main():
         if f.parent != DOCS:
             groups[f.parent.relative_to(DOCS).as_posix()].append(f)
     for g in sorted(groups, reverse=True):
-        fs = sorted(groups[g], key=lambda f: (re.search(r"20\d\d-\d\d-\d\d", f.name).group(0) if re.search(r"20\d\d-\d\d-\d\d", f.name) else last.get(f.name, ""), f.name), reverse=True)
+        fs = sorted(groups[g], key=lambda f: (re.search(r"20\d\d-\d\d-\d\d", f.name).group(0) if re.search(r"20\d\d-\d\d-\d\d", f.name) else last.get(f.relative_to(DOCS).as_posix(), ""), f.name), reverse=True)
         print(f"\n## `{g}/` — {len(fs)} closed documents\n\n{hdr}")
         print("\n".join(row(f) for f in fs))
 

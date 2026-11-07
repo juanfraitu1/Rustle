@@ -92,11 +92,14 @@ fn junction_counts(
     let region: noodles_core::Region = format!("{chrom}:{lo}-{hi}").parse()?;
 
     let (mut p, mut s, mut u) = (0u64, 0u64, 0u64);
-    let query = match reader.query(&header, &index, &region) {
-        Ok(q) => q,
-        // samtools view on a reference the BAM does not know prints nothing and exits 0.
-        Err(_) => return Ok((0, 0, 0)),
-    };
+    // samtools view on a reference the BAM does not know prints nothing and exits 0; any other query error (a stale or
+    // mismatched .bai) is an error, not zero counts (audit 2026-11-07, third pass)
+    if header.reference_sequences().get(chrom.as_bytes()).is_none() {
+        return Ok((0, 0, 0));
+    }
+    let query = reader
+        .query(&header, &index, &region)
+        .with_context(|| format!("querying {bam_path} at {chrom}:{lo}-{hi} (stale or mismatched .bai?)"))?;
     for result in query {
         let rb = RecordBuf::try_from_alignment_record(&header, &result?)?;
         let Some(start) = rb.alignment_start() else {
@@ -341,6 +344,19 @@ mod tests {
     #[test]
     fn python_self_test_cases_hold() {
         self_test();
+    }
+
+    /// A contig the BAM does not know is zero counts (samtools parity); a .bai that is not this BAM's index is an error.
+    #[test]
+    fn unknown_contig_is_zero_and_a_bad_index_is_an_error() {
+        let bam = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/o2_origin_resolve/reads.bam");
+        assert_eq!(junction_counts(bam, "no_such_contig", 1, 100, (10, 20)).unwrap(), (0, 0, 0));
+        assert!(junction_counts(bam, "c1", 1, 3000, (10, 20)).is_ok());
+        let dir = tempfile::tempdir().unwrap();
+        let copy = dir.path().join("reads.bam");
+        std::fs::copy(bam, &copy).unwrap();
+        std::fs::write(dir.path().join("reads.bam.bai"), b"BAI\x01garbage").unwrap();
+        assert!(junction_counts(copy.to_str().unwrap(), "c1", 1, 3000, (10, 20)).is_err());
     }
 
     #[test]

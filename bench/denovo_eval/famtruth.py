@@ -434,6 +434,10 @@ def truth_pairs(genes, paralogs, levels):
         f = line.rstrip('\n').split('\t')
         if f[0].startswith('Gene'):
             continue
+        # gene ids are kept unversioned (load_*): a versioned paralogue table (ENSG...12) must not match nothing
+        f[0] = f[0].split('.')[0]
+        if len(f) > 1:
+            f[1] = f[1].split('.')[0]
         known_ens.add(f[0])
         if len(f) < 4 or not f[1] or f[3] not in lv:
             continue

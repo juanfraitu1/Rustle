@@ -43,9 +43,18 @@ case "$ARM" in S|P) ;; *) echo "--arm is S (pass-1 seeding as base) or P (primar
 UNITS=${UNITS:-$OUT.fam.units.tsv}; UNITS_FA=${UNITS_FA:-$OUT.fam.units.fa}
 [ -n "$TAG" ] || { [ "$ARM" = S ] && TAG=pass2 || TAG=pass2p; }
 export TMPDIR=${TMPDIR:-/tmp}
-# the pass-1 assembly's polish flags, read from the driver so the two passes can never drift apart
-POLISH=$(sed -n 's/^POLISH="\(.*\)"$/\1/p' "$HERE/rustle_pipeline.sh")
-[ -n "$POLISH" ] || { echo "could not read POLISH from $HERE/rustle_pipeline.sh" >&2; exit 2; }
+# the pass-1 assembly's polish flags as that run used them (the driver's defaults plus every RUSTLE_* it read),
+# so the two passes can never drift apart; read where pass 2 runs, so union/home need no assemble stage
+read_polish() {
+  [ -s "$OUT.assemble.polish" ] || { echo "missing $OUT.assemble.polish: rerun the driver's assemble stage (same PREFIX), which writes its flags" >&2; exit 2; }
+  POLISH=$(cat "$OUT.assemble.polish")
+  # pass 1's seeding environment and contig scope (the pool, its ratio and table, RUSTLE_READ_STRAND, --contig)
+  for f in seed_env scope; do
+    [ -s "$OUT.assemble.$f" ] || { echo "missing $OUT.assemble.$f: rerun the driver's assemble stage (same PREFIX), which writes it" >&2; exit 2; }
+  done
+  mapfile -t PASS1_SEED < "$OUT.assemble.seed_env"
+  mapfile -t SCOPE < "$OUT.assemble.scope"
+}
 say() { echo "[rustle_reassemble] $(date +%H:%M:%S) $*" >&2; }
 
 stage_union() {
@@ -54,8 +63,8 @@ stage_union() {
   done
   say "union: copy assignment with the union certificate on $UNITS"
   samtools view -H "$BAM" | awk '$1=="@SQ"{sub("SN:","",$2); sub("LN:","",$3); print $2":1-"$3}' > "$OUT.loop.regions.txt"
-  "$BIN/copy_assign" --bam "$BAM" --fasta "$FASTA" --regions "$OUT.loop.regions.txt" \
-    --families "$UNITS" --copies-fa "$UNITS_FA" --union-certificate --out "$OUT.loop" > "$OUT.loop.log" 2>&1
+  env -u RUSTLE_READTHROUGH_JUNCTIONS "$BIN/copy_assign" --bam "$BAM" --fasta "$FASTA" --regions "$OUT.loop.regions.txt" \
+    --families "$UNITS" --copies-fa "$UNITS_FA" --union-certificate --threads "$THREADS" --out "$OUT.loop" > "$OUT.loop.log" 2>&1
   say "union: $(grep -o '\[union\] --union-certificate: .*' "$OUT.loop.log" | head -1 | cut -c1-220)"
 }
 stage_home() {
@@ -68,13 +77,17 @@ stage_home() {
 stage_pass2() {
   local table=${HOME_TSV:-$OUT.loop.home.tsv}
   [ -f "$table" ] || { echo "missing $table: run the home step (or pass --home)" >&2; exit 2; }
+  read_polish
   local seed_env=()
   if [ "$ARM" = S ]; then
-    [ -s "$OUT.molecules.tsv" ] || { echo "missing $OUT.molecules.tsv: run the driver's assemble stage first (same PREFIX)" >&2; exit 2; }
-    seed_env=(RUSTLE_GTF_SECONDARY=1 RUSTLE_GTF_SECONDARY_AS_RATIO=0.98 "RUSTLE_GTF_SECONDARY_AS_TABLE=$OUT.molecules.tsv")
+    seed_env=("${PASS1_SEED[@]}")
+  else
+    # primaries only, with pass 1's read-strand setting (the one non-pool word of its seeding environment)
+    seed_env=(-u RUSTLE_GTF_SECONDARY -u RUSTLE_GTF_SECONDARY_AS_RATIO -u RUSTLE_GTF_SECONDARY_AS_TABLE)
+    local w; for w in "${PASS1_SEED[@]}"; do case "$w" in RUSTLE_READ_STRAND=*) seed_env+=("$w");; esac; done
   fi
   say "pass2 ($ARM): re-assembly with $table -> $OUT.$TAG.gtf"
-  env "${seed_env[@]}" "RUSTLE_READ_HOME_TABLE=$table" "$BIN/copy_assign" --assemble-only --genome-wide \
+  env "${seed_env[@]}" "RUSTLE_READ_HOME_TABLE=$table" "$BIN/copy_assign" --assemble-only "${SCOPE[@]}" --threads "$THREADS" \
     --assembly-junctions strict $POLISH --gtf-tpm --bam "$BAM" --fasta "$FASTA" --out "$OUT.$TAG" > "$OUT.$TAG.assemble.log" 2>&1
   say "pass2: $(awk -F'\t' '$3=="transcript"' "$OUT.$TAG.gtf" | wc -l) transcripts"
 }

@@ -349,7 +349,7 @@ fn record_may_attribute_to_locus(
     }
 }
 
-/// Primary reads (`-F 2308`) overlapping a region, capped by name order. With `only`, records whose name is not
+/// Primary reads (`-F 2308`; under `--assignments` also non-primary records) overlapping a region, capped by name hash order. With `only`, records whose name is not
 /// in the set are skipped BEFORE the RecordBuf decode (the decode is the cost: a structural-only locus needs its
 /// few insertion-carrying reads, not the whole pile).
 fn pile(
@@ -396,6 +396,8 @@ fn pile(
         });
     }
     out.sort_by_cached_key(|r| (cap_key(&r.name), r.name.clone()));
+    // one entry per molecule: under --assignments a read's primary and supplementary can both attribute here
+    out.dedup_by(|a, b| a.name == b.name);
     out.truncate(cap);
     Ok(out)
 }
@@ -704,9 +706,23 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
                         continue;
                     }
                     piles[k].push((name.clone(), de, max_ins));
-                    if let Some(d) = &decoded {
+                    // one read's second record (a supplementary under --assignments) must not take a second slot
+                    if let Some(d) = decoded.as_ref().filter(|d| ins_reads[k].iter().all(|r| r.name != d.name)) {
+                        // keep the INS_CAP reads with the smallest cap_key, as the mixture path's `pile` does (was the
+                        // first INS_CAP in coordinate order: the structural-only call then depended on read position)
                         if ins_reads[k].len() < INS_CAP {
                             ins_reads[k].push(d.clone());
+                        } else {
+                            let key = |r: &PileRead| (cap_key(&r.name), r.name.clone());
+                            let (wi, w) = ins_reads[k]
+                                .iter()
+                                .enumerate()
+                                .map(|(i, r)| (i, key(r)))
+                                .max_by(|a, b| a.1.cmp(&b.1))
+                                .expect("INS_CAP > 0");
+                            if key(d) < w {
+                                ins_reads[k][wi] = d.clone();
+                            }
                         }
                     }
                 }
@@ -714,20 +730,23 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
         }
         let mut ins_reads = ins_reads;
         for (k, mut pile1) in piles.into_iter().enumerate() {
-            let ins_here: Vec<PileRead> = std::mem::take(&mut ins_reads[k])
+            let mut ins_here: Vec<PileRead> = std::mem::take(&mut ins_reads[k])
                 .into_iter()
                 .map(|a| (*a).clone())
                 .collect();
+            ins_here.sort_by_cached_key(|r| (cap_key(&r.name), r.name.clone()));
+            ins_here.dedup_by(|a, b| a.name == b.name);
             let (id, chrom, start, end, name) = &loci[order[k]];
             n_scanned += 1;
             if n_scanned % 2000 == 0 {
                 eprintln!("[missing_copy_flag] {n_scanned}/{} loci, {n_enough} with reads, {n_fired} fired", loci.len());
             }
+            pile1.sort_by_cached_key(|x| (cap_key(&x.0), x.0.clone()));
+            pile1.dedup_by(|a, b| a.0 == b.0); // one entry per molecule (as in `pile`)
             if pile1.len() < args.min_reads {
                 continue;
             }
             n_enough += 1;
-            pile1.sort_by_cached_key(|x| (cap_key(&x.0), x.0.clone()));
             pile1.truncate(args.max_reads);
             let de: Vec<f64> = pile1.iter().map(|x| x.1).collect();
             let fires_mixture = match two_means(&de) {
@@ -1023,10 +1042,14 @@ fn main() -> Result<()> {
             for p in prefixes {
                 let f = std::fs::File::open(format!("{p}.scan.tsv"))
                     .with_context(|| format!("{p}.scan.tsv"))?;
-                for line in std::io::BufReader::new(f).lines().skip(1) {
-                    if let Some(r) = Row::from_scan_line(&line?) {
-                        rows.push(r);
-                    }
+                // another build's scan.tsv (other columns) used to resume 0 rows silently, or rows read out of alignment
+                let mut lines = std::io::BufReader::new(f).lines();
+                let head = lines.next().transpose()?.unwrap_or_default();
+                anyhow::ensure!(head == SCAN_HEAD, "{p}.scan.tsv: header is not this build's scan header (made by another build?)");
+                for (i, line) in lines.enumerate() {
+                    let line = line?;
+                    let r = Row::from_scan_line(&line).with_context(|| format!("{p}.scan.tsv line {}: not a scan row", i + 2))?;
+                    rows.push(r);
                 }
                 let fa = std::fs::read(format!("{p}.consensus.fa"))
                     .with_context(|| format!("{p}.consensus.fa"))?;
@@ -1144,6 +1167,8 @@ fn main() -> Result<()> {
                 structural_only,
             });
             *counts.entry(v.as_str()).or_insert(0) += 1;
+            // a structural-only row has no mixture (m, delta, n_psv are 0 by construction): its mixture cells are NA
+            let na_if = |v: String| if structural_only { "NA".to_string() } else { v };
             let consistent = if r.n_psv >= 3 && r.shared_frac >= 0.5 {
                 "copy_consistent"
             } else {
@@ -1151,8 +1176,8 @@ fn main() -> Result<()> {
             };
             f.extend([
                 class.to_string(),
-                format!("{:.1}", r.delta / args.pi),
-                consistent.to_string(),
+                na_if(format!("{:.1}", r.delta / args.pi)),
+                na_if(consistent.to_string()),
                 host_id
                     .map(|x| format!("{x:.4}"))
                     .unwrap_or_else(|| "NA".into()),
@@ -1164,7 +1189,7 @@ fn main() -> Result<()> {
                     .map(|h| format!("{}:{}-{}", h.chrom, h.start, h.end))
                     .unwrap_or_else(|| "NA".into()),
                 v.as_str().to_string(),
-                format!("{:.2}", 1.0 / (1.0 - r.m)),
+                na_if(format!("{:.2}", 1.0 / (1.0 - r.m))),
             ]);
             let is_cand = v == Verdict::ReferenceAbsentCandidate;
             n_candidates += is_cand as usize;
@@ -1409,5 +1434,101 @@ mod tests {
         assert!(read_may_attribute_to_locus("rX", lk_copy1.as_ref(), am_ref));
         // locus with no clean copy key falls back to primary overlap
         assert!(read_may_attribute_to_locus("r1", lk_none, am_ref));
+    }
+
+    /// Pass 2's `pile()` (BAI region query) must return exactly the reads pass 1 counts for a locus. Pass 1's rule is
+    /// inline in `scan()` (`rs < end && start < re`, `re = rs + span of M/=/X/D/N`, primaries only without
+    /// `--assignments`), so the expected set is computed here from that same rule over the records.
+    #[test]
+    fn pile_region_query_matches_pass1_overlap_rule_at_locus_edges() {
+        use noodles_core::Position;
+        use noodles_sam::alignment::record::cigar::{op::Kind, Op};
+        use noodles_sam::alignment::record::Flags;
+        use noodles_sam::header::record::value::{map::ReferenceSequence, Map};
+        use noodles_sam::alignment::io::Write as _;
+        use noodles_sam::alignment::Record as _;
+        let m = |n| Op::new(Kind::Match, n);
+        let rec = |name: &str, flags: Flags, pos: usize, ops: Vec<Op>| {
+            RecordBuf::builder()
+                .set_name(name)
+                .set_flags(flags)
+                .set_reference_sequence_id(0)
+                .set_alignment_start(Position::try_from(pos).unwrap())
+                .set_cigar(ops.into_iter().collect())
+                .build()
+        };
+        let (lo, hi) = (1_000u64, 2_000u64); // locus, 0-based half-open
+        let recs = vec![
+            // 0-based [500,1100): blocks [500,600) [900,1100), the second straddles the locus start
+            rec("splice", Flags::default(), 501, vec![m(100), Op::new(Kind::Skip, 300), m(200)]),
+            rec("abut", Flags::default(), 901, vec![m(100)]), // [900,1000): ends at the locus start, no overlap
+            rec("sec", Flags::SECONDARY, 1_201, vec![m(100)]),
+            rec("sup", Flags::SUPPLEMENTARY, 1_301, vec![m(100)]),
+            rec("last", Flags::default(), 2_000, vec![m(50)]), // [1999,2049): starts at end - 1
+            rec("past", Flags::default(), 2_001, vec![m(50)]), // [2000,2050): starts at the locus end
+        ];
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("p.bam");
+        let header = noodles_sam::Header::builder()
+            .add_reference_sequence("c1", Map::<ReferenceSequence>::new(std::num::NonZeroUsize::new(10_000).unwrap()))
+            .build();
+        {
+            let mut w = noodles_bam::io::Writer::new(std::fs::File::create(&path).unwrap());
+            w.write_header(&header).unwrap();
+            for r in &recs {
+                w.write_alignment_record(&header, r).unwrap();
+            }
+            w.try_finish().unwrap();
+        }
+        // .bai built with noodles' indexer, as src/family.rs's `write_indexed_bam`
+        let mut r = noodles_bam::io::Reader::new(std::fs::File::open(&path).unwrap());
+        r.read_header().unwrap();
+        let mut indexer = noodles_csi::binning_index::Indexer::default();
+        let mut chunk_start = r.get_ref().virtual_position();
+        let mut record = noodles_bam::Record::default();
+        while r.read_record(&mut record).unwrap() != 0 {
+            let chunk_end = r.get_ref().virtual_position();
+            let ctx = (
+                record.reference_sequence_id().transpose().unwrap().unwrap(),
+                record.alignment_start().transpose().unwrap().unwrap(),
+                record.alignment_end().transpose().unwrap().unwrap(),
+                true,
+            );
+            use noodles_csi::binning_index::index::reference_sequence::bin::Chunk;
+            indexer.add_record(Some(ctx), Chunk::new(chunk_start, chunk_end)).unwrap();
+            chunk_start = chunk_end;
+        }
+        let index: noodles_bam::bai::Index = indexer.build(1);
+
+        // pass 1's rule, applied to the same records
+        let mut expect: Vec<String> = recs
+            .iter()
+            .filter(|r| !r.flags().is_secondary() && !r.flags().is_supplementary())
+            .filter(|r| {
+                let rs = r.alignment_start().unwrap().get() as u64 - 1;
+                let span: u64 = r
+                    .cigar()
+                    .as_ref()
+                    .iter()
+                    .filter(|o| matches!(o.kind(), Kind::Match | Kind::SequenceMatch | Kind::SequenceMismatch | Kind::Deletion | Kind::Skip))
+                    .map(|o| o.len() as u64)
+                    .sum();
+                rs < hi && lo < rs + span
+            })
+            .map(|r| r.name().unwrap().to_string())
+            .collect();
+        expect.sort();
+        assert_eq!(expect, ["last", "splice"], "hand check of the rule itself");
+
+        let bgzf = noodles_bgzf::MultithreadedReader::with_worker_count(
+            std::num::NonZeroUsize::new(1).unwrap(),
+            std::io::BufReader::new(std::fs::File::open(&path).unwrap()),
+        );
+        let mut reader = noodles_bam::io::Reader::from(bgzf);
+        let header = reader.read_header().unwrap();
+        let got = pile(&mut reader, &header, &index, "c1", lo, hi, 100, None, None, None).unwrap();
+        let mut names: Vec<String> = got.into_iter().map(|p| p.name).collect();
+        names.sort();
+        assert_eq!(names, expect, "pile() must return pass 1's reads for the locus");
     }
 }

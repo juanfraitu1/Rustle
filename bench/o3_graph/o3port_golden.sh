@@ -8,7 +8,7 @@
 set -euo pipefail
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
 GW=${GW:-/mnt/linuxdisk/tmp/o3port_golden}
-RS_BIN=${RS_BIN:-/mnt/linuxdisk/home/juanfraitu/rustle_target/release/copy_phasing}
+RS_BIN=${RS_BIN:-${CARGO_TARGET_DIR:-$REPO/target}/release/copy_phasing}
 RS_THREADS=${RS_THREADS:-1}
 PRODUCTS="candidates.tsv contigs.fa clusters.tsv reads.tsv families.tsv putative.tsv putative.fa loci.tsv o2.tsv dump.jsonl"
 

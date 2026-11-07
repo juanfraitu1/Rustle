@@ -87,5 +87,14 @@ class LoadGenes(unittest.TestCase):
         self.assertIn('--annotation', str(e.exception))
 
 
+    def test_truth_pairs_drop_the_version_of_the_paralogue_table(self):
+        G = {'a': dict(biotype='protein_coding', ens={'ENSG1'}), 'b': dict(biotype='protein_coding', ens={'ENSG2'})}
+        with tempfile.NamedTemporaryFile('w', suffix='.tsv', delete=False) as fh:
+            fh.write('Gene stable ID\tpar\ttype\tlca\nENSG1.3\tENSG2.7\tparalog\tHominidae\n')
+        try:
+            self.assertEqual(F.truth_pairs(G, fh.name, ['Hominidae']), ({('a', 'b')}, {'a'}))
+        finally:
+            os.unlink(fh.name)
+
 if __name__ == '__main__':
     unittest.main()

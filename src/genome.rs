@@ -13,9 +13,45 @@ pub struct GenomeIndex {
     windows: HashMap<String, (usize, Vec<(usize, Vec<u8>)>)>,
 }
 
+/// A bgzip/gzip FASTA is refused: `.fai` offsets count uncompressed bytes, so reading them from the compressed file
+/// gives binary noise with no error (audit 2026-11-07, third pass).
+fn refuse_gzip(file: &File, path: &str) -> Result<()> {
+    let mut magic = [0u8; 2];
+    if file.read_exact_at(&mut magic, 0).is_ok() && magic == [0x1f, 0x8b] {
+        anyhow::bail!("{path} is gzip/bgzip compressed: decompress it (and rerun samtools faidx) before using it as the FASTA");
+    }
+    Ok(())
+}
+
+/// A `.fai` record must point just past its own header line (`>NAME` then whitespace or end of line): a FASTA edited
+/// after `samtools faidx` (a header renamed or given a description) otherwise reads header text as bases.
+fn check_fai_record(file: &File, path: &str, name: &str, offset: u64) -> Result<()> {
+    let bad = || anyhow::anyhow!("{path}.fai does not match {path} at {name} (offset {offset}): the FASTA changed after its index; rerun samtools faidx");
+    for want in [512u64, 1 << 20] {
+        let k = want.min(offset);
+        let mut buf = vec![0u8; k as usize];
+        file.read_exact_at(&mut buf, offset - k).map_err(|_| bad())?;
+        let Some(body) = buf.strip_suffix(b"\n") else {
+            return Err(bad());
+        };
+        let body = body.strip_suffix(b"\r").unwrap_or(body);
+        let line = match body.iter().rposition(|&c| c == b'\n') {
+            Some(i) => &body[i + 1..],
+            None if k == offset => body,
+            None => continue, // header line longer than the window: look further back
+        };
+        let ok = line.first() == Some(&b'>')
+            && line[1..].starts_with(name.as_bytes())
+            && line.get(1 + name.len()).map_or(true, |c| c.is_ascii_whitespace());
+        return if ok { Ok(()) } else { Err(bad()) };
+    }
+    Err(bad())
+}
+
 impl GenomeIndex {
     pub fn from_fasta(path: &str) -> Result<Self> {
         let f = File::open(path).with_context(|| format!("failed to open FASTA: {}", path))?;
+        refuse_gzip(&f, path)?;
         let reader = BufReader::new(f);
         let mut seqs: HashMap<String, Vec<u8>> = Default::default();
         let mut current: Option<String> = None;
@@ -54,11 +90,30 @@ impl GenomeIndex {
         Self::default()
     }
 
-    /// Load ONLY the named contigs, seeking to each via the FASTA `.fai` index so
-    /// the rest of the (possibly multi-GB) genome is never read. This is the fast
-    /// path for region-scoped --vg runs. Falls back to a full `from_fasta` load if
-    /// the `.fai` is missing, is malformed, or none of the wanted contigs are
-    /// indexed — so the result is never worse than loading everything.
+    /// [`Self::from_fasta_contigs`] for callers that only want sequence where the genome has it (contigs of every read
+    /// in a BAM, which may hold spike-ins such as SIRV/ERCC): wanted contigs the `.fai` does not list are dropped, with a
+    /// warning, instead of refused. Without a `.fai` it is the strict call's whole-genome fallback.
+    /// `require_any`: none of the wanted contigs listed is an error (a whole-BAM contig set: a wrong --fasta or naming);
+    /// off, it is an empty genome (one contig piece of a piecewise run that is all spike-in).
+    pub fn from_fasta_contigs_present(path: &str, wanted: &DetHashSet<String>, require_any: bool) -> Result<Self> {
+        let Ok(fai) = std::fs::read_to_string(format!("{path}.fai")) else { return Self::from_fasta_contigs(path, wanted) };
+        let listed: DetHashSet<&str> = fai.lines().filter_map(|l| l.split('\t').next()).collect();
+        let (present, absent): (Vec<&String>, Vec<&String>) = wanted.iter().partition(|c| listed.contains(c.as_str()));
+        if !absent.is_empty() {
+            let mut a = absent.clone();
+            a.sort();
+            eprintln!("[genome] {} contig(s) not in {path}.fai have no sequence here, e.g. {:?}", a.len(), &a[..a.len().min(5)]);
+            if present.is_empty() {
+                anyhow::ensure!(!require_any, "none of the {} wanted contigs is in {path}.fai (e.g. {:?}): wrong --fasta or contig naming", a.len(), &a[..a.len().min(5)]);
+                return Ok(Self::empty());
+            }
+        }
+        Self::from_fasta_contigs(path, &present.into_iter().cloned().collect())
+    }
+
+    /// Load ONLY the named contigs, seeking to each via the FASTA `.fai` index so the rest of the (possibly multi-GB)
+    /// genome is never read: the fast path for region-scoped runs. A wanted contig the `.fai` does not list is an error;
+    /// without a `.fai`, with a malformed one, or with an empty set the whole genome is loaded.
     pub fn from_fasta_contigs(path: &str, wanted: &DetHashSet<String>) -> Result<Self> {
         let fai = match std::fs::read_to_string(format!("{}.fai", path)) {
             Ok(s) => s,
@@ -89,12 +144,27 @@ impl GenomeIndex {
             }
             entries.push((f[0].to_string(), length, offset, linebases, linewidth));
         }
+        // a wanted contig the `.fai` does not list was silently left out (audit 2026-11-07, third pass)
+        let listed: DetHashSet<&str> = fai.lines().filter_map(|l| l.split('\t').next()).collect();
+        let mut missing: Vec<&String> = wanted.iter().filter(|c| !listed.contains(c.as_str())).collect();
+        if !missing.is_empty() {
+            missing.sort();
+            anyhow::bail!(
+                "{} contig(s) not in {path}.fai, e.g. {:?}: wrong --fasta for these loci, or a stale .fai (rerun samtools faidx)",
+                missing.len(),
+                &missing[..missing.len().min(5)]
+            );
+        }
         if entries.is_empty() {
-            // Nothing to subset (no overlap) -> safest to load the whole genome.
+            // Nothing to subset (only zero-length contigs wanted) -> load the whole genome.
             return Self::from_fasta(path);
         }
         let mut file =
             File::open(path).with_context(|| format!("failed to open FASTA: {}", path))?;
+        refuse_gzip(&file, path)?;
+        for (name, _, offset, _, _) in &entries {
+            check_fai_record(&file, path, name, *offset)?;
+        }
         // Contigs are independent: read them in parallel through positioned reads on one shared handle.
         let bulk: Vec<Option<Vec<u8>>> = {
             use rayon::prelude::*;
@@ -121,9 +191,10 @@ impl GenomeIndex {
             while seq.len() < length {
                 lbuf.clear();
                 let n = reader.read_until(b'\n', &mut lbuf)?;
-                if n == 0 {
-                    break;
-                }
+                anyhow::ensure!(
+                    n > 0 && lbuf.first() != Some(&b'>'),
+                    "{path}: contig {name} has fewer bases than its .fai length {length} (stale .fai? rerun samtools faidx)"
+                );
                 for &c in &lbuf {
                     if !c.is_ascii_whitespace() {
                         seq.push(c.to_ascii_uppercase());
@@ -158,7 +229,7 @@ impl GenomeIndex {
     /// Only the given regions (contig, 0-based start, end; merged per contig, clipped at the contig end), read in parallel
     /// through the `.fai`: the families stage needs its loci spans, a third of a genome or less, never whole contigs.
     /// [`GenomeIndex::fetch_sequence`] answers inside a region exactly as the whole-contig index does and None outside;
-    /// contigs the `.fai` does not list are not loaded. Without a usable `.fai` (or line geometry) it is the regions'
+    /// contigs the `.fai` does not list are not loaded (`write_loci_fa` then names the region). Without a usable `.fai` (or line geometry) it is the regions'
     /// contigs' whole index ([`GenomeIndex::from_fasta_contigs`]).
     pub fn from_fasta_regions(path: &str, regions: &[(String, u64, u64)]) -> Result<Self> {
         let contigs: DetHashSet<String> = regions.iter().map(|r| r.0.clone()).collect();
@@ -207,6 +278,10 @@ impl GenomeIndex {
             }
         }
         let file = File::open(path).with_context(|| format!("failed to open FASTA: {}", path))?;
+        refuse_gzip(&file, path)?;
+        for (c, g) in &geom {
+            check_fai_record(&file, path, c, g.1)?;
+        }
         let loaded: Vec<Option<Vec<u8>>> = {
             use rayon::prelude::*;
             let shared = &file;
@@ -559,6 +634,14 @@ impl IndexedFasta {
             index.insert(f[0].to_string(), rec);
         }
         let file = File::open(path)?;
+        let io = |e: anyhow::Error| std::io::Error::other(format!("{e:#}"));
+        refuse_gzip(&file, path).map_err(io)?;
+        {
+            // one small positioned read per record, latency-bound: in parallel (a 5,486-contig draft took 5.5 s serially)
+            use rayon::prelude::*;
+            let recs: Vec<(&String, u64)> = index.iter().map(|(n, r)| (n, r.offset)).collect();
+            recs.par_iter().try_for_each(|(name, off)| check_fai_record(&file, path, name, *off)).map_err(io)?;
+        }
         Ok(Self { file, index })
     }
 
@@ -622,6 +705,24 @@ impl GenomeIndex {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn contigs_present_drops_absent_contigs_and_requires_one_when_asked() {
+        let d = std::env::temp_dir().join(format!("fcp_{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let fa = d.join("g.fa").to_string_lossy().into_owned();
+        std::fs::write(&fa, ">chr1\nACGTACGT\n").unwrap();
+        std::fs::write(format!("{fa}.fai"), "chr1\t8\t6\t8\t9\n").unwrap();
+        let set = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<crate::types::DetHashSet<String>>();
+        let g = super::GenomeIndex::from_fasta_contigs_present(&fa, &set(&["chr1", "SIRV1"]), true).unwrap();
+        assert_eq!(g.fetch_sequence("chr1", 0, 8).as_deref(), Some(&b"ACGTACGT"[..]));
+        assert!(g.fetch_sequence("SIRV1", 0, 1).is_none());
+        let e = super::GenomeIndex::from_fasta_contigs_present(&fa, &set(&["SIRV1"]), false).unwrap();
+        assert!(e.fetch_sequence("chr1", 0, 1).is_none(), "a spike-in-only piece loads nothing");
+        assert!(super::GenomeIndex::from_fasta_contigs_present(&fa, &set(&["SIRV1"]), true).is_err(), "wrong --fasta");
+        assert!(super::GenomeIndex::from_fasta_contigs(&fa, &set(&["chr1", "SIRV1"])).is_err(), "the strict loader refuses");
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
     use super::*;
 
     #[test]
@@ -650,6 +751,38 @@ mod tests {
             g.fetch_sequence("c2", 0, 10).is_none(),
             "c2 must NOT be loaded (not in wanted set)"
         );
+    }
+
+    /// A header edited after faidx, a gzip FASTA and a contig the `.fai` lacks are errors on every indexed loader,
+    /// not wrong or missing bases (audit 2026-11-07, third pass).
+    #[test]
+    fn a_stale_fai_a_gzip_fasta_and_a_missing_contig_are_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let fai = "c1\t14\t4\t10\t11\nc2\t10\t24\t10\t11\n";
+        let good = dir.path().join("good.fa");
+        std::fs::write(&good, ">c1\nACGTACGTAC\nACGT\n>c2\nTTTTGGGGAA\n").unwrap();
+        std::fs::write(format!("{}.fai", good.display()), fai).unwrap();
+        let stale = dir.path().join("stale.fa");
+        std::fs::write(&stale, ">c1 desc\nACGTACGTAC\nACGT\n>c2\nTTTTGGGGAA\n").unwrap();
+        std::fs::write(format!("{}.fai", stale.display()), fai).unwrap();
+        let gz = dir.path().join("g.fa.gz");
+        std::fs::write(&gz, [0x1f, 0x8b, 8, 4, 0, 0, 0, 0, 0, 0xff, 6, 0, b'B', b'C', 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).unwrap();
+        std::fs::write(format!("{}.fai", gz.display()), fai).unwrap();
+        let set = |v: &[&str]| -> DetHashSet<String> { v.iter().map(|x| x.to_string()).collect() };
+        let p = |f: &std::path::PathBuf| f.to_str().unwrap().to_string();
+        // the good file still loads both ways
+        let g = GenomeIndex::from_fasta_contigs(&p(&good), &set(&["c1", "c2"])).unwrap();
+        assert_eq!(g.fetch_sequence("c2", 0, 10), Some(b"TTTTGGGGAA".to_vec()));
+        assert!(IndexedFasta::open(&p(&good)).is_ok());
+        for bad in [&stale, &gz] {
+            let e = format!("{:#}", GenomeIndex::from_fasta_contigs(&p(bad), &set(&["c1"])).unwrap_err());
+            assert!(e.contains("faidx") || e.contains("gzip"), "{e}");
+            assert!(GenomeIndex::from_fasta_regions(&p(bad), &[("c1".into(), 0, 5)]).is_err());
+            assert!(IndexedFasta::open(&p(bad)).is_err());
+        }
+        // a wanted contig the .fai does not list
+        let e = format!("{:#}", GenomeIndex::from_fasta_contigs(&p(&good), &set(&["c1", "chr9"])).unwrap_err());
+        assert!(e.contains("chr9"), "{e}");
     }
 
     /// Every contig the `.fai` lists loads to exactly the whole-file parse (uppercased, terminators stripped), across
