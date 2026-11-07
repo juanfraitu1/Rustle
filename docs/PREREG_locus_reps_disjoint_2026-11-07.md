@@ -16,3 +16,13 @@ Descriptive: F's groups attached onto row 1573's D table (union).
 
 ## Prediction
 Bar 1 FAIL (17 genes reachable at step 0, but attach needs a family hit; ~20 pairs), bar 2 borderline, 3-4 PASS.
+
+## Result (2026-11-07, job 4452574, `/anvme/workspace/v138da13-rustle/r1571/F*`, `Fa`, `DF`)
+**FAIL (bars 1, 2).** Fa: 0.787 / 0.772 (1,686 hits, +71; 0 pairs A hit lost), copies 8,251 (PASS); A's 71 absorbed:
+9 recovered, 62 still missed. Union DF (D + F attached): 0.779 / 0.776, 16 recovered, copies 8,302, 0 lost.
+Trace of the 25 genes: 17 now have a node of their own (vs ~0 in 1574: the fold is fixed); 10 reach a family in F's own
+clustering; 4 survive the attach. Lost at two identified steps: (a) piece_merge/attach keeps only the most-read piece when
+two pieces of one locus land in one family without aligning to each other (NPIPB7 loses to the overlapping lncRNA group,
+TCP11X1/X2, FAM25G, OR4M2, ZNF324B: 6 genes); (b) 8 nodes get no family edge at all (UGT2B17, ZNF585B, ZNF528, ZNF880,
+KLRC2, TBC1D28, C1QTNF9B, AC092329.3), consistent with the overlapping-span / self-hit rejection between pieces of one
+original locus (not verified). Prediction right on bar 1, bar 2 fails by 0.005.
