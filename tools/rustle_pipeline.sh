@@ -85,8 +85,8 @@
 #   edges.tsv, nodes.tsv, rule.tsv, params.tsv), per-round collapse statistics in the catalog log, and the
 #   assignment evidence (PREFIX.assign.psv_*.tsv, PREFIX.assign.posterior.tsv).
 # Loci are seeded from primaries PLUS secondaries within 2% of the molecule's GENOME-WIDE best alignment score
-#   (one `as_table` pass over the BAM -> PREFIX.molecules.tsv + its binary load sidecar PREFIX.molecules.tsv.asbin,
-#   reused if present): on gorilla NC_073244.2 (the
+#   (one `as_table` pass over the BAM -> BAM.as_table.tsv next to the BAM, shared by every run on it, + its binary load
+#   sidecar .asbin; PREFIX.molecules.tsv links to it; PREFIX.molecules.tsv itself when the BAM's directory is read-only): on gorilla NC_073244.2 (the
 #   seeding pre-registration's verdict contig) this finds 30 more loci (97% annotated) and joins more
 #   >=90%-identity referee pairs (21 -> 26 of 83 on genes with >= 2 exonic primary reads; all of the gain is one
 #   tandem array) at pair precision 1.000 (rows 1060/1100/1101/1116); the streaming assembler applies the filter
@@ -542,10 +542,32 @@ stage_assemble() {
   local seed_env=(-u RUSTLE_GTF_SECONDARY -u RUSTLE_GTF_SECONDARY_AS_RATIO -u RUSTLE_GTF_SECONDARY_AS_TABLE)
   if [ "$SEED_POOL" = good ]; then
     say "assemble: seeding pool: good (AS >= $SEED_RATIO x the molecule's genome-wide best)"
-    local table=${AS_TABLE:-$OUT.molecules.tsv}   # --as-table: one table for many runs on this BAM (built there when absent)
-    if ! head -1 "$table" 2>/dev/null | grep -qF "bam=$(readlink -f "$BAM")$(printf '\t')"; then   # absent, truncated or from another BAM
+    # The table depends on the BAM alone, so by default it is SHARED by every run on that BAM: BAM.as_table.tsv next to
+    # the BAM (2026-11-07; the pass is ~200 s of I/O on a 96 GB BAM, register 1567), or PREFIX.molecules.tsv when the BAM's
+    # directory is not writable. --as-table FILE names it instead. Reused when its header names this BAM and it is not
+    # older than the BAM; otherwise rebuilt under a temporary name and renamed into place (a concurrent run never reads
+    # a half-written table; rename keeps the inode and mtime the .asbin sidecar is keyed on).
+    local table=${AS_TABLE:-}
+    if [ -z "$table" ]; then
+      if [ -w "$(dirname "$BAM")" ]; then table="$BAM.as_table.tsv"; else table="$OUT.molecules.tsv"; fi
+    fi
+    if head -1 "$table" 2>/dev/null | grep -qF "bam=$(readlink -f "$BAM")$(printf '\t')" && [ ! "$table" -ot "$BAM" ]; then
+      say "assemble: genome-wide best-AS table: reusing $table"
+    else   # absent, truncated, from another BAM, or older than the BAM
       say "assemble: genome-wide best-AS table -> $table (one pass over the BAM)"
-      "$BIN/as_table" --bam "$BAM" --out "$table" --threads "$THREADS" > "$OUT.as_table.log" 2>&1
+      local tmp="$table.tmp.$$"
+      if "$BIN/as_table" --bam "$BAM" --out "$tmp" --threads "$THREADS" > "$OUT.as_table.log" 2>&1 && [ -s "$tmp" ]; then
+        [ -e "$tmp.asbin" ] && mv -f "$tmp.asbin" "$table.asbin"
+        mv -f "$tmp" "$table"
+      else
+        rm -f "$tmp" "$tmp.asbin"
+        echo "[rustle_pipeline] as_table failed (see $OUT.as_table.log)" >&2; exit 3
+      fi
+    fi
+    # PREFIX.molecules.tsv stays the per-run name later tools read (tools/rustle_reassemble.sh): a link to the shared table
+    if [ "$(readlink -f "$table")" != "$(readlink -f "$OUT.molecules.tsv")" ]; then
+      ln -sfn "$(readlink -f "$table")" "$OUT.molecules.tsv"
+      ln -sfn "$(readlink -f "$table").asbin" "$OUT.molecules.tsv.asbin"
     fi
     seed_env=(RUSTLE_GTF_SECONDARY=1 RUSTLE_GTF_SECONDARY_AS_RATIO="$SEED_RATIO" "RUSTLE_GTF_SECONDARY_AS_TABLE=$table")
   elif [ "$SEED_POOL" = all ]; then
