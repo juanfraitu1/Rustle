@@ -31,3 +31,20 @@ Exon boundaries in every arm come from the same read alignments.
 ## Prediction
 SEQ beats STRUCT_EXACT and STRUCT_TOL (lower precision: unrelated genes share architecture; lower recall: diverged
 paralogs gain/lose exons). AND vs SEQ: higher precision, recall lower by > 0.01, so a trade-off.
+
+## Result (2026-11-07, `bench/structfam/structdefs.py` + pairscore; `~/runs/structfam_r1570/pairscore.tsv`)
+**SEQ (O1) is the better definition; SEQ beats both STRUCT arms; AND vs SEQ: no winner (identical within 0.001).**
+U2 = 15,251 loci (1,062 O1 members); truth 1,468 Compara pairs (universe 12,292).
+
+| arm | families | loci | pred pairs | hit | false (related) | precision | recall |
+|---|---|---|---|---|---|---|---|
+| SEQ | 260 | 889 | 1,334 | 1,180 | 154 (140) | 0.885 | 0.804 |
+| STRUCT_EXACT | 441 | 1,180 | 2,101 | 852 | 1,249 (1,198) | 0.406 | 0.580 |
+| STRUCT_TOL | 633 | 3,449 | 177,624 | 962 | 176,662 (6,394) | 0.005 | 0.655 |
+| AND | 246 | 848 | 1,332 | 1,179 | 153 (140) | 0.885 | 0.803 |
+
+Prediction right on both STRUCT arms; wrong on AND (no precision gain: O1 families in U2 are already structurally
+coherent, splitting them removed 2 pairs). STRUCT_TOL single linkage chains into one 1,136-locus component.
+Post hoc reading: 1,198 of STRUCT_EXACT's 1,249 false pairs are relatives (Compara at an older level, same HGNC group
+or symbol), so shared architecture tracks deep homology, older than the simiiformes truth level; it does not separate
+young families. Structure stays a corroborating view (row 1569), not a definition.

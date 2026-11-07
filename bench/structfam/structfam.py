@@ -57,7 +57,8 @@ def load(prefix):
             ex = [tuple(map(int, x.split('-'))) for x in r['exons'].split(',')]
             members.append(dict(fam=r['family_id'], tid=r['tid'], chrom=r['chrom'], start=int(r['locus_start']),
                                 end=int(r['locus_end']), n_exon=len(ex), ints=internal(ex, r['strand']),
-                                key=f"{r['chrom']}:{int(r['locus_start']) + 1}-{r['locus_end']}"))
+                                key=f"{r['chrom']}:{int(r['locus_start']) + 1}-{r['locus_end']}",
+                                gene_id=r['gene_id'], strand=r['strand'], exons=r['exons']))
     spans = collections.defaultdict(list)
     for m in members:
         spans[m['chrom']].append((m['start'], m['end']))
@@ -89,7 +90,8 @@ def load(prefix):
             continue
         ints = internal(exons[gid], g['strand'])
         if ints:
-            null.append(dict(g, fam=None, tid=gid, ints=ints))
+            null.append(dict(g, fam=None, tid=gid, gene_id=gid, ints=ints,
+                             exons=','.join(f'{s}-{e}' for s, e in sorted(exons[gid]))))
     return members, null, len(genes)
 
 
