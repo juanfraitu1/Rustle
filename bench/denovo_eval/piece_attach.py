@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Row 1573: attach locus pieces to the UNCHANGED families (docs/PREREG_locus_pieces_attach_2026-11-07.md).
 
-usage: piece_attach.py A_COPIES.tsv C_PREFIX CM_COPIES.tsv OUT_COPIES.tsv
+usage: piece_attach.py A_COPIES.tsv C_PREFIX CM_COPIES.tsv OUT_COPIES.tsv [--keep-all]
   A_COPIES  the families run on the uncut input (its families are kept as they are)
   C_PREFIX  the run on the input with pieces (its .fam.loci.gated.paf links pieces)
   CM_COPIES C's copy table after piece_merge.py
@@ -50,7 +50,7 @@ def attach(a_rows, c_rows, linked):
     return out
 
 
-def main(a_copies, c_prefix, cm_copies, out_path):
+def main(a_copies, c_prefix, cm_copies, out_path, keep_all=False):
     hdr, a_rows = read(a_copies)
     _, c_rows = read(cm_copies)
     keys = {f"{r['chrom']}:{int(r['locus_start']) + 1}-{r['locus_end']}" for _, r in c_rows if re.search(r'\.p\d+$', r['gene_id'])}
@@ -59,7 +59,8 @@ def main(a_copies, c_prefix, cm_copies, out_path):
         f = line.split('\t', 12)
         if f[0] in keys and f[5] in keys and f[0] != f[5] and int(f[10]) >= PM.MIN_ALEN and int(f[9]) / int(f[10]) >= PM.MIN_ID:
             pairs.add(frozenset((f[0], f[5])))
-    out = attach(a_rows, c_rows, lambda a, b: frozenset((a, b)) in pairs)
+    # --keep-all (row 1577): exon-disjoint groups are separate transcription units; keep every attached group
+    out = attach(a_rows, c_rows, (lambda a, b: True) if keep_all else (lambda a, b: frozenset((a, b)) in pairs))
     with open(out_path, 'w') as oh:
         oh.write(hdr)
         oh.writelines(out)
@@ -76,8 +77,15 @@ def selftest():
     out = attach(a, c, lambda x, y: False)
     fams = sorted(l.split('\t')[:2] for l in out)
     assert fams == [['A1', 'L.p2'], ['A1', 'M'], ['A1', 'N'], ['A2', 'L.p1'], ['A2', 'Q']], fams
+    # two unlinked pieces of L in one target family: one kept by default, both with keep_all (row 1577)
+    c2 = [mk('C1', 'L.p1', 0, 9), mk('C1', 'L.p2', 20, 3), mk('C1', 'M', 100)]
+    assert sorted(l.split('\t')[1] for l in attach(a, c2, lambda x, y: False)) == ['L.p1', 'M', 'N', 'Q']
+    assert sorted(l.split('\t')[1] for l in attach(a, c2, lambda x, y: True)) == ['L.p1', 'L.p2', 'M', 'N', 'Q']
     print('selftest ok')
 
 
 if __name__ == '__main__':
-    selftest() if sys.argv[1:] == ['--selftest'] else main(*sys.argv[1:5])
+    if sys.argv[1:] == ['--selftest']:
+        selftest()
+    else:
+        main(*[x for x in sys.argv[1:] if x != '--keep-all'][:4], keep_all='--keep-all' in sys.argv)
