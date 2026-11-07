@@ -18,3 +18,12 @@ the most-read piece. No family is created or split.
 
 ## Prediction
 Bar 1 FAIL (reach <= 27), bars 2-4 PASS (net gain ~+20 hits).
+
+## Result (2026-11-07, `/anvme/workspace/v138da13-rustle/r1571/D.fam.copies.tsv`)
+**FAIL (bars 1, 2).** A 0.802 / 0.740 -> D 0.789 / 0.774 (1,615 -> 1,689 hits, +74; false 398 -> 451); copies 8,184.
+1. A's 71 absorbed pairs: 16 recovered, 55 still missed: FAIL.  2. Precision 0.789 < 0.792: FAIL (by 0.003).
+3. Recall +0.034: PASS.  4. Copies <= 8,385: PASS. Collateral gone: 3 pairs A hit are lost (AGAP4/6/9, NXF2/NXF2B) vs
+~150 in rows 1571/1572. Most of the +74 are not absorbed pairs: second genes of fused loci that were unlinked or split.
+Across rows 1571-1573, 44 of the 71 absorbed pairs are never recovered: 35 involve overlapping or nested genes (a
+positional cut cannot separate them by construction), 9 fused neighbours. Prediction wrong on bar 2.
+Worth a held-out (another sample) as an opt-in families post-step: the recall gain is large, the precision cost 0.013.
