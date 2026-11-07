@@ -62,7 +62,7 @@ def noncoding_judge(pairs_nc):
     by_chrom = collections.defaultdict(list)
     for g in genes_needed: by_chrom[G[g]['chrom']].append(g)
     for chrom, gs in by_chrom.items():
-        raw = subprocess.run(['samtools', 'faidx', FASTA, chrom], capture_output=True, text=True).stdout
+        raw = subprocess.run(['samtools', 'faidx', FASTA, chrom], capture_output=True, text=True, check=True).stdout
         seq = ''.join(raw.split('\n')[1:])
         for g in gs:
             ex = sorted(G[g]['exons']); s_ = ''.join(seq[s0:e] for s0, e in ex).upper()
@@ -73,13 +73,14 @@ def noncoding_judge(pairs_nc):
         with open(fa, 'w') as w:
             for g, s_ in seqs.items():
                 if s_: w.write(f">{g}\n{s_}\n")
-        paf = subprocess.run(['minimap2', '-c', '-x', 'asm20', '-N', '500', '-p', '0.05', '--secondary=yes', '-t', '8', fa, fa], capture_output=True, text=True).stdout
+        paf = subprocess.run(['minimap2', '-c', '-x', 'asm20', '-N', '500', '-p', '0.05', '--secondary=yes', '-t', '8', fa, fa], capture_output=True, text=True, check=True).stdout
     best = {}
     for line in paf.split('\n'):
         f = line.split('\t')
         if len(f) < 12 or f[0] == f[5]: continue
         q, t = f[0], f[5]; ql, tl = int(f[1]), int(f[6]); alen = int(f[3]) - int(f[2]); m, bl = int(f[9]), int(f[10])
-        cov = alen / min(ql, tl); idn = m / bl if bl else 0
+        cov = (alen if ql <= tl else int(f[8]) - int(f[7])) / min(ql, tl)  # the SHORTER sequence's own aligned span
+        idn = m / bl if bl else 0
         k = (min(q, t), max(q, t))
         if k not in best or cov > best[k][0]: best[k] = (cov, idn)
     for p in pairs_nc:
@@ -128,4 +129,4 @@ for p in paths:
                 for x, y in sorted(nc):
                     c, i = cov_cache[(x, y)]
                     w.write(f"{x}\t{y}\t{G[x]['name']}\t{G[y]['name']}\t{G[x]['biotype']}\t{G[y]['biotype']}\t{c:.2f}\t{i:.3f}\t{'accepted' if c >= 0.5 and i >= 0.85 else 'domain_only'}\n")
-    print(f"{p}\t{len(coding)}\t{len(pred) - len(coding) - len(same)}\t{hit}\t{len(false)}\t{rel}\t{prec:.3f}\t{rec:.3f}{extra}" + (f"\t{len(same)}" if same else ""))
+    print(f"{p}\t{len(coding)}\t{len(pred) - len(coding) - len(same)}\t{hit}\t{len(false)}\t{rel}\t{prec:.3f}\t{rec:.3f}" + (f"\t{len(same)}" if os.environ.get('PAIRSCORE_SAME_SYMBOL') == 'ignore' else "") + extra)  # header order: same-symbol, then nc_*

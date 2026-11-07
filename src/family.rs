@@ -21331,16 +21331,21 @@ pub mod copy_assign {
                 .push(proof);
         }
         /// ⭐ §6ft read-through certificate: molecule name → (partner copy index, read positions the partner or the
-        /// mis-chain cut explains). Same side-table device as `STAR_PROOFS`; drained by the binary.
+        /// mis-chain cut explains). Same side-table device as `STAR_PROOFS`; drained by the binary ONCE per run.
+        /// Keyed per (molecule, family): each entry is (a copy tid of the family that registered it, the partner's
+        /// copy tid, `None` = mis-chain cut only). Tids, not indices: the index was in the frame of the (possibly
+        /// pruned) copy list of one call, and a molecule placed in two families registers once in each.
         static READTHROUGH: std::sync::OnceLock<
-            std::sync::Mutex<DetHashMap<String, (usize, usize)>>,
+            std::sync::Mutex<DetHashMap<String, Vec<(String, Option<String>)>>>,
         > = std::sync::OnceLock::new();
-        pub fn register_readthrough(read_name: &str, partner: usize, n_explained: usize) {
+        pub fn register_readthrough(read_name: &str, family_tid: &str, partner_tid: Option<&str>) {
             READTHROUGH
                 .get_or_init(Default::default)
                 .lock()
                 .unwrap()
-                .insert(read_name.to_string(), (partner, n_explained));
+                .entry(read_name.to_string())
+                .or_default()
+                .push((family_tid.to_string(), partner_tid.map(str::to_string)));
         }
         /// §6ft partners: catalog units of ANOTHER family (`member_status = partner`) — aligned so a read-through tail
         /// is explained, never a candidate for assignment or placement.
@@ -21402,7 +21407,7 @@ pub mod copy_assign {
                 .and_then(|m| m.lock().unwrap().get(read_name).cloned())
                 .unwrap_or_default()
         }
-        pub fn take_readthroughs() -> DetHashMap<String, (usize, usize)> {
+        pub fn take_readthroughs() -> DetHashMap<String, Vec<(String, Option<String>)>> {
             READTHROUGH
                 .get()
                 .map(|m| std::mem::take(&mut *m.lock().unwrap()))
@@ -21660,17 +21665,21 @@ pub mod copy_assign {
             let keep = std::env::var_os("RUSTLE_STAR_KEEP").is_some();
             let _c1 = (!keep).then(|| Cleanup(refp.clone()));
             let _c2 = (!keep).then(|| Cleanup(qp.clone()));
-            let write_fa = |path: &std::path::Path, seqs: &[&[u8]]| -> Option<()> {
-                let mut fh = std::io::BufWriter::new(std::fs::File::create(path).ok()?);
+            let write_fa = |path: &std::path::Path, seqs: &[&[u8]]| -> std::io::Result<()> {
+                let mut fh = std::io::BufWriter::new(std::fs::File::create(path)?);
                 for (i, s) in seqs.iter().enumerate() {
-                    writeln!(fh, ">{i}").ok()?;
-                    fh.write_all(s).ok()?;
-                    fh.write_all(b"\n").ok()?;
+                    writeln!(fh, ">{i}")?;
+                    fh.write_all(s)?;
+                    fh.write_all(b"\n")?;
                 }
-                fh.flush().ok()
+                fh.flush()
             };
-            if write_fa(&refp, copy_seqs).is_none() || write_fa(&qp, read_seqs).is_none() {
-                return;
+            // A failure here must stop the run: returning would leave every read of the family with no
+            // candidate, i.e. silently unassigned (audit 2026-11-07).
+            for (path, seqs) in [(&refp, copy_seqs), (&qp, read_seqs)] {
+                if let Err(e) = write_fa(path, seqs) {
+                    panic!("[star] cannot write {} (TMPDIR full?): {e}", path.display());
+                }
             }
             if keep {
                 eprintln!("[star] kept {} and {}", refp.display(), qp.display());
@@ -21710,7 +21719,7 @@ pub mod copy_assign {
                 .spawn()
             {
                 Ok(c) => c,
-                Err(_) => return,
+                Err(e) => panic!("[star] cannot start {mm2} (not on PATH? set RUSTLE_MINIMAP2): {e}"),
             };
             let stdout = child.stdout.take().expect("piped stdout");
             let reader = std::io::BufReader::new(stdout);
@@ -21877,7 +21886,11 @@ pub mod copy_assign {
                 &mut edits,
                 &mut events,
             );
-            let _ = child.wait();
+            match child.wait() {
+                Ok(st) if st.success() => {}
+                // a killed or failed minimap2 leaves a partial PAF that was read as complete
+                st => panic!("[star] {mm2} failed ({st:?}) on {} reads x {} copies: its hits are incomplete", nr, nc),
+            }
         }
 
         /// ⭐ PREREG 021446fb `--indel-psv`: indel PSV columns. Every I/D event of length ≥ `min_len` (in forward read
@@ -25003,11 +25016,8 @@ pub mod copy_assign {
                 }
                 // (union certificate: the partner index would be in the union's frame — see `tie_outside_scored`)
                 if n_explained_unaligned > 0 && !a.origin_rejected && !p.tie_outside_scored {
-                    if let Some((pc, _)) = partner_best {
-                        register_readthrough(&names[ri], pc, n_explained_unaligned);
-                    } else {
-                        register_readthrough(&names[ri], usize::MAX, n_explained_unaligned); // mis-chain cut only
-                    }
+                    let partner = partner_best.map(|(pc, _)| copies[pc].tid.as_str()); // None = mis-chain cut only
+                    register_readthrough(&names[ri], &copies[0].tid, partner);
                 }
                 if competitors == 0 {
                     a.log_lr_margin = 0.0;
@@ -30375,7 +30385,6 @@ pub mod denovo_pipeline {
         // 2026-11-02 "alone only" rule is kept under RUSTLE_FAMILY_SLOTS=0.
         let slot_sched = std::env::var("RUSTLE_FAMILY_SLOTS").map(|v| v != "0").unwrap_or(true);
         let assign_one = |cf: ColocatedFamily| -> (FamilyAssignment, Vec<DnaNeedsRecord>, Vec<(String, super::arms::linearize::LinearizeCertificate, (String, u64, u64))>) {
-            let _slot = slot_sched.then(|| crate::family::star_slots().acquire(1));
             let mut dna_needs: Vec<DnaNeedsRecord> = Vec::new();
             let mut linearize_certs: Vec<(String, super::arms::linearize::LinearizeCertificate, (String, u64, u64))> = Vec::new();
             // RESCUE: recover under-assembled copies homologous to this family (below the >=3-read assembly gate)
@@ -30874,16 +30883,38 @@ pub mod denovo_pipeline {
         if std::env::var_os("RUSTLE_TIMING").is_some() {
             eprintln!("[timing] family threads {} ({} families)", family_threads, colocated.len());
         }
+        // the star slot is taken OUTSIDE rayon (audit 2026-11-07): taken inside a pool task, a worker waiting in a nested join
+        // could steal another family and block in `acquire` while holding its own slot (the gw4 hang pattern). Here each
+        // family's slot is taken on a plain OS thread, which never steals; its work then runs in the family pool as before.
+        let slot = || slot_sched.then(|| crate::family::star_slots().acquire(1));
         let per_family: Vec<_> = if family_threads > 1 && colocated.len() > 1 {
             match rayon::ThreadPoolBuilder::new().num_threads(family_threads).build() {
-                Ok(pool) => pool.install(|| {
-                    use rayon::prelude::*;
-                    colocated.into_par_iter().map(&assign_one).collect()
-                }),
-                Err(_) => colocated.into_iter().map(&assign_one).collect(),
+                Ok(pool) => {
+                    let n = colocated.len();
+                    let todo: Vec<std::sync::Mutex<Option<ColocatedFamily>>> =
+                        colocated.into_iter().map(|c| std::sync::Mutex::new(Some(c))).collect();
+                    let done: Vec<std::sync::Mutex<Option<_>>> = (0..n).map(|_| std::sync::Mutex::new(None)).collect();
+                    let next = std::sync::atomic::AtomicUsize::new(0);
+                    std::thread::scope(|sc| {
+                        for _ in 0..family_threads.min(n) {
+                            sc.spawn(|| loop {
+                                let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                if i >= n {
+                                    break;
+                                }
+                                let cf = todo[i].lock().unwrap().take().expect("each family is taken once");
+                                let _slot = slot();
+                                let r = pool.install(|| assign_one(cf));
+                                *done[i].lock().unwrap() = Some(r);
+                            });
+                        }
+                    });
+                    done.into_iter().map(|m| m.into_inner().unwrap().expect("every family ran")).collect()
+                }
+                Err(_) => colocated.into_iter().map(|cf| { let _slot = slot(); assign_one(cf) }).collect(),
             }
         } else {
-            colocated.into_iter().map(&assign_one).collect()
+            colocated.into_iter().map(|cf| { let _slot = slot(); assign_one(cf) }).collect()
         };
         for (fa, d, l) in per_family {
             out.push(fa);
@@ -57164,10 +57195,18 @@ pub mod fam_from_gtf {
         use rayon::prelude::*;
         use std::collections::BTreeMap;
         // `pat` = `key "` (the first occurrence of the whole pattern, as before; no allocation per call)
+        // a whole attribute name only: `reads "` must not match inside `matched_reads "` (audit 2026-11-07)
         fn attr<'a>(s: &'a str, pat: &str) -> Option<&'a str> {
-            let i = s.find(pat)? + pat.len();
-            let j = s[i..].find('"')? + i;
-            Some(&s[i..j])
+            let mut from = 0;
+            loop {
+                let k = from + s[from..].find(pat)?;
+                if k == 0 || matches!(s.as_bytes()[k - 1], b' ' | b';' | b'\t') {
+                    let i = k + pat.len();
+                    let j = s[i..].find('"')? + i;
+                    return Some(&s[i..j]);
+                }
+                from = k + 1;
+            }
         }
         // One GTF line, parsed (in parallel) into borrowed fields; the maps are then filled in file order, so
         // first-appearance gene order, "last line wins" per transcript and per-transcript exon order are as before.

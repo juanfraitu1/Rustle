@@ -80,7 +80,8 @@ else
         LC_ALL=C sort -k1,1 -T "${TMPDIR:-/tmp}" | awk -F'\t' '!hit && $1 == p && $2 != q {hit = $1 " in " q " and " $2} {p = $1; q = $2} END {print hit}')
   [ -z "$dup" ] || die "read name $dup: samples must not share read names"
   rm -f "$OUT.pool.key"
-  samtools merge -f -@ "$THREADS" -o "$POOLED.tmp" "${B[@]}" && mv -f "$POOLED.tmp" "$POOLED"
+  # `a && b` is exempt from set -e: without the die a failed merge went on to index and key the OLD pool
+  { samtools merge -f -@ "$THREADS" -o "$POOLED.tmp" "${B[@]}" && mv -f "$POOLED.tmp" "$POOLED"; } || { rm -f "$POOLED.tmp"; die "samtools merge failed: $POOLED not updated"; }
   samtools index -@ "$THREADS" "$POOLED"
   printf '%s\n' "$key" > "$OUT.pool.key"
   say "pool: $POOLED from ${S[*]}"

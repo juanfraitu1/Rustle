@@ -556,6 +556,11 @@ stage_assemble() {
     else   # absent, truncated, from another BAM, or older than the BAM
       say "assemble: genome-wide best-AS table -> $table (one pass over the BAM)"
       local tmp="$table.tmp.$$"
+      if [ -z "$AS_TABLE" ] && [ "$table" != "$OUT.molecules.tsv" ] && ! : 2>/dev/null > "$tmp"; then   # e.g. a full group file quota
+        say "assemble: cannot create $tmp (quota?); the table goes to $OUT.molecules.tsv instead"
+        table="$OUT.molecules.tsv"; tmp="$table.tmp.$$"
+      fi
+      rm -f "$tmp"
       if "$BIN/as_table" --bam "$BAM" --out "$tmp" --threads "$THREADS" > "$OUT.as_table.log" 2>&1 && [ -s "$tmp" ]; then
         [ -e "$tmp.asbin" ] && mv -f "$tmp.asbin" "$table.asbin"
         mv -f "$tmp" "$table"
@@ -936,10 +941,12 @@ merged_env() {
   if [ "$SEED_POOL" = all ]; then printf 'seed_pool=all\n'; fi
   if [ "$SEED_POOL" = good ] && [ "$SEED_RATIO" != 0.98 ]; then printf 'seed_ratio=%s\n' "$SEED_RATIO"; fi
   if [ -n "$CONTIG" ]; then printf 'contig=%s\n' "$CONTIG"; fi
+  # every RUSTLE_* knob changes some stage's products: a resume must not skip a stage run with other values (audit 2026-11-07)
+  env | grep '^RUSTLE_' | LC_ALL=C sort || true
 }
 stage_merged() {
   local env_ok=0
-  if [ -f "$OUT.merged.env" ] && [ "$(cat "$OUT.merged.env")" = "$(merged_env)" ]; then env_ok=1; fi
+  if [ -f "$OUT.merged.env" ] && [ "$(cat "$OUT.merged.env")" = "$(merged_env)" ]; then env_ok=1; else rm -f "$OUT.merged.env"; fi   # a run that dies midway must not leave the old record vouching for its products
   if [ "$env_ok" = 1 ] && [ -s "$OUT.gtf" ]; then
     say "merged: phase 1 assemble SKIPPED ($OUT.gtf present, env matches)"
   else

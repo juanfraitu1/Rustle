@@ -3010,29 +3010,37 @@ fn copy_span_lifts(
     spans: &[(String, u64, u64)],
     gi: &GenomeIndex,
     tag: &str,
-) -> DetHashMap<(usize, usize), Vec<LiftBlocks>> {
+) -> anyhow::Result<DetHashMap<(usize, usize), Vec<LiftBlocks>>> {
+    // errors propagate: an empty result here silently degraded the default cross-copy grouping (audit 2026-11-07)
     let mut out: DetHashMap<(usize, usize), Vec<LiftBlocks>> = DetHashMap::default();
     let fa = format!("{tag}.copyset_spans.fa");
     {
-        let Ok(mut fh) = std::fs::File::create(&fa) else {
-            return out;
-        };
+        let mut fh = std::io::BufWriter::new(
+            std::fs::File::create(&fa).map_err(|e| anyhow::anyhow!("copy-span lifts: cannot write {fa}: {e}"))?,
+        );
         for (i, (c, s0, e0)) in spans.iter().enumerate() {
             let seq = gi.fetch_sequence(c, *s0, *e0).unwrap_or_default();
-            let _ = writeln!(fh, ">{i}");
-            let _ = fh.write_all(&seq);
-            let _ = fh.write_all(b"\n");
+            writeln!(fh, ">{i}")?;
+            fh.write_all(&seq)?;
+            fh.write_all(b"\n")?;
         }
+        fh.flush()?;
     }
     let mm2 = std::env::var("RUSTLE_MINIMAP2").unwrap_or_else(|_| "minimap2".to_string());
     let res = std::process::Command::new(&mm2)
         .args(["-c", "-x", "asm20", "--eqx", "-X", "-t", "4"])
         .arg(&fa)
         .arg(&fa)
-        .stderr(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
         .output();
     let _ = std::fs::remove_file(&fa);
-    let Ok(res) = res else { return out };
+    let res = res.map_err(|e| anyhow::anyhow!("copy-span lifts: cannot start {mm2} (set RUSTLE_MINIMAP2): {e}"))?;
+    anyhow::ensure!(
+        res.status.success(),
+        "copy-span lifts: {mm2} failed ({}): {}",
+        res.status,
+        String::from_utf8_lossy(&res.stderr).lines().last().unwrap_or("")
+    );
     for line in String::from_utf8_lossy(&res.stdout).lines() {
         let f: Vec<&str> = line.split('\t').collect();
         if f.len() < 12 {
@@ -3061,7 +3069,7 @@ fn copy_span_lifts(
         out.entry((ti, qi)).or_default().push(fwd.inverse());
         out.entry((qi, ti)).or_default().push(fwd);
     }
-    out
+    Ok(out)
 }
 static GATE_MOL_DISAGREE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 /// §6hd: molecules admitted to the gate by aligner self-disagreement rather than an AS tie.
@@ -8815,6 +8823,9 @@ fn main() -> Result<()> {
     // SERIAL drain (PASS 2) in the original region order — every row push + the `gfam` id counter is
     // exactly the serial path, so the output is byte-identical.
     {
+        // every region was computed above, so the side table holds them all: take it ONCE (taking it per region
+        // gave the whole table to the first region and "-" to every later one)
+        let readthroughs = rustle::copy_assign::copy_assign_pipeline::take_readthroughs();
         for (gwork, work) in works.into_iter().enumerate() {
             let RegionWork {
                 contig,
@@ -8877,7 +8888,6 @@ fn main() -> Result<()> {
             // (the copy its primary's blocks overlap most), as any assembler would use it; the certificate is
             // still computed for it and reported (`origin_rejected`), never applied. One sensitivity over every
             // read; abstention only among the contested. `--no-placement-assign` = the machinery on every read.
-            let readthroughs = rustle::copy_assign::copy_assign_pipeline::take_readthroughs();
             // ⭐ §6gz: under the AS-tied gate every molecule that reaches this point is tied by ALIGNMENT SCORE,
             // and a MAPQ of 60 is the aligner's chaining-stage opinion, not a guarantee — one human read
             // carried a MAPQ-60 primary at AS 1323 with three secondaries at AS 1384, and placement put it at
@@ -9044,9 +9054,15 @@ fn main() -> Result<()> {
                             .copied()
                             .unwrap_or(read_mapqs[*ri])
                             < 60,
-                        readthrough_into: match readthroughs.get(bam_reads[*ri].as_str()) {
-                            Some(&(pc, _)) if pc == usize::MAX => "cut".to_string(),
-                            Some(&(pc, _)) => cat_idx_of(pc),
+                        readthrough_into: match readthroughs
+                            .get(bam_reads[*ri].as_str())
+                            .and_then(|v| v.iter().find(|(fam, _)| fa.copy_tids.contains(fam)))
+                        {
+                            Some((_, None)) => "cut".to_string(),
+                            Some((_, Some(tid))) => match &catalog_index {
+                                Some(ix) => ix.get(tid).map_or_else(|| "NA".into(), |(_, i)| i.to_string()),
+                                None => "NA".into(),
+                            },
                             None => "-".to_string(),
                         },
                         catalog_copy_idx: cat_idx_of(a.best_copy),
@@ -9886,7 +9902,7 @@ fn main() -> Result<()> {
                 for &fw in &fam_ids {
                     lifts_by_fam.insert(
                         fw,
-                        copy_span_lifts(&fams[fw].copy_spans, &gi, &format!("{}.{}", args.out, fw)),
+                        copy_span_lifts(&fams[fw].copy_spans, &gi, &format!("{}.{}", args.out, fw))?,
                     );
                 }
                 let strand_of: DetHashMap<String, char> = region_families
@@ -10972,17 +10988,21 @@ fn main() -> Result<()> {
             }
             bridge_out = Some(out);
         }
-        let mut gh = std::fs::File::create(format!("{}.gtf", args.out))?;
+        // written under .tmp and renamed: a job killed mid-write must not leave a truncated GTF that the next
+        // stage's guard (non-empty, not older) accepts as complete (audit 2026-11-07)
+        let gtf_path = format!("{}.gtf", args.out);
+        let mut gh = std::io::BufWriter::new(std::fs::File::create(format!("{gtf_path}.tmp"))?);
         for line in &gtf_lines {
             writeln!(gh, "{line}")?;
         }
+        gh.flush()?;
+        drop(gh);
+        std::fs::rename(format!("{gtf_path}.tmp"), &gtf_path)?;
         eprintln!("[copy_assign] wrote {}.gtf ({} GTF rows = FLAIR-style isoforms; family copies tagged multicopy)",
             args.out, gtf_lines.len());
         if let Some(out) = bridge_out {
-            let mut fh = std::io::BufWriter::new(std::fs::File::create(format!(
-                "{}.families.gtf",
-                args.out
-            ))?);
+            let fam_path = format!("{}.families.gtf", args.out);
+            let mut fh = std::io::BufWriter::new(std::fs::File::create(format!("{fam_path}.tmp"))?);
             match &out.units {
                 // f1units: each bridge transcript is replaced, at its line position, by its units
                 Some(u) => {
@@ -10997,6 +11017,8 @@ fn main() -> Result<()> {
                 }
             }
             fh.flush()?;
+            drop(fh);
+            std::fs::rename(format!("{fam_path}.tmp"), &fam_path)?;
             if out.evidence_used {
                 std::fs::write(
                     format!("{}.bridge_junctions.tsv", args.out),
@@ -11054,7 +11076,7 @@ fn main() -> Result<()> {
         )?;
     }
     if args.read_provenance {
-        let mut pvh = std::fs::File::create(format!("{}.read_provenance.tsv", args.out))?;
+        let mut pvh = std::io::BufWriter::new(std::fs::File::create(format!("{}.read_provenance.tsv", args.out))?);
         // Scope note (read before quoting): covers every alignment RECORD of every AS-TIED molecule this
         // region's O2 saw (`--no-as-tied-only` disables the AS-tied gate entirely, and this file with it —
         // an uncontested unique mapper is not O2's business and gets its transcript the ordinary way). This
@@ -11063,13 +11085,14 @@ fn main() -> Result<()> {
         for r in &prov_rows {
             writeln!(pvh, "{r}")?;
         }
+        pvh.flush()?; // explicit: BufWriter's drop discards a flush error
         eprintln!(
             "[copy_assign] wrote {}.read_provenance.tsv ({} record(s))",
             args.out,
             prov_rows.len()
         );
     }
-    let mut ah = std::fs::File::create(format!("{}.assignments.tsv", args.out))?;
+    let mut ah = std::io::BufWriter::new(std::fs::File::create(format!("{}.assignments.tsv", args.out))?);
     // `tie_outside_catalog` (§6gz) exists only under the gate, so `--no-as-tied-only` stays byte-identical
     // to the pre-2026-09-09 schema.
     let hdr = "read_name\tfamily_id\tassigned_copy\tstatus\tn_decisive\tmargin\tp_value\tmin_p_value\tas_best\tas_second\tas_margin\tas_per_base_best\tas_per_base_2nd\tin_copy\tcatalog_copy_idx\torigin_rejected\tn_candidates\tsole_candidate\tcontested\treadthrough_into\tprimary_local";
@@ -11145,6 +11168,8 @@ fn main() -> Result<()> {
             r.as_ev.best_per_base, opt_f32(r.as_ev.second_per_base), r.in_copy, r.catalog_copy_idx, r.origin_rejected as u8, r.n_candidates, sole, r.contested as u8, r.readthrough_into, r.primary_local as u8, outside, sibling, eichler, ms_cols
         )?;
     }
+    ah.flush()?; // explicit: BufWriter's drop discards a flush error
+    drop(ah);
     let indel_stats = rustle::copy_assign::copy_assign_pipeline::take_indel_stats();
     {
         // §6es hygiene: reads with an aligned base inside a copy. ⚠ Kept for continuity only — it counts
@@ -11333,11 +11358,12 @@ fn main() -> Result<()> {
 
     // per-read posterior + consistent zone (opt-in via --posterior).
     if args.posterior {
-        let mut ph = std::fs::File::create(format!("{}.posterior.tsv", args.out))?;
+        let mut ph = std::io::BufWriter::new(std::fs::File::create(format!("{}.posterior.tsv", args.out))?);
         writeln!(ph, "read_name\tfamily_id\tstatus\tn_consistent\tzone_chrom\tzone_start\tzone_end\tposterior")?;
         for line in &posterior_lines {
             writeln!(ph, "{line}")?;
         }
+        ph.flush()?; // explicit: BufWriter's drop discards a flush error
         eprintln!(
             "[copy_assign] wrote {}.posterior.tsv ({} reads, prior={})",
             args.out,
@@ -11901,7 +11927,7 @@ fn main() -> Result<()> {
     // --dump-psv: the raw per-molecule PSV genotype matrix (the assignment-proof evidence). reads × PSV columns
     // (each read's base + its assignment), the per-copy alleles, and the column→genome map — for the figure.
     if args.dump_psv {
-        let mut rh = std::fs::File::create(format!("{}.psv_reads.tsv", args.out))?;
+        let mut rh = std::io::BufWriter::new(std::fs::File::create(format!("{}.psv_reads.tsv", args.out))?);
         writeln!(
             rh,
             "read_name\tfamily_id\tassigned_copy\tstatus\tmargin\tn_decisive\talleles"
@@ -11909,6 +11935,7 @@ fn main() -> Result<()> {
         for l in &psv_read_lines {
             writeln!(rh, "{l}")?;
         }
+        rh.flush()?; // explicit: BufWriter's drop discards a flush error
         let mut ch = std::fs::File::create(format!("{}.psv_copies.tsv", args.out))?;
         writeln!(ch, "family_id\tcopy_index\tcopy_tid\talleles\tstrand")?;
         for l in &psv_copy_lines {

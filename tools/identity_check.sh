@@ -8,7 +8,7 @@
 # annotation_families, family_container, family_relations, run_cache PAF caching OFF); (3) with FULL=1 also a
 # real-data slice: copy_assign --assemble-only + mcl_families on a 5-Mb gorilla BAM slice (the Phase-3
 # hash-swap order-leak detector — minimap2 runs for real, ~6 min, heavy lock).
-set -uo pipefail
+set -euo pipefail   # -e (audit 2026-11-07): a failed step used to fall through to "ALL GREEN"
 MODE=${1:?golden|check}
 GOLD=${2:-${IDENTITY_GOLDEN:-$HOME/identity_golden}}
 REPO=$(cd "$(dirname "$0")/.." && pwd)
@@ -23,8 +23,9 @@ passed=$(grep -E "test result" ${TMPDIR:-/tmp}/identity_test.log | awk -F'[.;] '
 echo "[identity] suite: $passed tests passed"
 
 echo "[identity] 2/3 synthetic MCL end-to-end"
-W=/tmp/identity_syn; rm -rf $W; mkdir -p $W
-python3 - <<'EOF'
+W=$(mktemp -d "${TMPDIR:-/tmp}/identity_syn.XXXXXX")   # per run: two concurrent checks used to share /tmp/identity_syn
+W=$W python3 - <<'EOF'
+import os
 import random
 rnd = random.Random(7)
 def seq(n): return ''.join(rnd.choice("ACGT") for _ in range(n))
@@ -37,7 +38,7 @@ def mut(s, r):
     return ''.join(l)
 b = mut(a, 0.03)
 c = seq(2500)
-with open("/tmp/identity_syn/genome.fa", "w") as f:
+with open(os.environ["W"] + "/genome.fa", "w") as f:
     f.write(f">c1\n{a}{b}\n>c2\n{c}\n")
 def gtf(gene, chrom, off, ln, txs):
     out = []
@@ -51,7 +52,7 @@ def gtf(gene, chrom, off, ln, txs):
 rows = [gtf("G1", "c1", 0, 1200, [("T1", 30), ("T2", 12)]),
         gtf("G2", "c1", 3000, 1100, [("T3", 25)]),
         gtf("G3", "c2", 0, 900, [("T4", 20)])]
-open("/tmp/identity_syn/in.gtf", "w").write("\n".join(rows) + "\n")
+open(os.environ["W"] + "/in.gtf", "w").write("\n".join(rows) + "\n")
 EOF
 ( cd $W && env -u RUSTLE_CACHE_DIR "$BIN/mcl_families" --from-gtf in.gtf --fasta genome.fa --threads 2 \
     --min-exonic-bp 1 --min-shared-exon-frac 0.60 --emit-units --emit-relations --out out.fam > mcl.log 2>&1 ) || { echo "[identity] MCL RUN FAILED"; cat $W/mcl.log; exit 1; }
@@ -73,7 +74,7 @@ if [ "${FULL:-0}" = 1 ]; then
     bash tools/rlock.sh heavy bash -c "samtools view -b $BAM $REGION > $R/slice.bam && samtools index $R/slice.bam"
     bash tools/rlock.sh heavy bash -c "cd $R && '$BIN/copy_assign' --assemble-only --genome-wide --assembly-junctions strict --bam slice.bam --fasta '$FASTA' --out slice --threads 4 > assemble.log 2>&1"
     bash tools/rlock.sh heavy bash -c "cd $R && env -u RUSTLE_CACHE_DIR '$BIN/mcl_families' --from-gtf slice.families.gtf --fasta '$FASTA' --threads 4 --min-exonic-bp 1 --min-shared-exon-frac 0.60 --emit-units --out slice.fam > families.log 2>&1"
-    cp $R/slice.gtf $R/slice.fam.copies.tsv $R/slice.fam.clusters.tsv $GOLD/real_
+    for f in slice.gtf slice.fam.copies.tsv slice.fam.clusters.tsv; do cp "$R/$f" "$GOLD/real_$f"; done   # the names check reads
     echo "[identity] real-data golden saved"
   else
     bash tools/rlock.sh heavy bash -c "samtools view -b $BAM $REGION > $R/slice.bam && samtools index $R/slice.bam"

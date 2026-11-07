@@ -40,6 +40,7 @@ Only the standard library is imported at module top; numpy/scipy are imported in
 import collections
 import csv
 import itertools
+import os
 import re
 import subprocess
 
@@ -482,7 +483,7 @@ def paf_coverage(f, rule):
 #
 # ⚠ Primary alignments only (`-F 2308`) throughout — the standing invariant before any per-read CIGAR statistic, so
 # one molecule is never two witnesses.
-SAMTOOLS = "/home/juanfra/miniforge3/bin/samtools"
+SAMTOOLS = os.environ.get("SAMTOOLS", "samtools")  # was a laptop path that no longer exists
 _CIG = re.compile(r"(\d+)([MIDNSHP=X])")
 
 
@@ -507,7 +508,7 @@ def aligned_blocks(pos0, cigar):
 def _fetch(bam, chrom, start, end):
     r = subprocess.run(
         [SAMTOOLS, "view", "-F", "2308", bam, f"{chrom}:{start + 1}-{end}"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, check=True,  # an unindexed BAM or bad region must not read as 0 reads
     )
     for line in r.stdout.splitlines():
         f = line.split("\t")
@@ -586,13 +587,18 @@ def cigar_introns(pos, cig):
 
 def sam_lines(args):
     """Stream `samtools view ARGS` line by line (no whole-BAM string in memory, B6). Lines keep no trailing newline."""
-    p = subprocess.Popen(['samtools', 'view'] + list(args), stdout=subprocess.PIPE, text=True)
+    p = subprocess.Popen([SAMTOOLS, 'view'] + list(args), stdout=subprocess.PIPE, text=True)
+    done = False
     try:
         for ln in p.stdout:
             yield ln.rstrip('\n')
+        done = True
     finally:
         p.stdout.close()
-        p.wait()
+        rc = p.wait()
+    # only a stream read to its end is checked: a caller that stops early closes the pipe and samtools then exits nonzero
+    if done and rc != 0:
+        raise RuntimeError(f"samtools view {' '.join(map(str, args))} exited {rc}: its output is incomplete")
 
 
 def mcl(edges, inflation=2.8, prune=1e-9, max_iter=100):

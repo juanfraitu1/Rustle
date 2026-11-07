@@ -8,7 +8,7 @@ truth pairs at T recovered. A predicted pair is 'ok' for precision at tier T whe
 and recall rises as T rises (fewer, closer truth pairs).
   seqscore.py [--species human|gorilla|hg002|NAME --annotation GTF/GFF3 --xref TSV] --gtf BASE.families.gtf --fasta GENOME [--cov 0.5] [--tiers 0.85,0.90,0.95,0.98]
               [--cache FILE] COPIES_TSV...        (env as famtruth)"""
-import sys, os, csv, collections, itertools, subprocess, tempfile, pickle
+import sys, os, csv, collections, itertools, subprocess, tempfile, pickle, hashlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import famtruth as F
 a = sys.argv[1:]
@@ -24,7 +24,13 @@ G = F.genes_from_argv(a, species)
 idx = F.exon_index(G); expressed = F.expressed_from_gtf(gtf, idx)
 genes = sorted(g for g in expressed if G[g]['exons'] and ('--keep-rna' in a or G[g].get('biotype') not in RNA_BT))
 best = None
-if CACHE and os.path.exists(CACHE): best = pickle.load(open(CACHE, 'rb'))
+# the cache holds pairs already filtered at --cov over THESE genes of THIS genome: a different --cov, --fasta, annotation, --gtf
+# or --keep-rna gives another key, and a cache with another key (or the older bare-dict format) is recomputed (audit 2026-11-07)
+CACHE_KEY = hashlib.sha256(repr((COV, os.path.realpath(FASTA) if FASTA else None, genes)).encode()).hexdigest()
+if CACHE and os.path.exists(CACHE):
+    c = pickle.load(open(CACHE, 'rb'))
+    if isinstance(c, dict) and c.get('key') == CACHE_KEY: best = c['best']
+    else: print(f"# {CACHE} was made with other inputs: recomputed", file=sys.stderr)
 if best is None:
     by_chrom = collections.defaultdict(list)
     for g in genes: by_chrom[G[g]['chrom']].append(g)
@@ -32,23 +38,24 @@ if best is None:
         fa = os.path.join(d, 'g.fa'); n = 0
         with open(fa, 'w') as w:
             for chrom, gs in by_chrom.items():
-                raw = subprocess.run(['samtools', 'faidx', FASTA, chrom], capture_output=True, text=True).stdout
+                raw = subprocess.run(['samtools', 'faidx', FASTA, chrom], capture_output=True, text=True, check=True).stdout
                 seq = ''.join(raw.split('\n')[1:])
                 for g in gs:
                     s = ''.join(seq[s0:e] for s0, e in sorted(G[g]['exons'])).upper()
                     if G[g]['strand'] == '-': s = s.translate(str.maketrans('ACGT', 'TGCA'))[::-1]
                     if len(s) >= 100: w.write(f">{g}\n{s}\n"); n += 1
         print(f"# {n} expressed genes aligned all-vs-all", file=sys.stderr)
-        paf = subprocess.run(['minimap2', '-c', '-x', 'asm20', '-N', '500', '-p', '0.05', '--secondary=yes', '-t', '16', fa, fa], capture_output=True, text=True).stdout
+        paf = subprocess.run(['minimap2', '-c', '-x', 'asm20', '-N', '500', '-p', '0.05', '--secondary=yes', '-t', '16', fa, fa], capture_output=True, text=True, check=True).stdout
     best = {}
     for line in paf.split('\n'):
         f = line.split('\t')
         if len(f) < 12 or f[0] == f[5]: continue
         q, t = f[0], f[5]; ql, tl = int(f[1]), int(f[6]); alen = int(f[3]) - int(f[2]); m, bl = int(f[9]), int(f[10])
-        cov = alen / min(ql, tl); idn = m / bl if bl else 0
+        cov = (alen if ql <= tl else int(f[8]) - int(f[7])) / min(ql, tl)  # the SHORTER sequence's own aligned span
+        idn = m / bl if bl else 0
         k = (min(q, t), max(q, t))
         if cov >= COV and (k not in best or idn > best[k]): best[k] = idn
-    if CACHE: pickle.dump(best, open(CACHE, 'wb'))
+    if CACHE: pickle.dump({'key': CACHE_KEY, 'best': best}, open(CACHE, 'wb'))
 exp = set(genes)
 def overlapping(x, y):  # genes sharing genomic sequence (nested / readthrough / antisense annotations) are not a family pair
     return G[x]['chrom'] == G[y]['chrom'] and G[x]['exons'][0][0] < G[y]['exons'][-1][1] and G[y]['exons'][0][0] < G[x]['exons'][-1][1]

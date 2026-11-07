@@ -5,10 +5,11 @@ Usage (repo root):  python3 tools/docs_index.py > docs/INDEX.md
 Columns: file, the document's own first heading, last commit date, and who cites it
 (rows of docs/NEGATIVE_RESULTS_REGISTER.md; memory topic files if the memory dir exists).
 """
-import datetime, pathlib, re, subprocess, sys, collections
+import datetime, os, pathlib, re, subprocess, sys, collections
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
-MEM = pathlib.Path.home() / ".claude/projects/-mnt-c-Users-jfris-Desktop/memory"
+# RUSTLE_MEMORY_DIR names the memory dir on this machine (the default is the laptop's WSL path)
+MEM = pathlib.Path(os.environ.get("RUSTLE_MEMORY_DIR", pathlib.Path.home() / ".claude/projects/-mnt-c-Users-jfris-Desktop/memory"))
 
 def title(p):
     for ln in p.read_text(encoding="utf-8", errors="ignore").splitlines():
@@ -32,6 +33,8 @@ def main():
     files = [f for f in files if f.name != "INDEX.md"]
     reg = (DOCS / "NEGATIVE_RESULTS_REGISTER.md").read_text(encoding="utf-8", errors="ignore")
     mem = "\n".join(p.read_text(encoding="utf-8", errors="ignore") for p in MEM.glob("*.md")) if MEM.exists() else ""
+    if not MEM.exists():
+        print(f"docs_index: no memory dir {MEM} (set RUSTLE_MEMORY_DIR): the memory column is empty", file=sys.stderr)
     last = last_commits()
     def row(f):
         rel = f.relative_to(DOCS).as_posix()

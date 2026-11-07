@@ -42,12 +42,13 @@ import itertools
 import os
 import re
 import subprocess
+import shutil
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import lib  # noqa: E402
 
-BLAST = os.environ.get('BLAST_BIN', '/home/juanfra/miniforge3/envs/blast/bin')
+BLAST = os.environ.get('BLAST_BIN') or os.path.dirname(shutil.which('blastp') or '')  # BLAST_BIN, else blastp's directory on PATH
 MIN_COV = 0.30
 
 
