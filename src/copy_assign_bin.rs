@@ -4468,6 +4468,8 @@ struct SnapBam {
     index: noodles_bam::bai::Index,
 }
 
+/// `--polish-mono-primed`: readers per contig for the evidence pass (r1565).
+const MONO_PRIMED_CHUNKS: usize = 8;
 /// `--polish-mono-primed`: the read window past each aligned end, and the share of primed reads that drops a transcript.
 const MONO_PRIMED_BP: usize = 20;
 const MONO_PRIMED_SHARE: f64 = 0.8;
@@ -4490,22 +4492,50 @@ fn mono_primed_read(seq: &[u8], a: usize, b: usize) -> bool {
 
 impl SnapBam {
     /// `--polish-mono-primed` evidence: for each `[s, e)` of `monos` (sorted by start), (unspliced primary reads
-    /// overlapping >= half of it, how many of them are primed). One indexed pass over [min s, max e].
-    fn mono_primed(
+    /// overlapping >= half of it, how many of them are primed). [min s, max e] is split into MONO_PRIMED_CHUNKS
+    /// sub-ranges, each on its own reader (r1565: one reader decoding whole chromosomes was ~1,000 s of assemble);
+    /// a record counts in the sub-range holding its start (the first also takes starts before it), so every record
+    /// of the single query is seen once and the per-record sums are unchanged.
+    fn mono_primed(bam: &str, chrom: &str, seq: &[u8], monos: &[(i64, i64)]) -> Result<Vec<(u32, u32)>> {
+        let mut out = vec![(0u32, 0u32); monos.len()];
+        let (Some(lo), Some(hi)) = (monos.iter().map(|m| m.0).min(), monos.iter().map(|m| m.1).max()) else {
+            return Ok(out);
+        };
+        let n = (MONO_PRIMED_CHUNKS as i64).min(hi - lo).max(1); // every sub-range non-empty
+        let cut = |k: i64| lo + (hi - lo) * k / n;
+        let parts: Vec<Result<Vec<(u32, u32)>>> = std::thread::scope(|sc| {
+            let hs: Vec<_> = (0..n)
+                .map(|k| {
+                    sc.spawn(move || {
+                        let keep = |a: i64| (k == 0 || a >= cut(k)) && (k == n - 1 || a < cut(k + 1));
+                        Self::open(bam)?.mono_primed_range(chrom, seq, monos, cut(k), cut(k + 1), keep)
+                    })
+                })
+                .collect();
+            hs.into_iter().map(|h| h.join().expect("mono-primed reader thread panicked")).collect()
+        });
+        for part in parts {
+            for (o, x) in out.iter_mut().zip(part?) {
+                o.0 += x.0;
+                o.1 += x.1;
+            }
+        }
+        Ok(out)
+    }
+
+    /// One reader's share of `mono_primed`: records overlapping [qlo, qhi) whose start passes `keep`.
+    fn mono_primed_range(
         &mut self,
         chrom: &str,
         seq: &[u8],
         monos: &[(i64, i64)],
+        qlo: i64,
+        qhi: i64,
+        keep: impl Fn(i64) -> bool,
     ) -> Result<Vec<(u32, u32)>> {
         let mut out = vec![(0u32, 0u32); monos.len()];
-        let (Some(lo), Some(hi)) = (
-            monos.iter().map(|m| m.0).min(),
-            monos.iter().map(|m| m.1).max(),
-        ) else {
-            return Ok(out);
-        };
         let max_len = monos.iter().map(|m| m.1 - m.0).max().unwrap_or(0);
-        let region: noodles_core::Region = format!("{chrom}:{}-{}", lo + 1, hi).parse()?;
+        let region: noodles_core::Region = format!("{chrom}:{}-{}", qlo + 1, qhi).parse()?;
         for result in self.reader.query(&self.header, &self.index, &region)? {
             let record = result?;
             let flags = record.flags();
@@ -4520,6 +4550,9 @@ impl SnapBam {
                 continue;
             };
             let a = usize::from(start?) as i64 - 1;
+            if !keep(a) {
+                continue;
+            }
             let (mut span, mut spliced) = (0i64, false);
             for op in record.cigar().iter() {
                 let op = op?;
@@ -10737,10 +10770,7 @@ fn main() -> Result<()> {
                         .collect();
                     monos.sort();
                     let spans: Vec<(i64, i64)> = monos.iter().map(|m| (m.0, m.1)).collect();
-                    if snap_bam.is_none() {
-                        snap_bam = Some(SnapBam::open(&args.bam)?);
-                    }
-                    let ev = snap_bam.as_mut().expect("opened above").mono_primed(c, seq, &spans)?;
+                    let ev = SnapBam::mono_primed(&args.bam, c, seq, &spans)?;
                     let drop: DetHashSet<&str> = monos
                         .iter()
                         .zip(ev.iter())
