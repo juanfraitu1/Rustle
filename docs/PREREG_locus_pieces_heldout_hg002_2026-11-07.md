@@ -21,3 +21,18 @@ An arm that passes all four is proposed as an opt-in families post-step (`RUSTLE
 ## Prediction
 HG002's truth is small (414 pairs at base) and its absorbed class unknown: D bars 2-4 as on A119b (bar 2 borderline),
 bar 1 FAIL; F unknown (depends on row 1575).
+
+## Result (2026-11-07, jobs 4452575 / 4452604, `/anvme/workspace/v138da13-rustle/r1576/`)
+**Both arms FAIL bar 1 only.** Arm A at HEAD = the October HG002 run within one pair (0.466 / 0.345, 143 hits; 414 truth
+pairs); 42 absorbed missed pairs.
+
+| arm | precision | recall | hits | absorbed still missed (bar <= 21) | A hits lost | copies (bar <= 4,269) |
+|---|---|---|---|---|---|---|
+| A | 0.466 | 0.345 | 143 | 42 | - | 4,066 |
+| D (r1573 procedure) | 0.507 | 0.457 | 189 | 25 FAIL | 9 | 4,139 |
+| F (r1575 procedure) | 0.514 | 0.490 | 203 | 25 FAIL | 0 | 4,155 |
+
+Bars 2-4 PASS for both, with gains far above A119b's (F: precision +0.048, recall +0.145). Neither arm meets the
+registered opt-in rule (all four bars). Prediction right on bar 1 for D; wrong on D's bar 2 (no precision cost here).
+Reading: the multiple-representative layer (F) is a large, collateral-free gain on the held-out sample; it does not
+recover most absorbed pairs (17 of 42), whose remaining losses are the two mechanisms named in row 1575.
