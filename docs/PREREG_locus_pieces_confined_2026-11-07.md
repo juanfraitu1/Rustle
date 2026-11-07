@@ -17,3 +17,9 @@ Every locus outside S is exactly as in arm A.
 
 ## Prediction
 Bar 1 FAIL (1571 recovered 27; C cannot reach more), bars 2-4 PASS with a small net hit gain.
+
+## Result (2026-11-07, job 4452544, `/anvme/workspace/v138da13-rustle/r1571/C*`)
+**FAIL (bars 1, 3).** 328 loci cut; copies 8,286 (PASS <= 8,385); precision 0.806 (PASS); recall 0.724 < 0.740 (FAIL);
+A's 71 absorbed pairs: 27 recovered, 44 still missed (FAIL). 151 pairs A hit are lost (150 split): NPIPB 54, GOLGA 40,
+NPIPA 36. 137 of A's 1,565 families are broken in C and 77 of those hold no cut locus: re-running MCL on a graph with a few
+extra piece nodes redraws the large NPIP/GOLGA families. The collateral is MCL's, not the cuts'.
