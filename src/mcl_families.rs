@@ -1316,6 +1316,7 @@ fn main() -> Result<()> {
     );
     // `--from-gtf`: the de novo loci (their representatives become the copy table under `--emit-units`)
     let mut gtf_loci_list: Option<Vec<GtfLocus>> = None;
+    let mut gtf_collided: Vec<(String, String)> = Vec::new();
     let mut exon_gate_used: Option<(u64, String)> = None;
     let mut gtf_genome: Option<rustle::genome::GenomeIndex> = None;
     if let Some(gtf) = args.from_gtf.clone() {
@@ -1339,6 +1340,7 @@ fn main() -> Result<()> {
         args.gff = Some(run.gff3);
         args.paf = run.paf;
         gtf_loci_list = Some(run.loci);
+        gtf_collided = run.collided;
         // the copy table reuses the loci's genome when the gate ran (its PAF is small); otherwise the genome is freed
         // here and read again later, so it never sits beside a full-size PAF
         gtf_genome = (gated && args.emit_units).then_some(run.genome);
@@ -1650,7 +1652,9 @@ fn main() -> Result<()> {
         build_clusters(&g, &parts, args.min_size, pred.as_ref().map(|b| b.as_ref()));
     clock.lap("clusters");
 
-    let mut ch = std::fs::File::create(format!("{}.clusters.tsv", args.out))?;
+    // .tmp + rename: a killed job must not leave a partial clusters.tsv (audit 2026-11-07, second pass)
+    let clusters_path = format!("{}.clusters.tsv", args.out);
+    let mut ch = std::io::BufWriter::new(std::fs::File::create(format!("{clusters_path}.tmp"))?);
     writeln!(
         ch,
         "cluster_id\tsize\tdensity\tfrac_in\tcorroborated\tchrom\tstart\tend"
@@ -1673,6 +1677,9 @@ fn main() -> Result<()> {
             )?;
         }
     }
+    ch.flush()?;
+    drop(ch);
+    std::fs::rename(format!("{clusters_path}.tmp"), &clusters_path)?;
 
     if args.emit_hierarchy {
         let (dup, sd) = hierarchy_inputs(&args);
@@ -2684,7 +2691,7 @@ fn main() -> Result<()> {
             .from_gtf
             .as_deref()
             .expect("--emit-relations is checked to come with --from-gtf");
-        let loci_in = relation_loci(gtf_loci_list.as_deref().unwrap_or(&[]));
+        let loci_in = relation_loci(gtf_loci_list.as_deref().unwrap_or(&[]), &gtf_collided);
         let clusters_path = format!("{}.clusters.tsv", args.out);
         // the fold table exists iff this run wrote it (never a stale one from an earlier run)
         let loci_tsv = loci.as_ref().map(|_| format!("{}.loci.tsv", args.out));
@@ -3292,7 +3299,7 @@ mod tests {
             &mut std::io::Cursor::new(gtf.clone()),
             &mut std::io::Cursor::new(read("clusters.tsv")),
             Some(&mut std::io::Cursor::new(read("loci.tsv"))),
-            &relation_loci(&loci),
+            &relation_loci(&loci, &[]),
         )
         .unwrap();
         assert_eq!(r.relations_tsv(), read("expected.relations.tsv"));

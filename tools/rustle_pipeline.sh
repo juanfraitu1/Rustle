@@ -548,19 +548,20 @@ stage_assemble() {
     # older than the BAM; otherwise rebuilt under a temporary name and renamed into place (a concurrent run never reads
     # a half-written table; rename keeps the inode and mtime the .asbin sidecar is keyed on).
     local table=${AS_TABLE:-}
+    as_table_ok() { head -1 "$1" 2>/dev/null | grep -qF "bam=$(readlink -f "$BAM")$(printf '\t')" && [ ! "$1" -ot "$BAM" ]; }
     if [ -z "$table" ]; then
-      if [ -w "$(dirname "$BAM")" ]; then table="$BAM.as_table.tsv"; else table="$OUT.molecules.tsv"; fi
+      # next to the BAM when a valid table is there or the directory takes a new file (-w alone misses a full file quota);
+      # otherwise PREFIX.molecules.tsv, which the check below then reuses like any other table
+      local probe="$BAM.as_table.probe.$$"
+      table="$OUT.molecules.tsv"
+      if as_table_ok "$BAM.as_table.tsv" || { : > "$probe"; } 2>/dev/null; then table="$BAM.as_table.tsv"; fi
+      rm -f "$probe"
     fi
-    if head -1 "$table" 2>/dev/null | grep -qF "bam=$(readlink -f "$BAM")$(printf '\t')" && [ ! "$table" -ot "$BAM" ]; then
+    if as_table_ok "$table"; then
       say "assemble: genome-wide best-AS table: reusing $table"
     else   # absent, truncated, from another BAM, or older than the BAM
       say "assemble: genome-wide best-AS table -> $table (one pass over the BAM)"
       local tmp="$table.tmp.$$"
-      if [ -z "$AS_TABLE" ] && [ "$table" != "$OUT.molecules.tsv" ] && ! : 2>/dev/null > "$tmp"; then   # e.g. a full group file quota
-        say "assemble: cannot create $tmp (quota?); the table goes to $OUT.molecules.tsv instead"
-        table="$OUT.molecules.tsv"; tmp="$table.tmp.$$"
-      fi
-      rm -f "$tmp"
       if "$BIN/as_table" --bam "$BAM" --out "$tmp" --threads "$THREADS" > "$OUT.as_table.log" 2>&1 && [ -s "$tmp" ]; then
         [ -e "$tmp.asbin" ] && mv -f "$tmp.asbin" "$table.asbin"
         mv -f "$tmp" "$table"
@@ -679,6 +680,8 @@ stage_families() {
     0.[0-9]*|1|1.0) ;;
     *) echo "[rustle_pipeline] RUSTLE_MIN_SHARED_EXON_FRAC must be a fraction 0-1 (got '$RUSTLE_MIN_SHARED_EXON_FRAC')" >&2; exit 2 ;;
   esac
+  # an earlier run's copy table must not survive a run that writes none (a binary older than the copy table): assign would read it
+  rm -f "$OUT".fam.copies.{tsv,fa,regions,merged.tsv}
   "$BIN/mcl_families" --from-gtf "$FAM_GTF" --fasta "$FASTA" --threads "$THREADS" \
     --min-exonic-bp 1 --min-shared-exon-frac "${RUSTLE_MIN_SHARED_EXON_FRAC:-0.60}" "${copies[@]}" "${FAM_EXTRA[@]}" "${FAM_REL[@]}" "${FAM_COV[@]}" "${rep[@]}" --out "$OUT.fam" > "$OUT.families.log" 2>&1
   say "families: $(awk 'NR>1' "$OUT.fam.clusters.tsv" | cut -f1 | sort -u | wc -l) clusters ($OUT.fam.clusters.tsv)"
@@ -943,19 +946,26 @@ merged_env() {
   if [ -n "$CONTIG" ]; then printf 'contig=%s\n' "$CONTIG"; fi
   # every RUSTLE_* knob changes some stage's products: a resume must not skip a stage run with other values (audit 2026-11-07)
   env | grep '^RUSTLE_' | LC_ALL=C sort || true
+  # and the binaries: a rebuild must rerun the stages it changes, not replay the old products (audit 2026-11-07, second pass)
+  local b; for b in copy_assign mcl_families as_table utilities missing_copy_flag candidate_copies gw_family_catalog; do
+    [ -n "${BIN:-}" ] && [ -e "$BIN/$b" ] && stat -L -c "bin $b %s %Y" "$BIN/$b"
+  done; true
 }
 stage_merged() {
   local env_ok=0
-  if [ -f "$OUT.merged.env" ] && [ "$(cat "$OUT.merged.env")" = "$(merged_env)" ]; then env_ok=1; else rm -f "$OUT.merged.env"; fi   # a run that dies midway must not leave the old record vouching for its products
+  if [ -f "$OUT.merged.env" ] && [ "$(cat "$OUT.merged.env")" = "$(merged_env)" ]; then env_ok=1; fi
+  # removed before any phase runs (a run that dies midway must not leave the record vouching for its products), and once one
+  # phase runs every later phase runs too (its input changed), as in run_all
+  rm -f "$OUT.merged.env"
   if [ "$env_ok" = 1 ] && [ -s "$OUT.gtf" ]; then
     say "merged: phase 1 assemble SKIPPED ($OUT.gtf present, env matches)"
   else
-    stage_assemble
+    stage_assemble; env_ok=0
   fi
   if [ "$env_ok" = 1 ] && [ -s "$OUT.fam.copies.tsv" ]; then
     say "merged: phase 2 families SKIPPED ($OUT.fam.copies.tsv present, env matches)"
   else
-    stage_families
+    stage_families; env_ok=0
   fi
   if [ "$env_ok" = 1 ] && [ -s "$OUT.assign_fam.assignments.tsv" ]; then
     say "merged: phase 3 assign SKIPPED ($OUT.assign_fam.assignments.tsv present, env matches)"

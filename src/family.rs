@@ -56946,12 +56946,14 @@ pub mod fam_from_gtf {
                 }
             }
         }
-        let mut ct = std::io::BufWriter::new(std::fs::File::create(format!("{out}.copies.tsv"))?);
-        let mut cf = std::io::BufWriter::new(std::fs::File::create(format!("{out}.copies.fa"))?);
-        let mut cr =
-            std::io::BufWriter::new(std::fs::File::create(format!("{out}.copies.regions"))?);
-        let mut cm =
-            std::io::BufWriter::new(std::fs::File::create(format!("{out}.copies.merged.tsv"))?);
+        // written under .tmp and renamed at the end, copies.tsv LAST: a job killed mid-write must not leave a partial table that
+        // the next stage's "non-empty" check accepts (audit 2026-11-07, second pass)
+        const COPY_FILES: [&str; 4] = ["copies.fa", "copies.regions", "copies.merged.tsv", "copies.tsv"];
+        let tmp = |ext: &str| format!("{out}.{ext}.tmp");
+        let mut ct = std::io::BufWriter::new(std::fs::File::create(tmp("copies.tsv"))?);
+        let mut cf = std::io::BufWriter::new(std::fs::File::create(tmp("copies.fa"))?);
+        let mut cr = std::io::BufWriter::new(std::fs::File::create(tmp("copies.regions"))?);
+        let mut cm = std::io::BufWriter::new(std::fs::File::create(tmp("copies.merged.tsv"))?);
         writeln!(ct, "{COPIES_HEADER}")?;
         writeln!(
             cm,
@@ -57036,6 +57038,10 @@ pub mod fam_from_gtf {
         for w in [&mut ct, &mut cf, &mut cr, &mut cm] {
             w.flush()?;
         }
+        drop((ct, cf, cr, cm));
+        for ext in COPY_FILES {
+            std::fs::rename(tmp(ext), format!("{out}.{ext}"))?;
+        }
         Ok(st)
     }
 
@@ -57071,6 +57077,28 @@ pub mod fam_from_gtf {
     /// absorbed into same-contig, same-strand locus A when `reads(B) <= ratio x reads(A)` (gene totals) and `>= frac` of
     /// B's exon-union bases lie inside A's exon union. The absorber with the most reads wins (ties: the earlier locus);
     /// an absorber that is itself absorbed resolves to its root. Returns the kept loci (input order) and `(absorbed, root)`.
+    /// One locus per (chrom, start, end): the one with more representative reads, the first on a tie. Returns the kept loci
+    /// in first-seen order and (dropped gene_id, kept gene_id) pairs naming the FINAL keeper of each span.
+    pub fn dedupe_loci_by_span(loci: Vec<GtfLocus>) -> (Vec<GtfLocus>, Vec<(String, String)>) {
+        let mut at: BTreeMap<(String, u64, u64), usize> = BTreeMap::new();
+        let mut kept: Vec<GtfLocus> = Vec::with_capacity(loci.len());
+        let mut dropped: Vec<(String, usize)> = Vec::new();
+        for l in loci {
+            match at.get(&(l.chrom.clone(), l.start, l.end)) {
+                Some(&i) => {
+                    let loser = if l.rep_reads > kept[i].rep_reads { std::mem::replace(&mut kept[i], l) } else { l };
+                    dropped.push((loser.gene_id, i));
+                }
+                None => {
+                    at.insert((l.chrom.clone(), l.start, l.end), kept.len());
+                    kept.push(l);
+                }
+            }
+        }
+        let dropped = dropped.into_iter().map(|(g, i)| (g, kept[i].gene_id.clone())).collect();
+        (kept, dropped)
+    }
+
     pub fn absorb_loci(loci: Vec<GtfLocus>, ratio: f64, frac: f64) -> (Vec<GtfLocus>, Vec<(String, String)>) {
         use std::collections::BTreeMap;
         let len_of = |b: &[(u64, u64)]| -> u64 { b.iter().map(|&(a, e)| e - a + 1).sum() };
@@ -57415,15 +57443,22 @@ pub mod fam_from_gtf {
     }
 
     /// The loci of `--from-gtf` as `--emit-relations` reads them: the graph's own keys and representatives.
-    pub fn relation_loci(loci: &[GtfLocus]) -> Vec<crate::fam_from_gtf::family_relations::LocusIn> {
-        loci.iter()
-            .map(|l| crate::fam_from_gtf::family_relations::LocusIn {
-                gene_id: l.gene_id.clone(),
-                key: (l.chrom.clone(), l.start as i64, l.end as i64),
-                rep: l.rep.clone(),
-                rep_reads: l.rep_reads as i64,
-            })
-            .collect()
+    /// `collided` = [`GtfLociRun::collided`]: a gene dropped for sharing its span stays a locus here under its keeper's key
+    /// (the graph node), so its unit lines still resolve.
+    pub fn relation_loci(
+        loci: &[GtfLocus],
+        collided: &[(String, String)],
+    ) -> Vec<crate::fam_from_gtf::family_relations::LocusIn> {
+        let mk = |gene_id: &str, l: &GtfLocus| crate::fam_from_gtf::family_relations::LocusIn {
+            gene_id: gene_id.to_string(),
+            key: (l.chrom.clone(), l.start as i64, l.end as i64),
+            rep: l.rep.clone(),
+            rep_reads: l.rep_reads as i64,
+        };
+        let by_id: std::collections::HashMap<&str, &GtfLocus> = loci.iter().map(|l| (l.gene_id.as_str(), l)).collect();
+        let mut out: Vec<_> = loci.iter().map(|l| mk(&l.gene_id, l)).collect();
+        out.extend(collided.iter().filter_map(|(d, k)| by_id.get(k.as_str()).map(|l| mk(d, l))));
+        out
     }
 
     /// Write `<out>.loci.fa`: one record `>CONTIG:START-END` + the genome's forward strand over that span, per locus span.
@@ -57536,6 +57571,8 @@ pub mod fam_from_gtf {
         pub fa: String,
         pub paf: String,
         pub loci: Vec<GtfLocus>,
+        /// (dropped gene_id, kept gene_id) of loci that shared a span (`<out>.loci.collided.tsv`)
+        pub collided: Vec<(String, String)>,
         pub gate: Option<String>,
         pub genome: GenomeIndex,
     }
@@ -57590,6 +57627,24 @@ pub mod fam_from_gtf {
             eprintln!("[mcl_families] --absorb-loci ratio {ratio} frac {frac}: {} of {n} loci absorbed -> {} loci", absorbed.len(), loci.len());
             clock.lap("absorb loci");
         }
+        // Loci are graph nodes keyed by span: two loci with the same (chrom, start, end) used to become one node whose exons
+        // were the union of both, whose strand was the last line's and whose copy was the other one's. Keep one per span by
+        // the copy table's own rule (more representative reads; the first on a tie) and list the dropped ones (audit
+        // 2026-11-07, second pass).
+        let collided = {
+            let (kept, dropped) = dedupe_loci_by_span(loci);
+            loci = kept;
+            let mut fh = std::io::BufWriter::new(std::fs::File::create(format!("{out}.loci.collided.tsv"))?);
+            writeln!(fh, "dropped_gene_id\tkept_gene_id")?;
+            for (a, b) in &dropped {
+                writeln!(fh, "{a}\t{b}")?;
+            }
+            fh.flush()?;
+            if !dropped.is_empty() {
+                eprintln!("[mcl_families] {} loci share their span with a locus that has more reads: dropped ({out}.loci.collided.tsv)", dropped.len());
+            }
+            dropped
+        };
         let gff3 = format!("{out}.loci.gff3");
         let fa_path = format!("{out}.loci.fa");
         let mut paf = format!("{out}.loci.paf");
@@ -57732,6 +57787,7 @@ pub mod fam_from_gtf {
                     fa: fa_path,
                     paf,
                     loci,
+                    collided,
                     gate: gate_version,
                     genome,
                 });
@@ -57768,6 +57824,7 @@ pub mod fam_from_gtf {
             fa: fa_path,
             paf,
             loci,
+            collided,
             gate: gate_version,
             genome,
         })
@@ -57796,6 +57853,38 @@ pub mod fam_from_gtf {
 
         /// LOCUS-ABSORB: a 3-read 2-exon fragment inside a 100-read gene folds into it; a same-size neighbour, an
         /// opposite-strand overlap and a gene with only a third of its bases inside do not; a chain resolves to the root.
+        /// Same-span loci: the most-read one wins whatever its position (first on a tie), and every dropped row names the
+        /// final keeper even after a later locus replaced an earlier one.
+        #[test]
+        fn dedupe_loci_by_span_keeps_the_most_read_and_names_the_final_keeper() {
+            let mk = |g: &str, s: u64, reads: u64| GtfLocus {
+                gene_id: g.into(),
+                chrom: "chr1".into(),
+                start: s,
+                end: s + 100,
+                rep: g.into(),
+                rep_reads: reads,
+                strand: "+".into(),
+                rep_exons: vec![],
+                chains: vec![],
+                gene_reads: reads,
+                gene_blocks: vec![],
+            };
+            let (kept, dropped) =
+                dedupe_loci_by_span(vec![mk("a", 10, 2), mk("b", 10, 5), mk("other", 500, 1), mk("c", 10, 9), mk("tie", 10, 9)]);
+            assert_eq!(kept.iter().map(|l| l.gene_id.as_str()).collect::<Vec<_>>(), ["c", "other"]);
+            assert_eq!(
+                dropped,
+                [("a".to_string(), "c".to_string()), ("b".into(), "c".into()), ("tie".into(), "c".into())]
+            );
+            // a dropped gene stays resolvable for the relations step, under its keeper's key
+            let rl = relation_loci(&kept, &dropped);
+            let a = rl.iter().find(|l| l.gene_id == "a").expect("dropped gene a is a relation locus");
+            assert_eq!(a.key, ("chr1".to_string(), 10, 110));
+            assert_eq!((a.rep.as_str(), a.rep_reads), ("c", 9));
+            assert_eq!(rl.len(), 5);
+        }
+
         #[test]
         fn absorb_loci_folds_dominated_overlaps_only() {
             let mk = |g: &str, strand: &str, reads: u64, blocks: Vec<(u64, u64)>| GtfLocus {
@@ -72150,14 +72239,27 @@ pub mod missing_copy {
     /// Best ungapped placement of `ins` inside `target`: 12-mer seed votes on the offset (refined ± 16), then the
     /// longest stretch of the overlap with <= 10% mismatches. Returns `(target_start, matched_len, identity)` of that
     /// stretch, or `None` when no stretch reaches `min_len`.
-    fn place_insertion(ins: &[u8], target: &[u8], min_len: usize) -> Option<(usize, usize, f64)> {
-        const K: usize = 12;
+    const PLACE_K: usize = 12;
+
+    /// `place_insertion`'s seed index of `target`: every 12-mer to its start positions, ascending.
+    fn place_index(target: &[u8]) -> DetHashMap<&[u8], Vec<usize>> {
+        let mut index: DetHashMap<&[u8], Vec<usize>> = DetHashMap::default();
+        for (i, w) in target.windows(PLACE_K).enumerate() {
+            index.entry(w).or_default().push(i);
+        }
+        index
+    }
+
+    /// `index` is `place_index(target)`, built once per locus by the caller (it used to be rebuilt per insertion).
+    fn place_insertion(
+        ins: &[u8],
+        target: &[u8],
+        index: &DetHashMap<&[u8], Vec<usize>>,
+        min_len: usize,
+    ) -> Option<(usize, usize, f64)> {
+        const K: usize = PLACE_K;
         if ins.len() < K || target.len() < K {
             return None;
-        }
-        let mut index: DetHashMap<&[u8], Vec<usize>> = DetHashMap::default();
-        for i in 0..=target.len() - K {
-            index.entry(&target[i..i + K]).or_default().push(i);
         }
         let mut votes: DetHashMap<i64, u32> = DetHashMap::default();
         let mut i = 0;
@@ -72218,6 +72320,7 @@ pub mod missing_copy {
         min_ins: usize,
     ) -> Vec<Rearrangement> {
         let mut out = Vec::new();
+        let mut index = None; // built on the first insertion that needs it
         for r in reads {
             let (mut rp, mut qp) = (r.ref_start, 0usize);
             let mut blocks: Vec<(u64, u64)> = Vec::new();
@@ -72249,7 +72352,7 @@ pub mod missing_copy {
                 let Some(ins) = r.seq.get(q..q + len) else {
                     continue;
                 };
-                let Some((start, mlen, idn)) = place_insertion(ins, ref_seq, 50) else {
+                let Some((start, mlen, idn)) = place_insertion(ins, ref_seq, index.get_or_insert_with(|| place_index(ref_seq)), 50) else {
                     continue;
                 };
                 let exon = (
@@ -72472,6 +72575,9 @@ pub mod missing_copy {
         RnaEditing,
         Scattered,
         UnannotatedParalogue,
+        /// the consensus aligned nowhere at its own host locus: nothing measured supports "absent from the reference"
+        /// (audit 2026-11-07, second pass: 2 of 5 gorilla candidates were these)
+        NoHome,
         ReferenceAbsentCandidate,
     }
 
@@ -72484,6 +72590,7 @@ pub mod missing_copy {
                 Verdict::RnaEditing => "rna_editing",
                 Verdict::Scattered => "scattered",
                 Verdict::UnannotatedParalogue => "unannotated_paralogue",
+                Verdict::NoHome => "no_home",
                 Verdict::ReferenceAbsentCandidate => "reference_absent_candidate",
             }
         }
@@ -72532,6 +72639,9 @@ pub mod missing_copy {
             if o > h {
                 return Verdict::UnannotatedParalogue;
             }
+        }
+        if v.host_identity.is_none() {
+            return Verdict::NoHome;
         }
         Verdict::ReferenceAbsentCandidate
     }
@@ -72928,6 +73038,11 @@ pub mod missing_copy {
                 structural_only: false,
             };
             assert_eq!(verdict(&base), Verdict::ReferenceAbsentCandidate);
+            // no hit at the host locus is not evidence of absence, with or without a hit elsewhere
+            assert_eq!(verdict(&VerdictInput { host_identity: None, ..base }), Verdict::NoHome);
+            assert_eq!(verdict(&VerdictInput { host_identity: None, other_identity: None, ..base }), Verdict::NoHome);
+            // a home and nothing better elsewhere stays a candidate
+            assert_eq!(verdict(&VerdictInput { other_identity: None, ..base }), Verdict::ReferenceAbsentCandidate);
             assert_eq!(
                 verdict(&VerdictInput {
                     n_psv: 0,

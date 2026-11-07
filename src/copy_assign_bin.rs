@@ -3161,6 +3161,8 @@ struct AssignRow {
     /// and inflates every per-family rate — on DAZ, 16,257 of 18,192 rows were such visitors and the assigned
     /// fraction read 3.7 % instead of 34.7 %. **Every per-family read rate must be taken over this column.**
     primary_local: bool,
+    /// the molecule's primary overlaps the ASSIGNED copy (not just any copy of the family): `eichler_same_copy`
+    primary_on_assigned: bool,
     /// §6fq: the molecule's primary MAPQ < 60 — the aligner could not place it; the certificate machinery
     /// decided this row. `false` = assigned to its placement (the certificate only reported).
     contested: bool,
@@ -7061,6 +7063,14 @@ fn main() -> Result<()> {
         args.lambda_global,
         args.lambda_file.as_deref().and_then(read_lambda_file),
     );
+    // depth_cn divides a family's read count by the per-copy depth, but under the AS-tied gate only the tied reads are
+    // counted (the rest leave before assignment), so the ratio would be far too low: NA there (audit 2026-11-07, second pass)
+    let lambda = if lambda.is_some() && !args.no_as_tied_only {
+        eprintln!("[copy_assign] depth_cn written NA: under the AS-tied gate a family's n_reads counts tied reads only (use --no-as-tied-only for the depth leg)");
+        None
+    } else {
+        lambda
+    };
     let mut cfg = DenovoConfig::from_env();
     cfg.detect.len_cap = args.max_poa_len; // poasta memory threshold: above it, the bounded LCS fallback
     cfg.vg_realign = args.vg_realign || args.vg_realign_correct; // VG correction leg (re-thread hard reads)
@@ -9002,6 +9012,13 @@ fn main() -> Result<()> {
                 // it fires on any aligned block, so a genome-wide multimapper visiting as a secondary counts
                 // as a family read and inflates every per-family rate. On DAZ that inflated the denominator
                 // 9.4x (18,192 rows, 1,935 of them local) and turned 34.7% assigned into a reported 3.7%.
+                // each molecule's primary record in this region (for `primary_on_assigned`)
+                let primary_rec: DetHashMap<&str, usize> = bam_reads
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| read_spans.get(*i).map_or(false, |sp| sp.2 == 0))
+                    .map(|(i, n)| (n.as_str(), i))
+                    .collect();
                 let primary_local: DetHashSet<&str> = bam_reads
                     .iter()
                     .enumerate()
@@ -9049,6 +9066,11 @@ fn main() -> Result<()> {
                         n_candidates: a.n_candidates,
                         in_copy,
                         primary_local: primary_local.contains(bam_reads[*ri].as_str()),
+                        primary_on_assigned: match (primary_rec.get(bam_reads[*ri].as_str()), fa.copy_spans.get(a.best_copy)) {
+                            (Some(&pi), Some((c, s0, e0))) => c == contig
+                                && read_blocks.get(pi).map_or(false, |bl| bl.iter().any(|&(bs, be)| be > *s0 && bs < *e0)),
+                            _ => false,
+                        },
                         contested: mol_mapq
                             .get(bam_reads[*ri].as_str())
                             .copied()
@@ -9204,9 +9226,11 @@ fn main() -> Result<()> {
                                     .unwrap_or_default(),
                                 fa.copy_spans.get(ci).map_or(0, |s| s.1),
                                 fa.copy_spans.get(ci).map_or(0, |s| s.2),
+                                // the same count as quant.tsv's n_reads_hard: orphans (origin rejected, no candidate) carry
+                                // copy 0's index and were counted for copy 0 here only (audit 2026-11-07, second pass)
                                 fa.assignments
                                     .iter()
-                                    .filter(|(_, a)| a.best_copy == ci)
+                                    .filter(|(_, a)| a.best_copy == ci && !(a.origin_rejected && a.n_candidates == 0))
                                     .count(),
                             ),
                             family_id: cf.clone(),
@@ -9512,10 +9536,24 @@ fn main() -> Result<()> {
                         .collect()
                 })
                 .collect();
-            let verdict: DetHashMap<&str, &AssignRow> = assign_rows
-                .iter()
-                .map(|r| (r.read_name.as_str(), r))
-                .collect();
+            // every row of a read (a read can sit in several families); `verdict_in` picks the row of the family asked
+            // for under --families, where row and family ids agree, and the last row otherwise (the earlier rule).
+            // One row per read let a later family's verdict, and its per-family copy index, vote for an earlier
+            // family's transcript (audit 2026-11-07, second pass).
+            let mut verdict_rows: DetHashMap<&str, Vec<&AssignRow>> = DetHashMap::default();
+            for r in &assign_rows {
+                verdict_rows.entry(r.read_name.as_str()).or_default().push(r);
+            }
+            let by_family = region_families.is_some();
+            let verdict_in = |name: &str, fid: Option<&str>| -> Option<&AssignRow> {
+                let rows = verdict_rows.get(name)?;
+                match fid {
+                    Some(f) if by_family => rows.iter().rev().find(|r| r.family_id == f).copied(),
+                    _ => rows.last().copied(),
+                }
+            };
+            let verdict: DetHashMap<&str, &AssignRow> =
+                verdict_rows.iter().filter_map(|(n, v)| v.last().map(|r| (*n, *r))).collect();
             // ⚠ §6gl: `DenovoTranscript::tid` is `DN_<contig>_<start>_<n_exon>`, which COLLIDES — two distinct
             // isoforms sharing a start and an exon count get the same id. On NPIP 53 ids covered 122 of the
             // 886 transcript rows, and any consumer keyed on `transcript_id` (IGV, gffcompare, bedtools, our
@@ -9732,7 +9770,7 @@ fn main() -> Result<()> {
                         continue;
                     }
                     matched += 1;
-                    if let Some(r) = verdict.get(bam_reads[ri].as_str()) {
+                    if let Some(r) = verdict_in(bam_reads[ri].as_str(), best.map(|b| fams[b.0].family_id.as_str())) {
                         seen += 1;
                         if r.status == "assigned" && !r.origin_rejected {
                             *votes.entry(r.catalog_copy_idx.as_str()).or_insert(0) += 1;
@@ -9858,7 +9896,7 @@ fn main() -> Result<()> {
                         }
                     }
                     for &ri in &matched_ri {
-                        match verdict.get(bam_reads[ri].as_str()) {
+                        match verdict_in(bam_reads[ri].as_str(), Some(fams[fw].family_id.as_str())) {
                             Some(r) if r.status == "assigned" && !r.origin_rejected => {
                                 *asg.entry(r.catalog_copy_idx.clone()).or_insert(0usize) += 1;
                             }
@@ -9905,13 +9943,14 @@ fn main() -> Result<()> {
                         copy_span_lifts(&fams[fw].copy_spans, &gi, &format!("{}.{}", args.out, fw))?,
                     );
                 }
-                let strand_of: DetHashMap<String, char> = region_families
+                // keyed by (family, copy): `copy_idx` is numbered per family, so the bare index collided across families
+                // and the last family's strand won (audit 2026-11-07, second pass)
+                let strand_of: DetHashMap<(String, String), char> = region_families
                     .as_ref()
                     .map(|rf| {
                         rf.values()
                             .flatten()
-                            .flat_map(|f| f.copies.iter())
-                            .map(|c| (c.copy_idx.to_string(), c.strand))
+                            .flat_map(|f| f.copies.iter().map(move |c| ((f.family_id.clone(), c.copy_idx.to_string()), c.strand)))
                             .collect()
                     })
                     .unwrap_or_default();
@@ -10199,7 +10238,7 @@ fn main() -> Result<()> {
                             lift_fail_detail.push((p.uniq_tid.clone(), p.cidx.clone(), c.clone()));
                             continue;
                         }
-                        let strand = strand_of.get(c).copied().unwrap_or(p.t.strand);
+                        let strand = strand_of.get(&(fams[fw].family_id.clone(), c.clone())).copied().unwrap_or(p.t.strand);
                         let (chrom, _, _) = &fams[fw].copy_spans[b];
                         let tid = format!("{}_lift{}", p.uniq_tid, c);
                         let gene = format!("{}_copy{}", p.t.gene_tid, c);
@@ -11142,13 +11181,13 @@ fn main() -> Result<()> {
         // §6u6: Eichler's rule. A read with NO rival placement (margin None) has nothing within T, so
         // he assigns it; otherwise he needs a margin of at least T. `eichler_same_copy` is decidable
         // only where BOTH rules assign — his pick is the read's best-AS placement, which is exactly
-        // what `primary_local` marks for our assigned copy.
+        // what `primary_on_assigned` marks (`primary_local` is ANY copy of the family; audit 2026-11-07, second pass).
         let eichler = match args.eichler_margin {
             None => String::new(),
             Some(t) => {
                 let assigns = r.as_ev.margin().is_none_or(|m| m >= t);
                 let same = if assigns && r.status == "assigned" {
-                    (r.primary_local as u8).to_string()
+                    (r.primary_on_assigned as u8).to_string()
                 } else {
                     "NA".to_string()
                 };
@@ -12688,7 +12727,16 @@ fn main() -> Result<()> {
                 args.molecule_observations
                     && !args.no_molecule_observations
                     && !args.no_placement_assign
+                    && args.no_as_tied_only // the condition the drain applies (it read `true` on every gated run)
             ),
+        )?;
+        // the O2 gate, so the arms that differ only here (r1509 / r1514 / r1542) leave different params.tsv files
+        row("as_tied_only", format!("{}", !args.no_as_tied_only))?;
+        row("as_tie_ratio", format!("{}", args.as_tie_ratio))?;
+        row("tie_ms", args.tie_ms.map_or("off".to_string(), |m| m.to_string()))?;
+        row(
+            "primary_on_family_guard",
+            format!("{}", guard_on(args.primary_on_family, args.tie_ms, args.no_primary_on_family)),
         )?;
         row(
             "placement_assigned",

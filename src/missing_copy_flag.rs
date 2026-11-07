@@ -395,9 +395,15 @@ fn pile(
             seq: read.seq,
         });
     }
-    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out.sort_by_cached_key(|r| (cap_key(&r.name), r.name.clone()));
     out.truncate(cap);
     Ok(out)
+}
+
+/// Order for the read caps: a stable hash of the name, so a capped pile is a pseudo-random subset instead of the reads of
+/// whichever SMRT cell / run prefix sorts first (audit 2026-11-07, second pass).
+fn cap_key(name: &str) -> u64 {
+    rustle::arms::run_cache::fnv1a64(name.as_bytes())
 }
 
 /// minimap2's arguments for one home-search batch. `--split-prefix` is always passed: on a one-part index the output is
@@ -594,6 +600,8 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
     let mut cons_fa = std::fs::File::create(&cons_path)?;
     let mut rows: Vec<Row> = Vec::new();
     let (mut n_scanned, mut n_enough, mut n_fired) = (0usize, 0usize, 0usize);
+    // input checks (audit 2026-11-07): loci on contigs the BAM lacks, and pile records without =/X ops or a de tag
+    let (mut n_no_contig, mut n_rec, mut n_eqx, mut n_de) = (0usize, 0usize, 0usize, 0usize);
     // PASS 1 (per contig, one sequential sweep): (name, de) per locus, so the mixture test never pays a
     // per-locus index query or a RecordBuf decode. PASS 2 decodes only the loci that fired.
     let mut by_contig: Vec<(String, Vec<usize>)> = Vec::new();
@@ -609,6 +617,7 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
             .get(chrom.as_bytes())
             .map(|r| usize::from(r.length()))
         else {
+            n_no_contig += idxs.len();
             continue;
         };
         let mut order: Vec<usize> = idxs.clone();
@@ -639,9 +648,11 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
             let rs = (usize::from(start?) as u64).saturating_sub(1);
             let mut span = 0u64;
             let mut max_ins = 0u32;
+            let mut eqx = false;
             for op in record.cigar().iter() {
                 let op = op?;
                 use noodles_sam::alignment::record::cigar::op::Kind;
+                eqx |= matches!(op.kind(), Kind::SequenceMatch | Kind::SequenceMismatch);
                 match op.kind() {
                     Kind::Match
                     | Kind::SequenceMatch
@@ -661,7 +672,11 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
             if active.is_empty() {
                 continue;
             }
-            let de = rustle::bam::record_de(&record).map_or(0.0, |v| v as f64);
+            let de_tag = rustle::bam::record_de(&record);
+            n_rec += 1;
+            n_eqx += eqx as usize;
+            n_de += de_tag.is_some() as usize;
+            let de = de_tag.map_or(0.0, |v| v as f64);
             let name = record.name().map(|n| n.to_string()).unwrap_or_default();
             let decoded: Option<std::sync::Arc<PileRead>> = if max_ins >= 50 {
                 let rb = RecordBuf::try_from_alignment_record(&header, &record)?;
@@ -712,7 +727,7 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
                 continue;
             }
             n_enough += 1;
-            pile1.sort_by(|a, b| a.0.cmp(&b.0));
+            pile1.sort_by_cached_key(|x| (cap_key(&x.0), x.0.clone()));
             pile1.truncate(args.max_reads);
             let de: Vec<f64> = pile1.iter().map(|x| x.1).collect();
             let fires_mixture = match two_means(&de) {
@@ -816,7 +831,9 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
                         .max()
                         .unwrap_or(*end)
                         .max(*end);
-                    let ref_seq = genome.fetch_sequence(chrom, lo, hi).unwrap_or_default();
+                    let ref_seq = genome
+                        .fetch_sequence(chrom, lo, hi)
+                        .with_context(|| format!("reference {chrom}:{lo}-{hi} is not in the FASTA (wrong --fasta for this BAM?)"))?;
                     let c = consistency(&sub, &host, &ref_seq, lo);
                     let (run_p, run_top, run_top_frac, n_runs) = run_screen(&sub, &host);
                     if let Some(t) = template_read(&sub) {
@@ -877,7 +894,9 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
                     .max()
                     .unwrap_or(*end)
                     .max(*end);
-                let ref_seq = genome.fetch_sequence(chrom, lo, hi).unwrap_or_default();
+                let ref_seq = genome
+                    .fetch_sequence(chrom, lo, hi)
+                    .with_context(|| format!("reference {chrom}:{lo}-{hi} is not in the FASTA (wrong --fasta for this BAM?)"))?;
                 let rs = find_rearrangements(&big, &ref_seq, lo, 50);
                 row.n_rearr = rs.iter().filter(|r| !r.duplicated).count();
                 row.n_dup = rs.iter().filter(|r| r.duplicated).count();
@@ -945,6 +964,21 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
             }
             rows.push(row);
         }
+    }
+    // warnings, not errors: a hand-made or non-minimap2 BAM still runs, but the reader sees why nothing fires
+    if n_rec > 0 && n_eqx == 0 {
+        eprintln!("[missing_copy_flag] WARNING none of {n_rec} pile records has =/X CIGAR ops: PSV tallies are empty (realign with minimap2 --eqx)");
+    }
+    if n_rec > 0 && n_de == 0 {
+        eprintln!("[missing_copy_flag] WARNING none of {n_rec} pile records has a de tag: every read counts as de 0, the mixture cannot fire");
+    }
+    if n_no_contig > 0 {
+        anyhow::ensure!(
+            n_no_contig < loci.len(),
+            "none of the {} loci is on a contig of the BAM header (different reference naming?)",
+            loci.len()
+        );
+        eprintln!("[missing_copy_flag] WARNING {n_no_contig} of {} loci are on contigs absent from the BAM header; skipped", loci.len());
     }
     eprintln!(
         "[missing_copy_flag] scanned {n_scanned}, with >= {} reads {n_enough}, fired {n_fired}",
@@ -1137,7 +1171,8 @@ fn main() -> Result<()> {
             let mut any_conf = false;
             for (_, by) in hits_by.iter().skip(1).take(n_conf) {
                 let best = best_in(by);
-                let ok = confirmed(best.as_ref().map(|h| h.identity), host_id, r.delta);
+                // the same delta floor the verdict used, so a structural-only candidate is confirmed by the same bar
+                let ok = confirmed(best.as_ref().map(|h| h.identity), host_id, r.delta.max(if structural_only { 0.02 } else { 0.0 }));
                 any_conf |= ok;
                 f.push(
                     best.as_ref()
