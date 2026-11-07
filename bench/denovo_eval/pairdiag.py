@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Why O1 misses or invents Compara pairs (diagnostic, no bar; same truth and mapping as pairscore.py).
 
-usage: pairdiag.py RUN_PREFIX OUT_TSV        (env as pairscore: DENOVO_CAT_GFF/TSV, DENOVO_PARALOGS, DENOVO_HGNC)
+usage: pairdiag.py [--species human|hg002|...] RUN_PREFIX OUT_TSV   (env as pairscore: DENOVO_CAT_GFF/TSV, DENOVO_PARALOGS, DENOVO_HGNC)
 Missed truth pairs (x, y):
   absorbed   a gene is expressed but no locus representative maps to it (its reads sit in a neighbour's / fused locus)
   unlinked   a gene has its own locus but that locus is in no family
@@ -14,8 +14,10 @@ import collections, csv, itertools, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import famtruth as F
 
-prefix, out = sys.argv[1], sys.argv[2]
-G = F.genes_from_argv([], 'human')
+a = sys.argv[1:]
+species = a[a.index('--species') + 1] if '--species' in a else 'human'
+prefix, out = [x for i, x in enumerate(a) if not x.startswith('--') and (i == 0 or a[i - 1] not in F.SPECIES_FLAGS)][:2]
+G = F.genes_from_argv(a, species)
 idx = F.exon_index(G)
 expressed = F.expressed_from_gtf(prefix + '.families.gtf', idx)
 truth, universe = F.truth_pairs(G, F.PARALOGS, F.levels('simiiformes'))

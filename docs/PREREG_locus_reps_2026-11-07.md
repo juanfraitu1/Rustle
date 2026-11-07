@@ -17,3 +17,10 @@ Descriptive: E with row 1573's D pieces attached as well (union), same four numb
 
 ## Prediction
 Bar 1 PASS (17 genes reachable cover > half of the pairs), bars 2-4 PASS. Held-out next (option 1).
+
+## Result (2026-11-07, job 4452547, `/anvme/workspace/v138da13-rustle/r1571/E*`, `Ea`, `DE`)
+**FAIL (bars 1, 2).** Ea (E attached to A): 0.788 / 0.756 (1,650 hits), copies 8,199; A's 71 absorbed pairs: 8 recovered,
+63 still missed; 4 pairs A hit lost. Union DE (D + E attached): 0.779 / 0.775, 15 recovered, copies 8,282.
+Cause (mechanism, not the idea): transcripts joining two representatives (readthroughs) were kept in one group, so the
+groups' exon unions overlap (UGT2B17 714 bp, ZNF585B 363 bp, ZC3H11A 6,475 bp) and the families stage folds them into one
+node ("fold-within-clusters"): most secondary groups never become a node of their own. Prediction wrong on bars 1 and 2.
