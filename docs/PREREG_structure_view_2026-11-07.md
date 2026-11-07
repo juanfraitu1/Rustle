@@ -44,3 +44,17 @@ can hold paralogs O1 missed, which makes the null rate higher (conservative for 
 
 ## Prediction
 B1 PASS, B2 PASS with a smaller ratio, B3 FAIL (identical architecture is common among unrelated multi-exon genes).
+
+## Result (2026-11-07, `bench/structfam/structfam.py`, output `~/runs/structfam_r1569/a1.structfam.tsv`)
+**PASS (B1 + B2); B3 PASS as registered but carried by near-identical copies (post hoc).** Testable: 1,620 of 7,987
+copies (the GFF count of 1,492 missed 211 renamed tids), 401 families with >= 2 testable copies; null 19,756 loci.
+- B1: 4,745 within-family pairs ALIKE 0.898 vs matched null 0.082 (94,900 pairs), 11.0x, p ~ 0. PASS.
+- B2 (identity < 0.95, read sharing impossible): 919 pairs 0.738 vs null 0.161, 4.6x, p 3e-306. PASS.
+- B3: 1,902 exact-tuple pairs, 1,691 in the same O1 family, precision 0.889. PASS as registered. Post hoc split:
+  1,461 of the 1,691 are same-chromosome copies at identity >= 0.99, where shared reads can copy the exons. Outside
+  >= 0.95 (identity < 0.95 or no PAF record): 128 same-family of 327, precision 0.39. Structure alone does not define
+  families; it corroborates them.
+- Descriptive: ALIKE by identity < 0.80 0.56 (52 pairs), 0.80-0.90 0.76, 0.90-0.95 0.72, 0.95-0.99 0.88, >= 0.99
+  0.998; MCL-transitive pairs with no PAF record 0.79 (803). Exact-tuple recall on O1 pairs with n_int >= 3: 0.641.
+  Families with >= 3 testable members where every pair is ALIKE: 107/167 (0.64) vs matched null families 0.0012.
+Prediction right on B1/B2 (B2 ratio smaller), wrong on B3 as registered, right in substance after the post hoc split.
