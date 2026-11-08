@@ -17,7 +17,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use rustle::annotation_families::{
     build_clusters, fold_graph, fold_parts_into_loci, fold_parts_into_loci_opt, graph_from_paf_loci_stranded, loci_from_exon_blocks, parse_gene_key,
-    mcl_pair_rule_counted, sd_blocks, Cluster, CoreStatus, GeneKey, GraphParams, PairRule, SdPairs,
+    mcl_pair_rule_counted, sd_blocks, damp_non_sd_edges, add_sd_edges, sd_linked_pairs, Cluster, CoreStatus, GeneKey, GraphParams, PairRule, SdPairs,
 };
 use rustle::fam_from_gtf::{
     clip_extents_to_neighbours, exonic_blocks, gene_strands, gtf_loci, junction_count,
@@ -202,6 +202,19 @@ struct Args {
     /// MCL (`bench/denovo_eval/liftchain.py`: Liftoff-style exon chaining). An existing edge is raised to max(w). Opt-in.
     #[arg(long)]
     extra_edges: Option<String>,
+    /// Opt-in (step 0 2026-11-08, `sd-edge-weights`): SEDEF pairs BED (`chrom1 s1 e1 chrom2 s2 e2 ...`, 0-based, `#` lines
+    /// skipped) for `--sd-damp`.
+    #[arg(long)]
+    sd_damp_bed: Option<String>,
+    /// Opt-in (row 1580): multiply every edge whose two loci are NOT in the two copies of one SD pair of `--sd-damp-bed`
+    /// (>= half of each representative's exon bases AND of its span inside its copy) by this factor before MCL.
+    /// 1.0 = off (byte-identical).
+    #[arg(long, default_value_t = 1.0)]
+    sd_damp: f64,
+    /// Opt-in (row 1581): add an edge of this weight between every pair of loci that one SD pair of `--sd-damp-bed`
+    /// links (the `--sd-damp` rule) but that have no homology edge. Applied after `--sd-damp`. Off when unset.
+    #[arg(long, requires = "sd_damp_bed")]
+    sd_add_edges: Option<f64>,
     /// With `--extra-edges`: drop every PAF edge first, so the graph is the extra edges alone (nodes stay).
     #[arg(long, default_value_t = false, requires = "extra_edges")]
     extra_edges_only: bool,
@@ -1488,6 +1501,31 @@ fn main() -> Result<()> {
             g.n_nodes() - n_before
         );
     }
+    anyhow::ensure!(args.sd_damp > 0.0 && args.sd_damp <= 1.0, "--sd-damp {} must be in (0, 1]", args.sd_damp);
+    anyhow::ensure!(args.sd_damp == 1.0 || args.sd_damp_bed.is_some(), "--sd-damp {} needs --sd-damp-bed", args.sd_damp);
+    if let Some(w) = args.sd_add_edges {
+        anyhow::ensure!(w > 0.0 && w <= 1.0, "--sd-add-edges {w} must be in (0, 1]");
+    }
+    // (linked edges, damped edges, SD-only edges added)
+    let sd_damp_counts = match &args.sd_damp_bed {
+        Some(bed) if args.sd_damp < 1.0 || args.sd_add_edges.is_some() => {
+            let sd = SdPairs::from_bed_str(&std::fs::read_to_string(bed).with_context(|| format!("reading {bed}"))?);
+            anyhow::ensure!(sd.n_pairs() > 0, "--sd-damp-bed {bed}: no SD pair parsed");
+            let linked = sd_linked_pairs(&g, &blocks, &sd);
+            let (kept, damped) = if args.sd_damp < 1.0 { damp_non_sd_edges(&mut g, &linked, args.sd_damp) } else { (0, 0) };
+            let added = args.sd_add_edges.map_or(0, |w| add_sd_edges(&mut g, &linked, w));
+            eprintln!(
+                "[mcl_families] --sd-damp {} --sd-add-edges {:?}: {} SD pair(s) from {bed}; {} SD-linked node pair(s); \
+                 {kept} edge(s) SD-linked, {damped} damped, {added} SD-only edge(s) added",
+                args.sd_damp,
+                args.sd_add_edges,
+                sd.n_pairs(),
+                linked.len()
+            );
+            Some((kept, damped, added))
+        }
+        _ => None,
+    };
     if let Some(path) = &args.dump_graph {
         let mut f = std::fs::File::create(path)?;
         for (&(i, j), &w) in &g.edges {
@@ -2933,6 +2971,16 @@ fn main() -> Result<()> {
         writeln!(ph, "{k}\t{v}")?;
     }
     // PREREG DENOVOFAM opt-in arms: rows only when on, so a default run's params.tsv is unchanged
+    if let Some((kept, damped, added)) = sd_damp_counts {
+        writeln!(ph, "sd_damp\t{}", args.sd_damp)?;
+        writeln!(ph, "sd_damp_bed\t{}", args.sd_damp_bed.as_deref().unwrap_or(""))?;
+        writeln!(ph, "sd_damp_edges_linked\t{kept}")?;
+        writeln!(ph, "sd_damp_edges_damped\t{damped}")?;
+        if let Some(w) = args.sd_add_edges {
+            writeln!(ph, "sd_add_edges\t{w}")?;
+            writeln!(ph, "sd_add_edges_added\t{added}")?;
+        }
+    }
     if args.shared_exon_union {
         writeln!(ph, "shared_exon_union\ttrue")?;
     }

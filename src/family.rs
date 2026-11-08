@@ -62627,6 +62627,47 @@ pub mod fam_from_gtf {
                 Some((segs[0].0, segs.last().unwrap().1))
             }
 
+            /// `--sd-damp`'s link rule for one node in one SD copy `[s, e)`: the copy holds >= half of the node's exon
+            /// bases AND >= half of its span (first to last exon base). The span half keeps long sparse-exon loci that
+            /// only dip into a duplication (pericentromeric hubs) from being linked (r1571/clu/spanrule.py).
+            fn holds(bl: &[(u64, u64)], s: u64, e: u64) -> bool {
+                let tot: u64 = bl.iter().map(|&(x, y)| y.saturating_sub(x)).sum();
+                let ins: u64 = bl.iter().map(|&(x, y)| y.min(e).saturating_sub(x.max(s))).sum();
+                let (lo, hi) = (bl.iter().map(|x| x.0).min().unwrap_or(0), bl.iter().map(|x| x.1).max().unwrap_or(0));
+                tot > 0 && 2 * ins >= tot && 2 * hi.min(e).saturating_sub(lo.max(s)) >= hi - lo
+            }
+
+            /// Node pairs `(i, j)`, `i < j`, that ONE SD pair links: node i held by one copy and node j by the other
+            /// ([`Self::holds`]). `nodes[i]` = (contig, exon blocks absolute 0-based half-open, as `exon_blocks`).
+            pub fn linked_node_pairs(&self, nodes: &[(&str, &[(u64, u64)])]) -> BTreeSet<(usize, usize)> {
+                let mut inside: std::collections::HashMap<(&str, u64, u64), Vec<usize>> = std::collections::HashMap::new();
+                for (i, &(c, bl)) in nodes.iter().enumerate() {
+                    let (Some(lo), Some(hi)) = (bl.iter().map(|x| x.0).min(), bl.iter().map(|x| x.1).max()) else {
+                        continue;
+                    };
+                    for &(s, e, ..) in self.overlapping(c, lo, hi) {
+                        if Self::holds(bl, s, e) {
+                            inside.entry((c, s, e)).or_default().push(i);
+                        }
+                    }
+                }
+                let mut out = BTreeSet::new();
+                for (c, v) in &self.by_contig {
+                    for (s, e, oc, os, oe) in v {
+                        if let (Some(a), Some(b)) = (inside.get(&(c.as_str(), *s, *e)), inside.get(&(oc.as_str(), *os, *oe))) {
+                            for &i in a {
+                                for &j in b {
+                                    if i != j {
+                                        out.insert((i.min(j), i.max(j)));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                out
+            }
+
             fn overlapping(
                 &self,
                 contig: &str,
@@ -62645,6 +62686,46 @@ pub mod fam_from_gtf {
                     .take_while(move |x| x.0 < e)
                     .filter(move |x| x.1 > s)
             }
+        }
+
+        /// The graph's SD-linked node pairs ([`SdPairs::linked_node_pairs`]); a node without exon blocks is never linked.
+        pub fn sd_linked_pairs(
+            g: &HomologyGraph,
+            blocks: &BTreeMap<GeneKey, Vec<(u64, u64)>>,
+            sd: &SdPairs,
+        ) -> BTreeSet<(usize, usize)> {
+            let empty: Vec<(u64, u64)> = Vec::new();
+            let nodes: Vec<(&str, &[(u64, u64)])> = g
+                .genes
+                .iter()
+                .map(|k| (k.0.as_str(), blocks.get(k).unwrap_or(&empty).as_slice()))
+                .collect();
+            sd.linked_node_pairs(&nodes)
+        }
+
+        /// `--sd-damp F` (opt-in, row 1580): multiply the weight of every edge whose two nodes are NOT in `linked`
+        /// ([`sd_linked_pairs`]) by `f`, so MCL prefers duplication-backed edges. Returns (edges kept, edges damped).
+        pub fn damp_non_sd_edges(g: &mut HomologyGraph, linked: &BTreeSet<(usize, usize)>, f: f64) -> (usize, usize) {
+            let (mut kept, mut damped) = (0, 0);
+            for (k, w) in g.edges.iter_mut() {
+                if linked.contains(k) {
+                    kept += 1;
+                } else {
+                    *w *= f;
+                    damped += 1;
+                }
+            }
+            (kept, damped)
+        }
+
+        /// `--sd-add-edges W` (opt-in, row 1581): an edge of weight `w` between every SD-linked node pair with no
+        /// homology edge (no identity recorded: the §6er abstention forecast ignores it). Returns the edges added.
+        pub fn add_sd_edges(g: &mut HomologyGraph, linked: &BTreeSet<(usize, usize)>, w: f64) -> usize {
+            let before = g.edges.len();
+            for &k in linked {
+                g.edges.entry(k).or_insert(w);
+            }
+            g.edges.len() - before
         }
 
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63432,6 +63513,39 @@ pub mod fam_from_gtf {
             /// directions), offsets applied to the loci's 1-based starts.
             /// The §6fw guard: `links` is true only when one duplication pair holds BOTH intervals, in either
             /// stored direction; unrelated flanks on the same contig, and pairs to another contig, are not links.
+            #[test]
+            fn damp_non_sd_edges_keeps_only_duplication_backed_edges() {
+                // SD pair: chr1 [1000,2000) <-> chr2 [5000,6000). Node A in copy 1, B in copy 2, C elsewhere on chr2.
+                let sd = SdPairs::from_bed_str("#chr1\tstart1\nchr1\t1000\t2000\tchr2\t5000\t6000\n");
+                let (a, b, c): (GeneKey, GeneKey, GeneKey) =
+                    (("chr1".into(), 1101, 1900), ("chr2".into(), 5101, 5900), ("chr2".into(), 9001, 9500));
+                let mut blocks = BTreeMap::new();
+                blocks.insert(a.clone(), vec![(1100, 1300), (1700, 1900)]);
+                blocks.insert(b.clone(), vec![(5100, 5300), (5700, 5900)]);
+                blocks.insert(c.clone(), vec![(9000, 9500)]);
+                fn n<'a>(blocks: &'a BTreeMap<GeneKey, Vec<(u64, u64)>>, k: &'a GeneKey) -> (&'a str, &'a [(u64, u64)]) { (k.0.as_str(), blocks[k].as_slice()) }
+                let set = sd.linked_node_pairs(&[n(&blocks, &a), n(&blocks, &b), n(&blocks, &c)]);
+                assert_eq!(set.into_iter().collect::<Vec<_>>(), vec![(0, 1)], "A-B linked, C outside both copies");
+                // half the exon bases outside the copy still links (>= half); less than half does not
+                assert_eq!(sd.linked_node_pairs(&[("chr1", &[(1800, 2200)]), n(&blocks, &b)]).len(), 1);
+                assert_eq!(sd.linked_node_pairs(&[("chr1", &[(1900, 2200)]), n(&blocks, &b)]).len(), 0);
+                // most exon bases inside but most of the span outside (a long sparse locus dipping in): not linked
+                assert_eq!(sd.linked_node_pairs(&[("chr1", &[(1000, 1900), (9000, 9100)]), n(&blocks, &b)]).len(), 0);
+                let mut g = HomologyGraph::default();
+                g.genes = vec![a.clone(), b.clone(), c.clone()];
+                g.edges.insert((0, 1), 0.9);
+                g.edges.insert((0, 2), 0.8);
+                let linked = sd_linked_pairs(&g, &blocks, &sd);
+                assert_eq!(damp_non_sd_edges(&mut g, &linked, 0.25), (1, 1));
+                assert_eq!(g.edges[&(0, 1)], 0.9);
+                assert!((g.edges[&(0, 2)] - 0.2).abs() < 1e-12);
+                // --sd-add-edges: the only linked pair already has an edge, so nothing is added; drop it and it comes back at w
+                assert_eq!(add_sd_edges(&mut g, &linked, 0.15), 0);
+                g.edges.remove(&(0, 1));
+                assert_eq!(add_sd_edges(&mut g, &linked, 0.15), 1);
+                assert_eq!(g.edges[&(0, 1)], 0.15);
+            }
+
             #[test]
             fn links_is_true_only_when_one_pair_holds_both_flanks() {
                 // one pair c1:1000-2000 <-> c1:50000-51000, and one c1:1000-2000 <-> c2:7000-8000
