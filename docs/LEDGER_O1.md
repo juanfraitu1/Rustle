@@ -812,10 +812,11 @@ Workspace: `/anvme/workspace/v138da13-rustle/` (`r6aln/`, `r1571/clu/`, `r1578sp
   the span half, the binary links 115,510 of 525,890 edges.
 - **Damping (row 1580, opt-in `--sd-damp-bed BED --sd-damp 0.25`).** A119b at the default inflation: .925/.718 vs the
   plain curve's .844 at that recall (+0.081); vs today's default .802/.740 it trades 47 true pairs for 270 fewer false
-  ones. Gorilla OR6737 (88 truth pairs) points the same way. HG002 held-out pending (SEDEF on `hg002.pat.fa`).
+  ones. Gorilla OR6737 (88 truth pairs) points the same way. **HG002 held-out PASS** (2026-11-08): .719/.321 vs the plain
+  curve's .559 at that recall (+0.160); plain default .466/.345 -> 10 fewer true pairs for 112 fewer false.
 - **Recall is not won back by SDs (row 1587).** The damped arm's misses are mostly pairs with neither a homology edge nor
   an SD link (335 of 633). Merging clusters by SD links chains everything; SD-only edges give +2-2.5 at equal recall
-  (row 1581, pending, at the bar on dev).
+  on A119b dev (+0.030, at the bar) but **FAIL on HG002** (row 1581: -0.007 vs the damped curve at equal recall).
 - **Why SDs matter (annotation-level, `bench/denovo_eval/sdbio.py`; CHM13 CAT protein-coding genes, human Compara
   pairs, CHM13 SEDEF 1.1, same span rule):**
 

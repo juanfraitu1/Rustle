@@ -84,3 +84,46 @@ I = 1.6 .689/.761, 1.8 .733/.753, 2.0 .750/.750, 2.4 .781/.743, 2.8 .802/.740 (d
 
 Chosen: **`--sd-damp 0.25` at the default inflation 2.8** (largest gain, recall within 0.04). Held-out SD arm = `sd_I2.8`
 in `r1580/heldout.sh SAMPLE 0.25`. Dev runs: `/anvme/workspace/v138da13-rustle/r1578span/`.
+
+## Amendment 1 (2026-11-08, before any HG002 run): Soto-style descriptive arms
+
+Added at the advisor's request to compare with Soto et al. 2025 (families = SD98 genes sharing exons). NOT part of the
+verdict of rows 1580 or 1581. In the same held-out jobs, at the default inflation: `soto_all_d01` (`--sd-damp 0.01`,
+all SEDEF pairs: damping toward 0 keeps only SD-held edges, i.e. Soto's hard rule on de novo loci, the 0.60 shared-exon
+gate already on), `soto98_d01` and `soto98_d25` (the same with SD98 pairs only, SEDEF fracMatch >= 0.98). A119b
+reference: `/anvme/workspace/v138da13-rustle/r1580soto_dev/`. What Soto's method cannot be run as-is here: it clusters
+annotated genes and uses population famCN (WSSD of ~270 human genomes), which de novo loci, gorilla and HG002 lack.
+
+## Amendment 2 (2026-11-08, before any HG002 run): HG002 SEDEF, candidates over 5 Mb dropped
+
+SEDEF on HG002 (paternal + maternal vs paternal, `sedef_build/hg002pat`) crashed every time on one alignment bucket
+(`bucket_0338`, `vector::_M_default_append`) on a single 21.9 Mb seed candidate: chr9:47.8-69.7 Mb (pericentromeric
+satellite) vs JAKCWS010000072.1. Rule, fixed before any SD file existed: in align buckets SEDEF did not finish, a
+candidate with either side > 5 Mb is dropped (no real SD is that long; such hits are satellite arrays). Finished buckets are untouched.
+Dropped rows are logged in `hg002pat/align.dropped_over5mb.log`. The dry run dropped 1 of 474 rows in bucket_0338. The
+final count is reported with the verdict. The rule acts only on SEDEF input, before any family run, and is blind to truth.
+
+## Amendment 3 (2026-11-08, before any HG002 family run): final drop count, and a 1 Mb cutoff for one stalled bucket
+
+Under the 5 Mb rule three candidates were dropped, one each in buckets 0337, 0338 and 0364. All three are in the chr9
+pericentromeric satellite (chr9:47-70 Mb) against chr9 itself or an unplaced contig. After that, bucket 0364 stalled
+again for over 75 min at 100% CPU on its last candidate: chr9:59.6-61.3 Mb (1.69 Mb, the same satellite) vs
+JAKCWS010000073.1. Every other candidate takes seconds. For the one bucket still unfinished (0364), the cutoff was lowered
+to 1 Mb (`SEDEF_MAX_SIDE=1000000` in `sedef_build/job_resume.sh`). That drops only that row; the bucket's next-largest
+candidate is 0.66 Mb. The other 999 buckets finished unchanged. In total 4 of ~474,000 candidates are dropped, all
+chr9 satellite. Logs: `hg002pat/align.dropped_over5mb.run1.log` and `align.dropped_over5mb.log`. Blind to truth and to
+any family result.
+
+## Outcome (2026-11-08): PASS (HG002)
+
+`r1580/hg002/`, pairscore on PREFIX.fam.copies.tsv. Gate: 145,409 edges SD-linked, 31,178 damped.
+- Plain curve (I 1.6-5.0): .223/.396, .279/.379, .338/.370, .383/.343, .466/.345 (default), .491/.324, .559/.321,
+  .570/.316, .640/.314.
+- SD arm `sd_I2.8`: **.719 / .321**. Clause 1: the plain curve at recall .321 is .559 (I 3.6 lies exactly there); gain
+  +0.160 >= 0.03. Clause 2: .321 >= .345 - 0.04 = .305. **PASS.**
+- Damped curve (I 1.6-5.0): .590/.348, .622/.345, .656/.341, .693/.338, .719/.321, .747/.314, .765/.314, .795/.300,
+  .820/.297.
+- Soto-style arms (amendment 1, descriptive): soto_all_d01 .741/.304; soto98_d01 .826/.184; soto98_d25 .772/.229.
+  SD98 identity read from column 22 of this build (see `docs/DATA.md`).
+- Caveat: HG002's truth is small (143 hits at the default), and its plain precision is far below A119b's (.466 vs .802).
+  The direction matches A119b and gorilla.

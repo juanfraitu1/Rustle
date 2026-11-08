@@ -66,3 +66,9 @@ interpolation uses the points sorted by recall, as registered.
 
 Chosen: **`--sd-damp 0.25 --sd-add-edges 0.15 --inflation 3.2`**. Its dev gain equals the bar (+0.030), so the held-out
 has no margin. Held-out arms: `add_I*` in `r1580/heldout.sh SAMPLE 0.25 0.15` (verdict arm `add_I3.2`).
+
+## Outcome (2026-11-08): FAIL (HG002)
+
+`add_I3.2` **.686 / .338**. The damped-only curve has a point at exactly that recall (`sd_I2.4` .693 / .338): gain
+-0.007 < +0.03, clause 1 fails; clause 2 passes (.338 >= .321). On held-out data the SD-only edges buy recall exactly
+as lowering inflation does. `--sd-add-edges` stays experimental; removing it is the user's call.
