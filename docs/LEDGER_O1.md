@@ -796,3 +796,42 @@ Pre-registrations in `archive/2026-11/`: `PREREG_isocon_only_2026-11-03.md`, `PR
 - Pooled depth (r1531, FAIL as registered): HG002 Kinnex reaches 59 of the 215 panel misses (immune/histone/TAS2R genes, 0 of the one-chain class). Sliced arm on 7 contigs: pooled A119b+HG002 vs A119b alone passes every panel bar (complete 93 -> 101, fused 24 -> 23, hit rates up, CAT 0.084, wall 2,582 s) but keeps only 0.865 of the base's spliced chains (bar 0.95; 3,271 of the lost chains had >= 5 reads). Pooling re-collapses chains (r1503 again). Depth closed on this panel.
 - Family graph threading (r1532 ceiling + r1533 arm, FAIL as registered): on the 35 multimapper misses, 18 are exon-identical to a sibling (no graph can separate them), 10 are reachable by tied reads (2-25 each); a graph of the expressed members is not a closed world (uniquely placed reads from absent pseudogenes cover its 'private' nodes), and only 1 of the 10 has a catalog copy. The closed-world arm (loci from the tied reads' own placements, thread_tied.py) reached 1 of 10, put 3 models on exon-identical members and 0.806 on CAT genes. The multimapper misses are at most 35 of 212 on the panel; the other 177 have unique primaries and are an unspliced / single-exon emission matter (r1518/r1520 trade).
 
+
+## SD edges and why segmental duplications carry the young families (2026-11-07..08, register 1580-1581, 1585-1587)
+
+Pre-registrations: `PREREG_sd_damp_span_2026-11-08.md` (row 1580), `PREREG_sd_add_edges_2026-11-08.md` (row 1581).
+Workspace: `/anvme/workspace/v138da13-rustle/` (`r6aln/`, `r1571/clu/`, `r1578span/`, `r1581dev/`, `r1580/`, `sdbio/`).
+
+- **Where precision is lost is not the aligner or MCL (rows 1585-1586).** Five aligners rescue truth pairs and admit old
+  paralogs alike; every clustering tried (inflation 1.2-4.0, components, Louvain, two-level MCL) lies on one P/R curve.
+- **SDs separate true from false pairs.** On A119b, 84% of the pairs O1 gets right have their two loci in the two copies
+  of one SEDEF pair, against 11% of its false pairs.
+- **The link rule needs the span half.** A locus is held by an SD copy when the copy holds >= half of its exon bases AND
+  >= half of its span. Exons alone let long sparse-exon pericentromeric loci (chr10:43 Mb, chr2:94.8 Mb, chr22:11.3 Mb)
+  collect SD support as hubs; the numpy prototype's first big gain came from a bug that happened to exclude them. With
+  the span half, the binary links 115,510 of 525,890 edges.
+- **Damping (row 1580, opt-in `--sd-damp-bed BED --sd-damp 0.25`).** A119b at the default inflation: .925/.718 vs the
+  plain curve's .844 at that recall (+0.081); vs today's default .802/.740 it trades 47 true pairs for 270 fewer false
+  ones. Gorilla OR6737 (88 truth pairs) points the same way. HG002 held-out pending (SEDEF on `hg002.pat.fa`).
+- **Recall is not won back by SDs (row 1587).** The damped arm's misses are mostly pairs with neither a homology edge nor
+  an SD link (335 of 633). Merging clusters by SD links chains everything; SD-only edges give +2-2.5 at equal recall
+  (row 1581, pending, at the bar on dev).
+- **Why SDs matter (annotation-level, `bench/denovo_eval/sdbio.py`; CHM13 CAT protein-coding genes, human Compara
+  pairs, CHM13 SEDEF 1.1, same span rule):**
+
+  | Compara age of the pair | pairs | in one SD's two copies | median SD identity | >= 98% | same chromosome | < 1 Mb |
+  |---|---|---|---|---|---|---|
+  | human / Homininae / Hominoidea | 4,106 | 0.912 | 0.995 | 0.73 | 0.89 | 0.72 |
+  | Catarrhini / Simiiformes | 1,140 | 0.367 | 0.875 | 0.05 | 0.86 | 0.55 |
+  | Primates .. Mammalia | 3,285 | 0.034 | 0.922 | 0.18 | 0.76 | 0.59 |
+  | older than mammals | 129,597 (20k sampled) | 0.003 | 0.887 | 0.15 | 0.17 | 0.07 |
+
+  9.9% of 20,067 protein-coding genes sit in an SD copy (10.5% of the genome is SD); 80.5% of genes with a Simiiformes-or-
+  younger paralog do, against 4.5% of the rest (~18x). Young multi-copy families are SD-born: a duplication copies a
+  whole gene with its flanks, mostly intra-chromosomally; recurrent SD-mediated rearrangement grows families in bursts
+  at the same hotspots; gene conversion keeps copies near-identical (the root of O2's and O3's difficulty). The SD signal
+  fades with age as copies diverge below SEDEF's detection (part of the fade is the detection floor, not biology). Among
+  young pairs without an SD, 20% look like retrocopies (one single-exon gene, one multi-exon). O1's truth (Compara at
+  Simiiformes and younger) is the first two rows, which is why SD damping removes false pairs (older paralogs,
+  domain-sharing genes) while keeping most true ones, and why it cannot help families older than ~40 My or retrocopies.
+  Caveat: the span rule misses partial duplications and gene fusions, so the SD share is if anything an underestimate.

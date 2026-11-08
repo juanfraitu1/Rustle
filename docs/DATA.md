@@ -220,3 +220,16 @@ exact RefSeq chains, chain precision 20.2 vs 22.0-25.9 alone: more sensitive, no
 
 ## O2 contested tables and haplotype truth (2026-11-03)
 Workspace `/anvme/workspace/v138da13-rustle/` (expires 2027-01-31; `ws_extend`): `o2contested/{A119b.t2t,HG002_kinnex.t2t,GGO_mm,KB3781}.molecules.tsv` (`as_table` with columns 7-17: best/second/primary ms, MAPQ, splice shape, best-AS rival, positions; one `#as_table` line, no column row), `o2contested/KB3781.records.tsv` (every primary and secondary record: name, secondary, chrom, pos, end, AS, ms, spliced; 34.8M records, 2.2 GB) and its by-name sort, `o2contested/haps/KB3781.{mat,pat}.mmi` (Jim's haplotypes for `haplotype_truth.py`), runs `o2mstie/` (r1509/1510/1514 assignments, `truth_all10/hits.tsv`, `*.strict_dump.tsv`), `o2contested/r1511/`, `o2pool/` (r1513 arms, `GGO.splice.mmi`). KB3781 fibroblast reads are Jim's (the mGorGor1 individual), so his haplotype assemblies are the read-level truth. Sbatch files and logs: `~/o2contested/`.
+
+## SEDEF SD calls on Fritz (2026-11-08; register 1580-1581, `--sd-damp-bed`)
+
+All under `/anvme/workspace/v138da13-rustle/` (workspace expires 2027-01-31; `ws_extend`). SEDEF BEDs have 34 columns:
+pair coordinates in 1-6, identity (`fracMatch`) in 21, CIGAR in 33, and a trailing `#chr1 start1 ...` header line, which
+`SdPairs::from_bed_str` skips.
+
+| genome | file | provenance |
+|---|---|---|
+| CHM13 v2.0 | `sedef_dl/incoming/sedef_send/final_human.bed` (88,756 pairs, md5 2cd7d079...) | user-supplied (croc 2026-11-07), SEDEF v1.1 `sedef.sh` defaults on soft-masked chm13v2.0.fa (Penn State Roar); `sedef_send/sedef_provenance.txt` |
+| CHM13 v2.0 (UCSC) | `sedef_dl/chm13v2.sedef.bed` (83,516 rows; identity col 24, partner cols 10-12) | UCSC hub bigBedToBed; NOT the same call set as above (the native file is the one used) |
+| gorilla mGorGor1 v2.0 (GCF_029281585.2, KB3781) | `sedef_dl/gorilla/final.bed` (253,029 pairs, md5 991ed343...) | user-supplied, SEDEF v1.1 on GGO.fasta; contigs match `~/work/jfim/rustle_data/genomes/GGO.fa` |
+| HG002 paternal (`~/data/hg002/hg002.pat.fa`) | `sedef_build/hg002pat/final.bed` | built here 2026-11-08: SEDEF 1.1 (github vpc-ccg/sedef tag 1.1) rebuilt per node in `$TMPDIR`, `sedef_build/sedef_notime.sh` (= `sedef.sh` with `/usr/bin/time`, `--bar` and the awk command generation removed, and `grep -r`/`find` instead of globs over 264,714 seed logs); seeding 56 min on 72 cores; 41 align buckets OOM-killed at 72-way and rerun 8-way (`job_retry_killed.sh`, `job_resume.sh`). HG002 is soft-masked less than CHM13 (50 Mb slice 37% vs 59% lowercase) |

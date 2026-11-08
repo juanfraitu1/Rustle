@@ -76,6 +76,7 @@ Driver uses: utilities (sd-scan, candidate-augment, window-depth), as_table, cop
 | bench/denovo_eval/pairscore.py | KEEP-PY | family scoring rule: pair precision/recall (+ --noncoding) |
 | bench/denovo_eval/semifam.py | PORTED | `semifam` bin (src/semifam.rs, byte-identical; r1472) |
 | bench/denovo_eval/seqscore.py | KEEP-PY | what genes really share (sequence tiers) |
+| bench/denovo_eval/sdbio.py | KEEP-PY | why SDs matter: share of Compara paralog pairs held by one SD, by age (LEDGER_O1 SD section) |
 | bench/f1_bridge.py | PORTED | `copy_assign --bridge-regroup` (family::bridge_regroup) |
 | bench/family_container.py | PORTED | `mcl_families --emit-container` (rustle::family_container) |
 | bench/guided_eval/cdsseed.py | TO-MERGE | -> famtruth.py (only load_genes("hg002") + HG002_XREF are used by pair/seqscore) |
