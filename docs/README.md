@@ -21,7 +21,7 @@ Merged on 2026-11-03 into the documents above (verbatim copies in `archive/2026-
 
 ## Archive
 
-- `archive/2026-09/`, `archive/2026-10/` (and `archive/2026-10/merged/`): closed studies and superseded notes.
+- `archive/2026-09/`, `archive/2026-10/` : closed studies and superseded notes (`archive/2026-10/merged/` removed 2026-11-08, see `archive/2026-10/MERGED_REMOVED.md`).
 - `archive/2026-11/`: the verbatim pre-compaction copies (2026-11-01) of the ledgers, the register and the living docs (the compact files above end entries with `(full: archive/2026-11/X.md:LINE)`), plus every pre-registration of 2026-11-01..03 (`PREREG_*.md`, rows 1485-1514, each with its RESULT section).
 
 ## Conventions

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Own-node flags and the composition of the family's clusters, per arm (docs/archive/2026-10/merged/PREREG_seed_pool_real_reads_2026-10-07.md section 3).
+"""Own-node flags and the composition of the family's clusters, per arm (docs/archive/2026-11/LEDGER_O1.md:2581 (PREREG_seed_pool_real_reads_2026-10-07.md) section 3).
 
     composition.py --copies copies.tsv --truth truth.gtf --family NPIP --arm NAME=loci.gff3,clusters.tsv [--arm ...]
                    --out nodes.json [--report comp.json] [--exons-json npip_read_pool.json]

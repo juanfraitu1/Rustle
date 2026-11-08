@@ -33,7 +33,7 @@ NHGRI_mGorGor1-v2.0 (gorilla); scripts in `bench/crossspecies/`. Anything not me
 ## INDEX
 
 Original map of 14 sections; titles carry the verdicts (auto-derived tags scored 11/22 and were removed). Family vs
-SD / duplicon / expansion terminology: `docs/archive/2026-10/merged/TERMINOLOGY_FAMILY_SD_DUPLICON_EXPANSION_2026-10-07.md`.
+SD / duplicon / expansion terminology: `docs/archive/2026-11/LEDGER_GENERAL.md:432 (TERMINOLOGY_FAMILY_SD_DUPLICON_EXPANSION_2026-10-07.md)`.
 (full: archive/2026-11/seeded_family_definition.md:9)
 
 ## 0★. THE SHIPPED DEFAULT (2026-09-25, user decision) — ONE DE NOVO FAMILY DEFINITION AT THE RNA LEVEL

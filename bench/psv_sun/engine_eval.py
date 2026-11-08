@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Yardstick of docs/archive/2026-10/merged/PREREG_psv_semiglobal_engine_2026-10-12.md: score PSV engines' DIFFERENCE pairs.
+"""Yardstick of docs/archive/2026-11/LEDGER_O2.md:731 (PREREG_psv_semiglobal_engine_2026-10-12.md): score PSV engines' DIFFERENCE pairs.
 
     engine_eval.py COPIES.tsv COPIES.fa OUTDIR NAME=PREFIX [NAME=PREFIX ...]
 PREFIX = a `utilities psv-discover` output prefix (needs .psv_copies.tsv and .psv_pos.tsv).

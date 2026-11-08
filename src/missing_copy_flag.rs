@@ -409,7 +409,7 @@ fn cap_key(name: &str) -> u64 {
 }
 
 /// minimap2's arguments for one home-search batch. `--split-prefix` is always passed: on a one-part index the output is
-/// unchanged, and it lets a MULTI-PART index (`minimap2 -I`, the low-memory profile of `docs/archive/2026-10/merged/GENOMEWIDE_FAST_2026-10-12.md`)
+/// unchanged, and it lets a MULTI-PART index (`minimap2 -I`, the low-memory profile of `docs/archive/2026-11/LEDGER_O1.md:3502 (GENOMEWIDE_FAST_2026-10-12.md)`)
 /// be used, one part in memory at a time, with the parts' hits merged (approximately equal to one part, not byte-identical).
 /// `index_gb` (`--index-gb N`): pass `-I NG`, so a FASTA target is indexed on the fly in N-Gbp parts (no index file on disk, one
 /// part in memory at a time; ignored by minimap2 for a prebuilt `.mmi`).

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Score one ideal-expression run (docs/archive/2026-10/merged/PREREG_ideal_expression_2026-10-06.md): can the default pipeline find the copies of a family?
+"""Score one ideal-expression run (docs/archive/2026-11/LEDGER_O1.md:1369 (PREREG_ideal_expression_2026-10-06.md)): can the default pipeline find the copies of a family?
 
     score.py --truth TRUTHPREFIX --strata STRATAPREFIX --asm ASMPREFIX --out OUT
 

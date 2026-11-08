@@ -190,7 +190,7 @@ and `DENOVO_GGO_GFF` are set (plus `DENOVO_HGNC` for the HGNC gene groups). On F
 
 ## Docs archive
 
-Closed studies: `docs/archive/2026-09/`, `docs/archive/2026-10/` (`merged/`). `docs/archive/2026-11/` holds the verbatim pre-compaction copies (2026-11-01) of the ledgers, the register and the definition docs (`LEDGER_*.md`, `o1_ledger.md`, `NEGATIVE_RESULTS_REGISTER.md`, `seeded_family_definition.md`, `copy_assignment_definition.md`, and the living docs); every ledger citation of a dataset above resolves there in full.
+Closed studies: `docs/archive/2026-09/`, `docs/archive/2026-10/` (`merged/` removed 2026-11-08, see `MERGED_REMOVED.md`). `docs/archive/2026-11/` holds the verbatim pre-compaction copies (2026-11-01) of the ledgers, the register and the definition docs (`LEDGER_*.md`, `o1_ledger.md`, `NEGATIVE_RESULTS_REGISTER.md`, `seeded_family_definition.md`, `copy_assignment_definition.md`, and the living docs); every ledger citation of a dataset above resolves there in full.
 
 ## Assembly products (2026-11-02)
 `PREFIX.gtf` is the assembly the later stages read (families, assign); `PREFIX.families.gtf` is it without bridge transcripts (the

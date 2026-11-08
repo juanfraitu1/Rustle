@@ -119,7 +119,7 @@ Driver uses: utilities (sd-scan, candidate-augment, window-depth), as_table, cop
 | annotation | 6 |  |  |  |  |  | 6 |  | PREREG_sqanti_single_copy_2026-11-01 | 1248 |
 | asj_o2 | 5 |  |  |  |  |  | 5 |  | LEDGER_O2 (archive/2026-11) | - |
 | assembly_ends | 1 |  |  | 1 |  |  |  |  | - | - |
-| default_rescore | 4 |  |  |  |  |  | 4 |  | archive/2026-10/merged/DEFAULT_RESCORE_NPIP_2026-10-06 | - |
+| default_rescore | 4 |  |  |  |  |  | 4 |  | archive/2026-10/MERGED_REMOVED.md (DEFAULT_RESCORE_NPIP_2026-10-06) | - |
 | denovo_eval | 40 |  | 1 | 3 |  |  | 36 |  | LEDGER_O1; DATA.md | 1435,1436,1437,1440,1453,1455… |
 | entangled | 15 |  |  |  |  |  | 15 |  | LEDGER_O1/O2 (archive/2026-11) | 765,1257,1259,1260 |
 | famsim | 12 |  |  |  |  |  |  | 12 | archive/2026-10/FAMSIM_DESIGN_2026-10-02 | - |
@@ -129,32 +129,32 @@ Driver uses: utilities (sd-scan, candidate-augment, window-depth), as_table, cop
 | ideal_expression | 15 |  |  |  |  |  | 15 |  | LEDGER_O1 | 1253 |
 | layer_order | 2 |  |  |  |  |  | 2 |  | o1_ledger | 1104,1105 |
 | liftoff_pairs | 4 |  |  |  |  |  | 4 |  | archive/2026-09/PREREG_liftoff_loci_2026-09-25 | - |
-| lrpap1_seeds | 3 |  |  |  |  |  | 3 |  | archive/2026-10/merged/PREREG_lrpap1_seed_reach_2026-10-11 (docstrings) | - |
+| lrpap1_seeds | 3 |  |  |  |  |  | 3 |  | archive/2026-10/MERGED_REMOVED.md (PREREG_lrpap1_seed_reach_2026-10-11) (docstrings) | - |
 | mechanism | 5 |  |  |  |  |  | 5 |  | archive/2026-09/PREREG_readthrough_v2_2026-09-26 | - |
 | npip_read_pool | 6 |  |  |  |  |  | 6 |  | archive/2026-10/NPIP_READ_POOL_2026-10-01 | - |
 | o1_hier | 15 |  |  |  |  |  | 15 |  | LEDGER_O1 | 1276,1277 |
-| o1_reassign | 4 |  |  |  |  |  | 4 |  | archive/2026-10/merged/PREREG_post_mcl_reassign_2026-10-15 | - |
+| o1_reassign | 4 |  |  |  |  |  | 4 |  | archive/2026-10/MERGED_REMOVED.md (PREREG_post_mcl_reassign_2026-10-15) | - |
 | o1_sd | 4 |  |  |  |  |  | 4 |  | LEDGER_O1 | - |
-| o2_anchor | 3 |  |  |  |  |  | 3 |  | archive/2026-10/merged/PREREG_o2_anchor_2026-10-13 | - |
-| o2_default_roster | 2 |  |  |  |  |  | 2 |  | archive/2026-10/merged/O2_DEFAULT_ROSTER_2026-10-06 | - |
+| o2_anchor | 3 |  |  |  |  |  | 3 |  | archive/2026-10/MERGED_REMOVED.md (PREREG_o2_anchor_2026-10-13) | - |
+| o2_default_roster | 2 |  |  |  |  |  | 2 |  | archive/2026-10/MERGED_REMOVED.md (O2_DEFAULT_ROSTER_2026-10-06) | - |
 | o2_tie | 2 |  |  |  |  |  | 2 |  | PREREG_o2_exact_tie_2026-10-13 | - |
 | o2_truth | 4 |  |  |  |  |  | 4 |  | LEDGER_O2 | - |
 | o2levers | 1 |  |  |  |  |  | 1 |  | LEDGER_O2; ACTIVE_WORKING_SET | 1481 |
-| o3_fewread | 2 |  |  |  |  |  | 2 |  | archive/2026-10/merged/PREREG_o3_fewread_flags_2026-10-14 | - |
+| o3_fewread | 2 |  |  |  |  |  | 2 |  | archive/2026-10/MERGED_REMOVED.md (PREREG_o3_fewread_flags_2026-10-14) | - |
 | o3_graph | 108 |  | 5 | 2 |  |  | 101 |  | LEDGER_O2/O3 | 1304,1307,1314,1318,1320,1323… |
 | o3_maternal | 23 |  |  |  |  |  | 23 |  | LEDGER_O3 | - |
-| o3_realdata | 18 |  |  |  |  |  | 18 |  | archive/2026-10/merged/PREREG_o3_realdata_2026-10-15 | - |
+| o3_realdata | 18 |  |  |  |  |  | 18 |  | archive/2026-10/MERGED_REMOVED.md (PREREG_o3_realdata_2026-10-15) | - |
 | o3_structure | 5 |  | 1 |  |  |  | 4 |  | superpowers/specs/2026-10-14-o3-structure-projection-design | - |
 | o3_unexplained | 6 |  | 1 |  |  |  | 5 |  | LEDGER_O3 | 1088 |
-| paf_duplicons | 4 |  |  |  |  |  | 4 |  | archive/2026-10/merged/O1_FAST_2026-10-21 | - |
+| paf_duplicons | 4 |  |  |  |  |  | 4 |  | archive/2026-10/MERGED_REMOVED.md (O1_FAST_2026-10-21) | - |
 | phased_toy | 1 |  |  |  |  |  | 1 |  | LEDGER_O3 | - |
-| popfix | 12 |  |  |  |  |  | 12 |  | archive/2026-10/merged/PREREG_popfix_2026-10-12 | - |
+| popfix | 12 |  |  |  |  |  | 12 |  | archive/2026-10/MERGED_REMOVED.md (PREREG_popfix_2026-10-12) | - |
 | psv_ceiling | 2 |  |  |  |  |  | 2 |  | archive/2026-10/PSV_CEILING_2026-10-03 | - |
-| psv_sun | 5 |  |  |  |  |  | 5 |  | archive/2026-10/merged/PSV_SUN_PILEUP_2026-10-12 | - |
+| psv_sun | 5 |  |  |  |  |  | 5 |  | archive/2026-10/MERGED_REMOVED.md (PSV_SUN_PILEUP_2026-10-12) | - |
 | rep_rule | 2 |  |  |  |  |  | 2 |  | LEDGER_O1 | - |
 | rna_allele | 27 |  | 3 |  |  |  | 24 |  | LEDGER_O3 (rna_allele_haplotype_count) | - |
 | sedef | 7 |  |  |  |  |  | 7 |  | superpowers/plans/2026-10-13-o1-layers-phase-1-2; register 1278-1280 | - |
-| seed_pool | 10 |  |  |  |  |  | 10 |  | archive/2026-10/merged/PREREG_seed_pool_real_reads_2026-10-07 | 1262 |
+| seed_pool | 10 |  |  |  |  |  | 10 |  | archive/2026-10/MERGED_REMOVED.md (PREREG_seed_pool_real_reads_2026-10-07) | 1262 |
 | soto | 5 |  |  |  |  |  | 5 |  | o1_ledger | 1105,1430 |
 | soto_m2 | 22 |  |  |  |  |  | 22 |  | archive/2026-09/PREREG_unit_cover_2026-09-30 | - |
 | soto_subset | 8 |  |  |  |  |  | 8 |  | superpowers/plans/2026-10-14-soto-subset-cn | - |
@@ -163,7 +163,7 @@ Driver uses: utilities (sd-scan, candidate-augment, window-depth), as_table, cop
 | template_copies | 14 |  |  |  |  |  | 14 |  | superpowers/plans/2026-10-14-template-copies | - |
 | tool_difference | 12 |  |  |  |  |  | 12 |  | LEDGER_O1/O2 | - |
 | unmapped_rescue | 103 |  |  |  |  |  | 103 |  | O3_STATUS; THESIS_OBJECTIVES (o3_export.py) | 1065 |
-| yag_o2 | 6 |  |  |  |  |  | 6 |  | archive/2026-10/merged/PREREG_popfix_2026-10-12 | - |
+| yag_o2 | 6 |  |  |  |  |  | 6 |  | archive/2026-10/MERGED_REMOVED.md (PREREG_popfix_2026-10-12) | - |
 
 ## Portability (PIPELINE, KEEP-PY, tools/*.sh)
 

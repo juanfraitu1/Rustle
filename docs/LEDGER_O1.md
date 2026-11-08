@@ -18,7 +18,7 @@ Compacted 2026-11-01. One short entry per section, in the original order; every 
 
 ## Contents
 
-Merged 2026-10-24 from 46 dated docs (originals in `docs/archive/2026-10/merged/`); later sections appended directly. Each `## <file>.md` heading below is the wrapper for one merged doc; the section(s) after it are that doc. (full: archive/2026-11/LEDGER_O1.md:6)
+Merged 2026-10-24 from 46 dated docs (originals in `docs/archive/2026-10/MERGED_REMOVED.md` (directory removed 2026-11-08; verbatim in `docs/archive/2026-11/LEDGER_*.md`)); later sections appended directly. Each `## <file>.md` heading below is the wrapper for one merged doc; the section(s) after it are that doc. (full: archive/2026-11/LEDGER_O1.md:6)
 
 ---
 

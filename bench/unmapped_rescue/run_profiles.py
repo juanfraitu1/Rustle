@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""HMM profile arm on bed H (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md Amendment 5).   run_profiles.py   -> W/bedH/profiles/{families.hmm,hmm.tbl,result.json}"""
+"""HMM profile arm on bed H (docs/archive/2026-11/LEDGER_O3.md:487 (PREREG_unmapped_rescue_2026-10-08.md) Amendment 5).   run_profiles.py   -> W/bedH/profiles/{families.hmm,hmm.tbl,result.json}"""
 import collections
 import csv
 import json

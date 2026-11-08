@@ -2,7 +2,7 @@
 
 Compacted 2026-11-01. Merged 2026-10-24 from 14 dated docs plus later pending notes, oldest first. Every original `## ` heading is
 kept below; each entry ends with a pointer to the verbatim text in `docs/archive/2026-11/LEDGER_GENERAL.md` (and the originals in
-`docs/archive/2026-10/merged/`). Numbers, verdicts and rows are copied from the original; anything not here is in the archive.
+`docs/archive/2026-10/MERGED_REMOVED.md` (directory removed 2026-11-08; verbatim in `docs/archive/2026-11/LEDGER_*.md`)). Numbers, verdicts and rows are copied from the original; anything not here is in the archive.
 
 ## Current state (2026-11-03)
 
@@ -21,7 +21,7 @@ HANDOFF_laptop_to_main_2026-10-15.md, O1O2O3_FAST_REALISTIC_2026-10-16.md, O1O2O
 HANDOFF_cloud_2026-10-21.md, then the 10-26 and 10-27 pending notes. (full: archive/2026-11/LEDGER_GENERAL.md:6)
 
 ## REGISTER_DRAFTS_machine2.md
-Origin `docs/archive/2026-10/merged/REGISTER_DRAFTS_machine2.md`. (full: archive/2026-11/LEDGER_GENERAL.md:26)
+Origin `docs/archive/2026-11/LEDGER_GENERAL.md:26 (REGISTER_DRAFTS_machine2.md)`. (full: archive/2026-11/LEDGER_GENERAL.md:26)
 
 ## Register drafts from the machine2 clone (renumber on merge into docs/NEGATIVE_RESULTS_REGISTER.md)
 Draft rows M2-1..M2-9 (2026-09-30, Soto audits):
@@ -36,7 +36,7 @@ Draft rows M2-1..M2-9 (2026-09-30, Soto audits):
 - M2-9 July "RNA missed" filter showed the 313 FOUND rows; fixed only in the merged page. (full: archive/2026-11/LEDGER_GENERAL.md:30)
 
 ## REGISTER_DRAFTS_o3_maternal.md
-Origin `docs/archive/2026-10/merged/REGISTER_DRAFTS_o3_maternal.md`. (full: archive/2026-11/LEDGER_GENERAL.md:45)
+Origin `docs/archive/2026-11/LEDGER_GENERAL.md:45 (REGISTER_DRAFTS_o3_maternal.md)`. (full: archive/2026-11/LEDGER_GENERAL.md:45)
 
 ## Proposed register rows — maternal / paternal reference study (2026-10-08)
 Drafts (KB3781 Iso-Seq on its own `mat`/`pat` assemblies, 34 families + LRPAP1; source `docs/O3_MATERNAL_REFERENCE_2026-10-08.md`).
@@ -46,7 +46,7 @@ only the chrY copy absent. Recovery chain from `mat`: IsoCon R1 PASS, R2 PASS, R
 (full: archive/2026-11/LEDGER_GENERAL.md:49)
 
 ## REGISTER_DRAFTS_unmapped_rescue.md
-Origin `docs/archive/2026-10/merged/REGISTER_DRAFTS_unmapped_rescue.md`. (full: archive/2026-11/LEDGER_GENERAL.md:65)
+Origin `docs/archive/2026-11/LEDGER_GENERAL.md:65 (REGISTER_DRAFTS_unmapped_rescue.md)`. (full: archive/2026-11/LEDGER_GENERAL.md:65)
 
 ## Proposed register rows — pool-first net for unmapped reads (2026-10-08)
 Drafts, partly corrected by the prereg Errata. Key verdicts: U1 PASSES (unmapped reads of an erased copy form piles, 5,083 of 5,313 on
@@ -59,7 +59,7 @@ synthetic world recovery holds 30/30; 5' G-run handling (T, T3, T4, gate-aware m
 reads, DNA k-mer verification (113-read sequence 97.1% k-mers >= 2); four more libraries. (full: archive/2026-11/LEDGER_GENERAL.md:69)
 
 ## PENDING_2026-09-23.md
-Origin `docs/archive/2026-10/merged/PENDING_2026-09-23.md`. (full: archive/2026-11/LEDGER_GENERAL.md:105)
+Origin `docs/archive/2026-11/LEDGER_GENERAL.md:105 (PENDING_2026-09-23.md)`. (full: archive/2026-11/LEDGER_GENERAL.md:105)
 
 ## Pending work — registered 2026-09-23 (user, 15:33), to be pre-registered and run later
 1. Quantification parity with StringTie/FLAIR/isoseq on shared chains (bar suggestion rho >= 0.85 on >= 1,000 shared chains per
@@ -75,7 +75,7 @@ Origin `docs/archive/2026-10/merged/PENDING_2026-09-23.md`. (full: archive/2026-
 (full: archive/2026-11/LEDGER_GENERAL.md:109)
 
 ## ADVISOR_HIERARCHY_2026-10-03.md
-Origin `docs/archive/2026-10/merged/ADVISOR_HIERARCHY_2026-10-03.md`. (full: archive/2026-11/LEDGER_GENERAL.md:230)
+Origin `docs/archive/2026-11/LEDGER_GENERAL.md:230 (ADVISOR_HIERARCHY_2026-10-03.md)`. (full: archive/2026-11/LEDGER_GENERAL.md:230)
 
 ## "Where is my hierarchy in the MCL?" — what the advisor most likely means, and what exists (2026-10-03)
 MCL (inflation 2.8) gives one flat cut; families nest (family > subfamily > copies > alleles). Answer: the cut is one level of the
@@ -84,7 +84,7 @@ but merge heights add nothing beyond identity. Do not re-propose: subfamily leve
 inflation sweeps, superfamily components (row 654). (full: archive/2026-11/LEDGER_GENERAL.md:234)
 
 ## HANDOFF_2026-10-04.md
-Origin `docs/archive/2026-10/merged/HANDOFF_2026-10-04.md`. (full: archive/2026-11/LEDGER_GENERAL.md:283)
+Origin `docs/archive/2026-11/LEDGER_GENERAL.md:283 (HANDOFF_2026-10-04.md)`. (full: archive/2026-11/LEDGER_GENERAL.md:283)
 
 ## Handoff — 2026-10-04 (session of 10-03/10-04), for the next agent
 Week priority: prove O1 and O2. Done: `o3_candidates` A13 passed / A14 failed, stays OPT-IN (rows 1221-1231); strict "found copy" rule
@@ -93,7 +93,7 @@ Week priority: prove O1 and O2. Done: `o3_candidates` A13 passed / A14 failed, s
 then 1246. (full: archive/2026-11/LEDGER_GENERAL.md:287)
 
 ## PENDING_2026-10-04.md
-Origin `docs/archive/2026-10/merged/PENDING_2026-10-04.md`. (full: archive/2026-11/LEDGER_GENERAL.md:370)
+Origin `docs/archive/2026-11/LEDGER_GENERAL.md:370 (PENDING_2026-10-04.md)`. (full: archive/2026-11/LEDGER_GENERAL.md:370)
 
 ## Pending — 2026-10-04 (user decision: this week is for proving O1 and O2 work right; O3's stage work is parked here)
 Amendment 15/15b DONE 2026-10-05 (register 1247): C1' (10/53) and H1 (6/30) fail, stage STAYS OPT-IN. Open then: row-1220 O2
@@ -101,7 +101,7 @@ Amendment 15/15b DONE 2026-10-05 (register 1247): C1' (10/53) and H1 (6/30) fail
 NPIP labeller marks; LRPAP1 follow-ups; inversion-vs-spliced-aligner prereg NOT RUN. (full: archive/2026-11/LEDGER_GENERAL.md:374)
 
 ## TERMINOLOGY_FAMILY_SD_DUPLICON_EXPANSION_2026-10-07.md
-Origin `docs/archive/2026-10/merged/TERMINOLOGY_FAMILY_SD_DUPLICON_EXPANSION_2026-10-07.md`. (full: archive/2026-11/LEDGER_GENERAL.md:432)
+Origin `docs/archive/2026-11/LEDGER_GENERAL.md:432 (TERMINOLOGY_FAMILY_SD_DUPLICON_EXPANSION_2026-10-07.md)`. (full: archive/2026-11/LEDGER_GENERAL.md:432)
 
 ## Terminology: multi-copy gene family vs. segmental duplication, duplicon and expansion (2026-10-07)
 One object, four levels: multi-copy gene family (the object O1 defines); SD (>= 1 kb, >= 90% identity; edge evidence for young copies);
@@ -110,7 +110,7 @@ expansion and family are not 1:1. Concede the noun to the advisor; letting SD/du
 677, 817, 818, 997). Never pool Soto (human) and Yoo (gorilla) numbers. (full: archive/2026-11/LEDGER_GENERAL.md:436)
 
 ## PENDING_2026-10-11.md
-Origin `docs/archive/2026-10/merged/PENDING_2026-10-11.md`. (full: archive/2026-11/LEDGER_GENERAL.md:511)
+Origin `docs/archive/2026-11/LEDGER_GENERAL.md:511 (PENDING_2026-10-11.md)`. (full: archive/2026-11/LEDGER_GENERAL.md:511)
 
 ## Pending work, 2026-10-11
 Genome-wide rescoring paused until the figure set is agreed with the advisor (Claude Doc "Benchmark Figure Decisions"). Done: first
@@ -135,7 +135,7 @@ chimp + KB3781, figure 8 tables. Paused: figure 7 genome-wide, assign A119b, O3 
 (full: archive/2026-11/LEDGER_GENERAL.md:515)
 
 ## OPEN_IMPLEMENTATIONS_PHASED_2026-10-12.md
-Origin `docs/archive/2026-10/merged/OPEN_IMPLEMENTATIONS_PHASED_2026-10-12.md`. (full: archive/2026-11/LEDGER_GENERAL.md:849)
+Origin `docs/archive/2026-11/LEDGER_GENERAL.md:849 (OPEN_IMPLEMENTATIONS_PHASED_2026-10-12.md)`. (full: archive/2026-11/LEDGER_GENERAL.md:849)
 
 ## Open implementations — phased data (2026-10-12)
 Toy (`docs/PHASED_TOY_2026-10-12.md`, P0-P3 PASS): with two haplotype assemblies a truth-free rule separates allele from extra copy 100%
@@ -144,7 +144,7 @@ mode (M), I2 `--hap-tag HP` label only (S), I3 VCF via whatshap (XS), I4 rename 
 rungs. Limits: copy vs allele not settled on RNA alone; phased data must be of the same individual. (full: archive/2026-11/LEDGER_GENERAL.md:853)
 
 ## HANDOFF_laptop_to_main_2026-10-15.md
-Origin `docs/archive/2026-10/merged/HANDOFF_laptop_to_main_2026-10-15.md`. (full: archive/2026-11/LEDGER_GENERAL.md:936)
+Origin `docs/archive/2026-11/LEDGER_GENERAL.md:936 (HANDOFF_laptop_to_main_2026-10-15.md)`. (full: archive/2026-11/LEDGER_GENERAL.md:936)
 
 ## Handoff — laptop → main machine (2026-10-15)
 Branch `laptop/o3-psv-multimappers`: pixi envs, O3 positive control (PASS), few-read false flags diagnosed, O3 per the advisor's
@@ -154,7 +154,7 @@ Done on main 2026-10-15: merged (`integrate/o3-psv-multimappers`, merge `90df29d
 real-data O3 prereg (remove copies from the GENOME, single-copy control, run with `--no-as-tied-only`). (full: archive/2026-11/LEDGER_GENERAL.md:940)
 
 ## O1O2O3_FAST_REALISTIC_2026-10-16.md
-Origin `docs/archive/2026-10/merged/O1O2O3_FAST_REALISTIC_2026-10-16.md`. (full: archive/2026-11/LEDGER_GENERAL.md:1069)
+Origin `docs/archive/2026-11/LEDGER_GENERAL.md:1069 (O1O2O3_FAST_REALISTIC_2026-10-16.md)`. (full: archive/2026-11/LEDGER_GENERAL.md:1069)
 
 ## Faster family tests, realistic reads, and what O2's evidence rests on (2026-10-16)
 Update 2026-10-19: O2's domain is AS-tied multimapping reads only (rival within 10 AS, Eichler's rule). Development on family sets 8-10
@@ -176,7 +176,7 @@ the model, linear alignment the implementation (`--branch-linear`; O3 158 s -> 3
 (full: archive/2026-11/LEDGER_GENERAL.md:1073)
 
 ## O1O2O3_INTEGRATED_OVERVIEW_2026-10-16.md
-Origin `docs/archive/2026-10/merged/O1O2O3_INTEGRATED_OVERVIEW_2026-10-16.md`. (full: archive/2026-11/LEDGER_GENERAL.md:1972)
+Origin `docs/archive/2026-11/LEDGER_GENERAL.md:1972 (O1O2O3_INTEGRATED_OVERVIEW_2026-10-16.md)`. (full: archive/2026-11/LEDGER_GENERAL.md:1972)
 
 ## O1 -> O2 -> O3 integrated: the overall picture (2026-10-16)
 Post hoc summary over rounds 1-7 (register 1297-1305), no new claim. Integrated pipeline (O1 RNA-supported seeding, O2 padded union at
@@ -187,7 +187,7 @@ FAIL, 10 (r1308) FAIL, 11 (r1309) v4 PASS 12/12; 12 (r1310) and 13 (r1311) FAIL;
 confound remains the deciding open problem; every round is a simulation (delta 0.00958). (full: archive/2026-11/LEDGER_GENERAL.md:1976)
 
 ## HANDOFF_cloud_2026-10-21.md
-Origin `docs/archive/2026-10/merged/HANDOFF_cloud_2026-10-21.md`. (full: archive/2026-11/LEDGER_GENERAL.md:2209)
+Origin `docs/archive/2026-11/LEDGER_GENERAL.md:2209 (HANDOFF_cloud_2026-10-21.md)`. (full: archive/2026-11/LEDGER_GENERAL.md:2209)
 
 ## Handoff — local WSL machine → cloud (2026-10-21)
 Branch `o3-fast` (283 commits past main, registers 1347-1369). State: 1360-1361 corrector UNDERPOWERED; 1362 FAIL; 1363 reference-free O3

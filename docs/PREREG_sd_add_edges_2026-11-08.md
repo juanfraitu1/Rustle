@@ -47,3 +47,22 @@ fails, a 1581 PASS still only says the extra edges beat lower inflation on the d
 
 - PASS: `--sd-add-edges` documented as opt-in next to `--sd-damp` (defaults are the user's call).
 - FAIL: register; the flag is removed or stays experimental at the user's choice.
+
+## Setting chosen (2026-11-08, A119b binary r1581dev, before any held-out run)
+
+Refactor check: `--sd-damp 0.25` I = 2.8 copies and clusters byte-identical to r1578span (shared `sd_linked_pairs`).
+Damped-only curve (pairscore, copies): I = 3.6 .943/.688, 2.0 .909/.716, 3.2 .943/.716, 2.8 .925/.718 (default),
+2.4 .914/.722, 1.6 .883/.736. The curve is not monotone in inflation (I = 3.2 beats I = 2.0 at equal recall); the
+interpolation uses the points sorted by recall, as registered.
+
+| candidate | precision / recall | damped curve at that recall | gain |
+|---|---|---|---|
+| **W 0.15, I 3.2** | **.920 / .733** | .890 (.914 at .722 to .883 at .736) | **+0.030** |
+| W 0.15, I 2.8 | .906 / .733 | .890 | +0.016 |
+| W 0.15, I 3.6 | .922 / .725 | .907 | +0.015 |
+| W 0.10, I 2.8 | .916 / .726 | .905 | +0.011 |
+| W 0.10, I 3.2 | .918 / .722 | .914 | +0.004 |
+| W 0.10, I 3.6 | .922 / .711 | recall < .718 | excluded |
+
+Chosen: **`--sd-damp 0.25 --sd-add-edges 0.15 --inflation 3.2`**. Its dev gain equals the bar (+0.030), so the held-out
+has no margin. Held-out arms: `add_I*` in `r1580/heldout.sh SAMPLE 0.25 0.15` (verdict arm `add_I3.2`).

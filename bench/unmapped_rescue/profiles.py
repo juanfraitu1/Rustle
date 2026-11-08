@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Per-family HMM profile arm (docs/archive/2026-10/merged/PREREG_unmapped_rescue_2026-10-08.md Amendment 5). Pure parsers here; the pipeline is `run_profiles.py`."""
+"""Per-family HMM profile arm (docs/archive/2026-11/LEDGER_O3.md:487 (PREREG_unmapped_rescue_2026-10-08.md) Amendment 5). Pure parsers here; the pipeline is `run_profiles.py`."""
 import collections
 
 try:

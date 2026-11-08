@@ -1,6 +1,6 @@
 # Ledger: O2 (copy assignment of tied reads)
 
-Compact version (2026-11-01). The verbatim ledger is `docs/archive/2026-11/LEDGER_O2.md`; each entry ends with a pointer to its line there. Original 53 dated docs: `docs/archive/2026-10/merged/`.
+Compact version (2026-11-01). The verbatim ledger is `docs/archive/2026-11/LEDGER_O2.md`; each entry ends with a pointer to its line there. Original 53 dated docs: `docs/archive/2026-10/MERGED_REMOVED.md` (directory removed 2026-11-08; verbatim in `docs/archive/2026-11/LEDGER_*.md`).
 
 ## Current state (2026-11-03)
 
@@ -14,7 +14,7 @@ Compact version (2026-11-01). The verbatim ledger is `docs/archive/2026-11/LEDGE
 
 ## Contents
 
-Merged 2026-10-24 from 53 dated docs (originals in `docs/archive/2026-10/merged/`), later sections appended; compacted 2026-11-01. Each entry below keeps its original `## ` headings; the dated-file heading and its title heading share one entry. (full: archive/2026-11/LEDGER_O2.md:6)
+Merged 2026-10-24 from 53 dated docs (originals in `docs/archive/2026-10/MERGED_REMOVED.md` (directory removed 2026-11-08; verbatim in `docs/archive/2026-11/LEDGER_*.md`)), later sections appended; compacted 2026-11-01. Each entry below keeps its original `## ` headings; the dated-file heading and its title heading share one entry. (full: archive/2026-11/LEDGER_O2.md:6)
 
 ## O2_DEFAULT_ROSTER_2026-10-06.md
 ## O2 with read-level truth on the default families roster: NPIP, TBC1D3, Y (2026-10-06)
