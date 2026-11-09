@@ -160,7 +160,7 @@
 #     (`--min-shared-exon-frac 0.0 --min-exon-share ${RUSTLE_MIN_EXON_SHARE:-0.5} --inflation ${RUSTLE_INFLATION:-2.0}`);
 #     coverage = the earlier rule (`--min-shared-exon-frac ${RUSTLE_MIN_SHARED_EXON_FRAC:-0.60}`, inflation 2.8), also chosen when
 #     RUSTLE_MIN_SHARED_EXON_FRAC is set. The share rule aligns more pairs (exon gate at fraction 0): about 2x the families wall;
-#   RUSTLE_SEDEF_BED=FILE turns on SD damping in `families` (`--sd-damp-bed FILE --sd-damp ${RUSTLE_SD_DAMP:-0.25}`): edges
+#   RUSTLE_SEDEF_BED=FILE turns on SD damping in `families` (unset: FASTA.sedef.bed when that sidecar exists; empty: off) (`--sd-damp-bed FILE --sd-damp ${RUSTLE_SD_DAMP:-0.25}`): edges
 #     between loci no SEDEF pair links are down-weighted before MCL (row 1580: HG002 held-out +0.160 precision at equal
 #     recall; A119b .802/.740 -> .925/.718). Set it whenever the genome has a SEDEF build (human CHM13, gorilla; paths in
 #     docs/DATA.md); RUSTLE_SD_DAMP=1 keeps the BED but turns damping off. Unset = off, the earlier products.
@@ -168,6 +168,17 @@
 # pseudogene bodies, PREREG_heldout_families_2026-09-20 §2) is not a driver stage: figures/_o1_recovery.py
 # (guided_families) runs its recipe step by step. Every product carries the PREFIX.
 set -euo pipefail
+# Run from a snapshot of this file (round-9 audit): bash reads a script as it executes it, so an edit or `git pull` of the
+# repo during a multi-hour run spliced old and new code (seen 2026-11-09: "unexpected EOF" after a 10-minute assemble).
+# The snapshot keeps size and mtime (cp -p), so the resume records' driver line is unchanged; RP_DRIVER_DIR (no RUSTLE_
+# prefix: they must not enter the resume records) keeps the repo's tools/ directory for the sibling scripts and --bin.
+# A stage call of `all` runs the same snapshot (its $0 is RP_SNAPSHOT); a call of the repo file (a user, rustle_samples.sh) snapshots.
+if [ "${RP_SNAPSHOT:-}" != "$0" ]; then
+  export RP_DRIVER_DIR RP_SNAPSHOT RP_OWNER_PID=$$; RP_DRIVER_DIR=$(cd "$(dirname "$0")" && pwd)
+  RP_SNAPSHOT=$(mktemp "${TMPDIR:-/tmp}/rustle_pipeline.XXXXXX") && cp -p "$0" "$RP_SNAPSHOT" && exec bash "$RP_SNAPSHOT" "$@"
+fi
+# the process that made the snapshot (exec keeps its pid) removes it at exit; stage calls (other pids) leave it to their parent
+if [ "${RP_OWNER_PID:-}" = "$$" ]; then trap 'rm -f "$RP_SNAPSHOT"' EXIT; fi
 STAGE=${1:-all}; shift || true
 ORIG_ARGS=("$@")
 # Multi-sample runs (a comma in --bam): tools/rustle_samples.sh takes the whole call (pool, then split). A `case "$STAGE"` block
@@ -175,11 +186,11 @@ ORIG_ARGS=("$@")
 case "$STAGE" in
   *) for ((i = 0; i + 1 < ${#ORIG_ARGS[@]}; i++)); do
        if [ "${ORIG_ARGS[$i]}" = --bam ] && [[ "${ORIG_ARGS[$((i + 1))]}" == *,* ]]; then
-         exec bash "$(dirname "$0")/rustle_samples.sh" "$STAGE" "${ORIG_ARGS[@]}"
+         exec bash "$RP_DRIVER_DIR/rustle_samples.sh" "$STAGE" "${ORIG_ARGS[@]}"
        fi
      done;;
 esac
-BAM=""; FASTA=""; OUT=""; INDEX=""; GFF=""; THREADS=4; THREADS_SET=0; BIN="$(dirname "$0")/../target/release"; CONFIRM=(); FOREIGN=(); SEED_POOL=${RUSTLE_SEED_POOL:-good}; SEED_RATIO=${RUSTLE_SEED_AS_RATIO:-0.98}; SEED_RATIO_FLAG=0; AS_TABLE=""; CONTIG=""; CONTIG_FLAG=0; CACHE=1; INSPECT=0
+BAM=""; FASTA=""; OUT=""; INDEX=""; GFF=""; THREADS=4; THREADS_SET=0; BIN="$RP_DRIVER_DIR/../target/release"; CONFIRM=(); FOREIGN=(); SEED_POOL=${RUSTLE_SEED_POOL:-good}; SEED_RATIO=${RUSTLE_SEED_AS_RATIO:-0.98}; SEED_RATIO_FLAG=0; AS_TABLE=""; CONTIG=""; CONTIG_FLAG=0; CACHE=1; INSPECT=0
 PIECEWISE=0; MAX_PIECES=0; BUDGET_S=0; PIECE_RECORDS=0; PIECE=""
 LEGACY_CATALOG=0; CANDIDATES=0; DELTA=0.00958; CAND_MAX=1000
 # `all --to STAGE` stops after STAGE (the escape hatch: `--to families` = the loci and their copy table before any read is
@@ -752,6 +763,9 @@ stage_families() {
   # RUSTLE_SD_DAMP (default 0.25, row 1580 PASS on HG002 held-out, default per user 2026-11-09; 1 = off). Unset = no damping,
   # the same command as before. The factor is always passed, so an older binary cannot fall back to its own default.
   local sd=()
+  # the genome's own SEDEF BED as a sidecar, FASTA.sedef.bed, is used when RUSTLE_SEDEF_BED is unset (round-4 audit: SD damping
+  # is the default for genomes that have SEDEF, and an unset variable used to drop it silently); RUSTLE_SEDEF_BED= (empty) turns it off
+  if [ -z "${RUSTLE_SEDEF_BED+x}" ] && [ -s "$FASTA.sedef.bed" ]; then RUSTLE_SEDEF_BED=$FASTA.sedef.bed; fi
   if [ -n "${RUSTLE_SEDEF_BED:-}" ]; then
     [ -s "$RUSTLE_SEDEF_BED" ] || { echo "[rustle_pipeline] RUSTLE_SEDEF_BED=$RUSTLE_SEDEF_BED: no such non-empty file" >&2; exit 2; }
     [[ "$help" == *'--sd-damp-bed'* ]] || { echo "[rustle_pipeline] RUSTLE_SEDEF_BED is set but $BIN/mcl_families predates --sd-damp-bed; rebuild it" >&2; exit 2; }
@@ -767,6 +781,10 @@ stage_families() {
   say "families: $fth threads"
   "$BIN/mcl_families" --from-gtf "$FAM_GTF" --fasta "$FASTA" --threads "$fth" \
     --min-exonic-bp 1 "${edge[@]}" "${copies[@]}" "${FAM_EXTRA[@]}" "${FAM_REL[@]}" "${FAM_COV[@]}" "${rep[@]}" "${sd[@]}" --out "$OUT.fam" > "$OUT.families.log" 2>&1
+  # without minimap2-gate on PATH (or RUSTLE_MINIMAP2) every locus pair is aligned: same families, ~5x the wall (audit round 1)
+  if grep -q 'has no --gate' "$OUT.families.log"; then
+    say "families: WARNING no minimap2-gate on PATH: every pair was aligned (~5x slower); build it with tools/minimap2_gate/build.sh"
+  fi
   say "families: $(awk 'NR>1' "$OUT.fam.clusters.tsv" | cut -f1 | sort -u | wc -l) clusters ($OUT.fam.clusters.tsv)"
   if [ ${#copies[@]} -gt 0 ]; then
     say "families: $(awk 'NR>1' "$OUT.fam.copies.tsv" | wc -l) copies (locus representatives) in $(awk 'NR>1' "$OUT.fam.copies.tsv" | cut -f1 | sort -u | wc -l) families ($OUT.fam.copies.tsv)"
@@ -991,14 +1009,14 @@ stage_assign() {
   # (A119b: 212 of 1,565, among them every chr13 hotspot family that sets the assign wall). Output-changing: not a default.
   rm -f "$OUT.assign.unannotated.txt"
   if [ -n "${RUSTLE_ANNOTATED_ONLY:-}" ]; then
-    python3 "$(dirname "$0")/annotated_families.py" "$OUT.fam.copies.tsv" "$RUSTLE_ANNOTATED_ONLY" > "$OUT.assign.unannotated.txt" 2>> "$OUT.assign.depth.log" || exit 2
+    python3 "$RP_DRIVER_DIR/annotated_families.py" "$OUT.fam.copies.tsv" "$RUSTLE_ANNOTATED_ONLY" > "$OUT.assign.unannotated.txt" 2>> "$OUT.assign.depth.log" || exit 2
     say "assign: annotated-only: $(wc -l < "$OUT.assign.unannotated.txt") famil(ies) with no copy on a gene of $RUSTLE_ANNOTATED_ONLY are not assigned ($OUT.assign.unannotated.txt)"
   fi
   # RUSTLE_EXCLUDE_BED=BED (opt-in, row 1559): families whose copies mostly lie in a confounding element (T2T censat
   # satellites: the chr13 HSat1A array is 618 of A119b's 1,565 families and the assign wall) join the skip list.
   rm -f "$OUT.assign.excluded.txt"
   if [ -n "${RUSTLE_EXCLUDE_BED:-}" ]; then
-    python3 "$(dirname "$0")/annotated_families.py" "$OUT.fam.copies.tsv" "$RUSTLE_EXCLUDE_BED" --majority-in > "$OUT.assign.excluded.txt" 2>> "$OUT.assign.depth.log" || exit 2
+    python3 "$RP_DRIVER_DIR/annotated_families.py" "$OUT.fam.copies.tsv" "$RUSTLE_EXCLUDE_BED" --majority-in > "$OUT.assign.excluded.txt" 2>> "$OUT.assign.depth.log" || exit 2
     say "assign: exclude-bed: $(wc -l < "$OUT.assign.excluded.txt") famil(ies) mostly inside $RUSTLE_EXCLUDE_BED are not assigned ($OUT.assign.excluded.txt)"
   fi
   # the regions are rebuilt without the skipped families: a region left with no family would be read whole
@@ -1048,6 +1066,8 @@ merged_env() {
   if [ "$SEED_POOL" = all ]; then printf 'seed_pool=all\n'; fi
   if [ "$SEED_POOL" = good ] && [ "$SEED_RATIO" != 0.98 ]; then printf 'seed_ratio=%s\n' "$SEED_RATIO"; fi
   if [ -n "$CONTIG" ]; then printf 'contig=%s\n' "$CONTIG"; fi
+  # the SEDEF sidecar the families stage picks up when RUSTLE_SEDEF_BED is unset (round-4 audit)
+  if [ -z "${RUSTLE_SEDEF_BED+x}" ] && [ -s "$FASTA.sedef.bed" ]; then stat -L -c "sedef_sidecar %s %Y" "$FASTA.sedef.bed"; fi
   # every RUSTLE_* knob changes some stage's products: a resume must not skip a stage run with other values (audit 2026-11-07)
   env | grep '^RUSTLE_' | LC_ALL=C sort || true
   # and the binaries: a rebuild must rerun the stages it changes, not replay the old products (audit 2026-11-07, second pass)
@@ -1103,18 +1123,30 @@ stage_flag() {
   say "flag: $(grep -o 'verdicts: .*' "$OUT.flag.log")"
   if [ ${#cand[@]} -gt 0 ]; then say "flag: $(grep -o '[0-9]* flagged candidates with a nearest locus; [0-9]* rows name one' "$OUT.flag.log") (o3_candidate column)"; fi
 }
-# index: the splice index flag aligns its consensus sequences against, PREFIX.splice.mmi. `-I INDEX_GB` Gbp per part: the default
+# index: the splice index flag aligns its consensus sequences against (shared next to the FASTA, below). `-I INDEX_GB` Gbp per part: the default
 # 8 gives one part for a mammalian genome (the figures' index, ~13 GB to hold); --index-gb 1 / --low-mem writes ~1-Gbp parts
 # that flag loads one at a time (minimap2 --split-prefix merges their hits: near-identical, not byte-identical).
+# The index depends on the FASTA, the part size and minimap2 alone, so it is SHARED by every run on that genome when it can be
+# (round-2 audit: each run directory built its own ~13 GB copy): in RUSTLE_INDEX_DIR when set, else next to the FASTA unless
+# the FASTA lies under $HOME (large files stay off the home quota), as <FASTA name>.splice.I<GB>G.mmi; otherwise, or when that
+# directory takes no new file, PREFIX.splice.mmi. Its .key (FASTA path, size, mtime, part size, minimap2 version) must match
+# to be reused; it is built under a temporary name and renamed, so a concurrent run never reads half of it.
+index_key() { printf 'fasta=%s\nfasta_stat=%s\nindex_gb=%s\nminimap2=%s\n' "$(readlink -f "$FASTA")" "$(stat -Lc '%s %Y' "$FASTA")" "$INDEX_GB" "$("${RUSTLE_MINIMAP2:-minimap2}" --version 2>/dev/null)"; }
+index_path() {
+  local f d p probe; f=$(readlink -f "$FASTA"); d=${RUSTLE_INDEX_DIR:-$(dirname "$f")}
+  if [ -z "${RUSTLE_INDEX_DIR:-}" ] && [[ "$f" == "$(readlink -f "$HOME")"/* ]]; then echo "$OUT.splice.mmi"; return; fi
+  p="$d/$(basename "$f").splice.I${INDEX_GB}G.mmi"; probe="$p.probe.$$"
+  if { [ -s "$p" ] && [ "$(cat "$p.key" 2>/dev/null)" = "$(index_key)" ]; } || { : > "$probe"; } 2>/dev/null; then rm -f "$probe"; echo "$p"
+  else echo "$OUT.splice.mmi"; fi
+}
 stage_index() {
-  # reused only when built from this FASTA with this part size (PREFIX.splice.mmi.key; round-10 audit)
-  local key; key=$(printf 'fasta=%s\nindex_gb=%s\n' "$(readlink -f "$FASTA")" "$INDEX_GB")
-  if [ -s "$OUT.splice.mmi" ] && [ "$(cat "$OUT.splice.mmi.key" 2>/dev/null)" = "$key" ]; then say "index: $OUT.splice.mmi present"; return 0; fi
-  rm -f "$OUT.splice.mmi.key"
-  say "index: minimap2 -x splice -I ${INDEX_GB}G -d $OUT.splice.mmi"
-  "${RUSTLE_MINIMAP2:-minimap2}" -x splice -I "${INDEX_GB}G" -t "$THREADS" -d "$OUT.splice.mmi.tmp" "$FASTA" > "$OUT.index.log" 2>&1
-  mv "$OUT.splice.mmi.tmp" "$OUT.splice.mmi"
-  printf '%s\n' "$key" > "$OUT.splice.mmi.key"
+  local idx=${INDEX:-$(index_path)} key; key=$(index_key)
+  if [ -s "$idx" ] && [ "$(cat "$idx.key" 2>/dev/null)" = "$key" ]; then say "index: $idx present"; return 0; fi
+  rm -f "$idx.key"
+  say "index: minimap2 -x splice -I ${INDEX_GB}G -d $idx"
+  "${RUSTLE_MINIMAP2:-minimap2}" -x splice -I "${INDEX_GB}G" -t "$THREADS" -d "$idx.tmp.$$" "$FASTA" > "$OUT.index.log" 2>&1
+  mv -f "$idx.tmp.$$" "$idx"
+  printf '%s\n' "$key" > "$idx.key"
 }
 # stage_all_env STAGE: what a finished `all` stage was run with; a stage is skipped only when it matches (and its product is there)
 stage_all_env() {
@@ -1142,11 +1174,13 @@ stage_all() {
   elif [ "$CANDIDATES" = 1 ]; then plan+=(candidates:"$OUT.cand.candidates.tsv"); fi
   plan+=(assign:"$OUT.assign.assignments.tsv")
   local env_now ran=0 st prod args=("${ORIG_ARGS[@]}")
+  # families, assign, index and flag all run minimap2: a missing one fails at start, not after the assembly (round-13 audit)
+  command -v "${RUSTLE_MINIMAP2:-minimap2}" > /dev/null || { echo "[rustle_pipeline] no ${RUSTLE_MINIMAP2:-minimap2} on PATH (families, assign and flag run it); set RUSTLE_MINIMAP2 or PATH" >&2; exit 2; }
   if [ "$NO_FLAG" = 0 ]; then
-    # no --index: the default profile builds PREFIX.splice.mmi (index stage); --low-mem aligns against the FASTA itself,
+    # no --index: the default profile builds the shared FASTA.splice.I<GB>G.mmi (index stage); --low-mem aligns against the FASTA itself,
     # indexed on the fly in INDEX_GB-Gbp parts (no index file on disk)
     if [ -z "$INDEX" ] && [ "$LOW_MEM" = 1 ]; then INDEX=$FASTA; args+=(--index "$FASTA")
-    elif [ -z "$INDEX" ]; then plan+=(index:"$OUT.splice.mmi"); INDEX=$OUT.splice.mmi; args+=(--index "$OUT.splice.mmi"); fi
+    elif [ -z "$INDEX" ]; then INDEX=$(index_path); plan+=(index:"$INDEX"); args+=(--index "$INDEX"); fi
     plan+=(flag:"$OUT.flag.missing_copy.tsv")
   fi
   local started=1; [ -n "$FROM_STAGE" ] && started=0
@@ -1177,7 +1211,7 @@ stage_all() {
   say "all: done. stage, wall, peak memory:"
   for item in "${plan[@]}"; do
     st=${item%%:*}
-    awk -F'\t' -v st="$st" '$1=="wall_s"{w=$2} $1=="peak_rss_kb"{m=$2} END{printf "[rustle_pipeline]   %-11s %8.0f s  %6.1f GB\n", st, w, m/1048576}' "$OUT.$st.time" >&2
+    awk -F'\t' -v st="$st" '$1=="wall_s"{w=$2} $1=="peak_rss_kb"{m=$2} END{printf "[rustle_pipeline]   %-11s %8.0f s  %s\n", st, w, m=="" ? "  peak n/a (no GNU time)" : sprintf("%6.1f GB", m/1048576)}' "$OUT.$st.time" >&2
   done
 }
 case "$STAGE" in

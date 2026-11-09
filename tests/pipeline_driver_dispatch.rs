@@ -57,6 +57,7 @@ fn dispatch(tag: &str, stage: &str, legacy_catalog: bool, candidates: bool) -> (
     let script = format!(
         "set -euo pipefail\n\
          export LOG=$1; STAGE=$2; LEGACY_CATALOG=$3; CANDIDATES=$4\n\
+         export RUSTLE_MINIMAP2=true  # stage_all checks for minimap2 up front
          OUT={out}; RESUME=0; NO_FLAG=0; INDEX=given.mmi; LOW_MEM=0; FASTA=genome.fa; ORIG_ARGS=(); FROM_STAGE=; TO_STAGE=\n\
          say() {{ :; }}\n\
          stage_all_env() {{ echo env; }}\n\
@@ -145,7 +146,7 @@ fn all_resumes_at_the_failed_stage_and_redoes_a_product_rewritten_outside_it() {
     .unwrap();
     let script = format!(
         "set -euo pipefail\n\
-         export LOG=$1 OUT={out}; STAGE=all; LEGACY_CATALOG=0; CANDIDATES=0\n\
+         export LOG=$1 OUT={out} RUSTLE_MINIMAP2=true; STAGE=all; LEGACY_CATALOG=0; CANDIDATES=0\n\
          RESUME=1; NO_FLAG=0; INDEX=given.mmi; LOW_MEM=0; FASTA=genome.fa; ORIG_ARGS=(); FROM_STAGE=; TO_STAGE=\n\
          say() {{ :; }}\n\
          stage_all_env() {{ echo \"env $SETTING\"; }}\n\

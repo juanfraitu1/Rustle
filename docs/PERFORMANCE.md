@@ -5,6 +5,18 @@ on A119b (human testis, CHM13) unless stated. Switches marked **identical** were
 
 ## Where the time goes
 
+Current (`all` on A119b, 72 threads, `audit/e2e0`, 2026-11-09; censat exclusion and SD damping on):
+
+| stage | A119b wall | what dominates |
+|---|---|---|
+| assemble | 595 s | BAM decoding; the sweep is I/O-bound on /anvme (~610 MB/s one stream) |
+| families | 465 s -> **385 s** (audit 22: minimap2 `-K 4G`, one query batch, identical) | all-vs-all minimap2 over locus spans: the index build (~90 s on ~3 threads) and the last batch's tail leave the node idle |
+| assign | 549 s | the last region, `~xchrom~MCL13` (150 copies): read-star 123 s of its 150 s |
+| index | 124 s, once per genome | minimap2 `-d`; shared next to the FASTA |
+| flag scan | 283-314 s, peak 16.6 GB | BAM sweeps. Audit rounds 17-20: before them the old scan ran over 5 h on chr13 alone and hit the job limit |
+
+History (2026-11-02, before the region threads, the censat exclusion and the window fixes):
+
 | stage | A119b wall | what dominates |
 |---|---|---|
 | assemble (genome-wide, good seeding pool) | ~47 min per arm (32 threads, two arms on one node) | BAM decoding (register 983) |
@@ -31,10 +43,12 @@ threads, and the region's families ran one after another (`~/asg_prof/`, perf: 6
 | slim BAM (`slimbam`, ratio 0.8) | drops secondaries no step reads | chr20: 12% fewer records; assemble 46 -> 36-44 s | assemble **identical**; assign **changes** (6 of 36 rows lost) |
 | mm2-fast (`RUSTLE_MINIMAP2`, `~/tools_home/mm2fast/src/minimap2`, v2.24 + AVX-512) | accelerated chaining | MCL1 at 64 threads: read-star 299 s vs **256 s for our minimap2 2.30 default**; 2.30 with the `--max-chain-skip=1000000` mm2-fast requires takes 3,031 s, so mm2-fast only accelerates a setting we do not use. **Not a lever.** | **changes** (15,946 of ~31,800 assignment lines differ vs 2.30; statuses nearly equal) |
 
-| `RUSTLE_WINDOW_SWEEP=1` (r1507) | one BGZF sweep per chromosome serves every family's copy windows (window store) | slim A119b panel: assign 1,952 -> 391 s (5.0x; MCL0 window fetch 178 -> 2.5 s), 6 tables identical. Genome-wide A119b: fetch 11,285 -> 116 s but OOM-killed (250 GB) on `~xchrom~MCL3` (579k reads); OFF arm 19,358 s | **identical** on the panel; genome-wide not completed: **opt-in** until the store releases finished chromosomes |
+| `RUSTLE_WINDOW_SWEEP=1` (r1507) | one BGZF sweep per chromosome serves every family's copy windows (window store) | slim A119b panel: assign 1,952 -> 391 s (5.0x; MCL0 window fetch 178 -> 2.5 s), 6 tables identical. Genome-wide A119b: fetch 11,285 -> 116 s but OOM-killed (250 GB) on `~xchrom~MCL3` (579k reads); OFF arm 19,358 s | **identical** on the panel. Audit round 12 (2026-11-09, current defaults, genome-wide A119b): no OOM (38.8 GB) and 7/7 tables identical, but **2,914 s vs 546 s** for the default fetch. **Opt-in**, not a lever at current defaults |
 | multithreaded BAM reader (r1505) | regions >= 2 Mb only | 1.5x on multi-Mb regions, 3.5x slower on copy windows (seek restarts) | **identical** (5 tables) |
 | `candidate_copies` phase 1 over a family pool (r1506) | clusters step parallel across families | clusters 385 -> 189 s, total 846 -> 646 s on the r1504 panel | **identical** (9 products) |
 | `candidate_copies --molecules --min-ms-ratio 0.5` (r1513) | nets keep informative secondaries only | 447 vs 416 s on 40 families: nets are primaries-bound, no gain | **changes** (6 vs 3 reference-absent contigs) |
+| flag scan, pass 2 one query over the fired loci (audit 17-19) | chr13 > 5 h -> 370 s; A119b chr20-22+X 823 -> 225 s | one BAM query per mixture-firing locus re-read the nested chr13 hotspot (4.4 TB read); per-span queries re-read the BAI coarse bins (84 GB for chr13's 9 GB) | **identical** (gorilla 8 contigs, A119b chr20-22+X, chr13 hotspot window) |
+| flag scan, 30 Mb locus groups in parallel (audit 20) | whole-genome A119b 509 -> 283 s, peak 16.6 GB | one thread per contig left chr13 decoding alone; 10 Mb groups read 511 GB for 294 s | **identical** |
 
 Threads multiply: region threads x family threads x star threads should not exceed the node's cores by much (the panel run at
 8 x 8 x 8 was slower than 8 x 1 x 8). Memory genome-wide (250 GB node): eight heavy cross-chromosome fetches at once ~280 GB

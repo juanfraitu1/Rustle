@@ -21,7 +21,7 @@ fn scratch(name: &str) -> PathBuf {
     std::fs::write(
         &stub,
         "#!/bin/bash\n\
-         if [ \"$1\" = --help ]; then echo '--emit-units <out>.copies.tsv --min-cov-shorter --emit-container --emit-relations'; exit 0; fi\n\
+         if [ \"$1\" = --help ]; then echo '--emit-units <out>.copies.tsv --min-cov-shorter --emit-container --emit-relations --min-exon-share --sd-damp-bed'; exit 0; fi\n\
          ARGS=\"$*\"; echo \"$ARGS\" > \"$(dirname \"$0\")/args.txt\"\n\
          while [ $# -gt 0 ]; do case \"$1\" in --out) OUT=$2; shift 2;; *) shift;; esac; done\n\
          printf 'cluster_id\\tsize\\nMCL0\\t2\\n' > $OUT.clusters.tsv\n\
@@ -42,7 +42,7 @@ fn scratch(name: &str) -> PathBuf {
 fn families(dir: &Path, env: &[(&str, &str)]) -> Output {
     let mut c = Command::new("bash");
     c.arg(DRIVER)
-        .args(["families", "--bam", "x.bam", "--fasta", "g.fa", "--out"])
+        .args(["families", "--bam", "x.bam", "--fasta", "g.fa", "--threads", "4", "--out"])
         .arg(dir.join("run"))
         .arg("--bin")
         .arg(dir.join("bin"))
@@ -50,6 +50,11 @@ fn families(dir: &Path, env: &[(&str, &str)]) -> Output {
         .env_remove("RUSTLE_BRIDGE_UNITS_LIST")
         .env_remove("RUSTLE_FAMILY_RELATIONS")
         .env_remove("RUSTLE_GTF_REGROUP")
+        .env_remove("RUSTLE_FAMILY_EDGE_RULE")
+        .env_remove("RUSTLE_MIN_SHARED_EXON_FRAC")
+        .env_remove("RUSTLE_MIN_EXON_SHARE")
+        .env_remove("RUSTLE_INFLATION")
+        .env_remove("RUSTLE_SEDEF_BED")
         .env("TMPDIR", dir);
     for (k, v) in env {
         c.env(k, v);
@@ -80,12 +85,13 @@ fn gtfs(dir: &Path, families_newer: bool) {
         "c1\trustle\ttranscript\t1\t2\t.\t+\t.\tgene_id \"g\"; transcript_id \"t\";\n",
     )
     .unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(50));
     std::fs::write(
         dir.join(second),
         "c1\trustle\ttranscript\t1\t2\t.\t+\t.\tgene_id \"g\"; transcript_id \"t\";\n",
     )
     .unwrap();
+    // back-date the first file: a 50 ms sleep left equal mtimes on filesystems with coarse timestamps (audit round 3)
+    assert!(Command::new("touch").args(["-d", "2000-01-01"]).arg(dir.join(first)).status().unwrap().success());
 }
 
 #[test]
@@ -129,7 +135,7 @@ fn unset_the_families_command_is_the_one_the_driver_always_ran_and_relations_add
     let dir = scratch("command");
     gtfs(&dir, true);
     let base = format!(
-        "--from-gtf {0}/run.families.gtf --fasta g.fa --threads 4 --min-exonic-bp 1 --min-shared-exon-frac 0.60 --emit-units --out {0}/run.fam",
+        "--from-gtf {0}/run.families.gtf --fasta g.fa --threads 4 --min-exonic-bp 1 --min-shared-exon-frac 0.0 --min-exon-share 0.5 --inflation 2.0 --emit-units --out {0}/run.fam",
         dir.display()
     );
     let o = families(&dir, &[]);
@@ -246,4 +252,35 @@ fn the_units_list_belongs_to_f1units_and_to_a_file() {
         "{}",
         err(&o)
     );
+}
+
+#[test]
+fn a_sedef_sidecar_turns_on_sd_damping_unless_the_variable_is_set() {
+    let dir = scratch("sedef_sidecar");
+    gtfs(&dir, true);
+    let run_in = |env: &[(&str, &str)]| {
+        let mut c = Command::new("bash");
+        c.current_dir(&dir)
+            .arg(DRIVER)
+            .args(["families", "--bam", "x.bam", "--fasta", "g.fa", "--threads", "4", "--out"])
+            .arg(dir.join("run"))
+            .arg("--bin")
+            .arg(dir.join("bin"))
+            .env_remove("RUSTLE_BRIDGE_REGROUP")
+            .env_remove("RUSTLE_SEDEF_BED")
+            .env_remove("RUSTLE_SD_DAMP")
+            .env("TMPDIR", &dir);
+        for (k, v) in env {
+            c.env(k, v);
+        }
+        c.output().expect("bash failed to spawn")
+    };
+    let o = run_in(&[]);
+    assert!(o.status.success() && !recorded(&dir).contains("--sd-damp-bed"), "no sidecar, no damping: {}", err(&o));
+    std::fs::write(dir.join("g.fa.sedef.bed"), "c1\t0\t10\tc1\t20\t30\n").unwrap();
+    let o = run_in(&[]);
+    assert!(o.status.success(), "{}", err(&o));
+    assert!(recorded(&dir).contains("--sd-damp-bed g.fa.sedef.bed --sd-damp 0.25"), "{}", recorded(&dir));
+    let o = run_in(&[("RUSTLE_SEDEF_BED", "")]);
+    assert!(o.status.success() && !recorded(&dir).contains("--sd-damp-bed"), "an empty variable turns it off");
 }

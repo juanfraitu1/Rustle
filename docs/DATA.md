@@ -228,7 +228,9 @@ pair coordinates in 1-6, identity (`fracMatch`) in 21, CIGAR in 33, and a traili
 `SdPairs::from_bed_str` skips.
 
 **Families default (user decision 2026-11-09):** SD damping is on whenever a genome's SEDEF BED is given:
-`tools/rustle_pipeline.sh` with `RUSTLE_SEDEF_BED=<file below>` (factor `RUSTLE_SD_DAMP`, default 0.25; 1 = off), or
+`tools/rustle_pipeline.sh` with `RUSTLE_SEDEF_BED=<file below>` (factor `RUSTLE_SD_DAMP`, default 0.25; 1 = off), or with
+the file linked as the sidecar `<FASTA>.sedef.bed`, used when the variable is unset (`RUSTLE_SEDEF_BED=` turns it off;
+CHM13's is linked at `~/data/chm13/chm13v2.0.fa.sedef.bed`), or
 `mcl_families --sd-damp-bed <file>` directly (`--sd-damp` defaults to 0.25 with a BED). Human CHM13 runs use
 `final_human.bed`, gorilla runs `gorilla/final.bed`, HG002 runs `hg002pat/final.bed`.
 

@@ -9,10 +9,17 @@
 # PREFIX.copy_counts.tsv. BAMs must share the genome (@SQ lines), be indexed, hold mapped reads and share no read name.
 # v1 limits: no --candidates, --legacy-catalog, --as-table, --to / --from; the flag stage is not run.
 set -euo pipefail
+# run a copy of this script, so an edit or `git pull` during a multi-hour run cannot change the lines bash has yet to read
+# (round 14 audit; the driver does the same, round 9)
+if [ "${RS_SNAPSHOT:-}" != "$0" ]; then
+  export RS_DIR RS_SNAPSHOT RS_OWNER_PID=$$; RS_DIR=$(cd "$(dirname "$0")" && pwd)
+  RS_SNAPSHOT=$(mktemp "${TMPDIR:-/tmp}/rustle_samples.XXXXXX") && cp -p "$0" "$RS_SNAPSHOT" && exec bash "$RS_SNAPSHOT" "$@"
+fi
+if [ "${RS_OWNER_PID:-}" = "$$" ]; then trap 'rm -f "$RS_SNAPSHOT"' EXIT; fi
 STAGE=${1:?stage}; shift
 say() { echo "[rustle_samples] $*" >&2; [ -n "${OUT:-}" ] && echo "$(date '+%F %T') $*" >> "$OUT.samples.log"; return 0; }
 die() { echo "[rustle_samples] $*" >&2; exit 2; }
-BAMS=""; NAMES=""; OUT=""; BIN="$(dirname "$0")/../target/release"; THREADS=4; REST=()
+BAMS=""; NAMES=""; OUT=""; BIN="$RS_DIR/../target/release"; THREADS=4; REST=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --bam) BAMS=$2; shift 2;; --samples) NAMES=$2; shift 2;; --out) OUT=$2; shift 2;;
@@ -96,7 +103,7 @@ else
 fi
 [ "$STAGE" = pool ] && exit 0
 
-P=$(dirname "$0")/rustle_pipeline.sh
+P=$RS_DIR/rustle_pipeline.sh
 say "all: assemble + families on the pooled reads"
 # the stages one by one, not `all --to families`: run_all times each stage with /usr/bin/time, absent on some compute nodes
 for st in assemble families; do bash "$P" "$st" --bam "$POOLED" --out "$OUT" "${REST[@]}"; done

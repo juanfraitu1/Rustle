@@ -352,6 +352,7 @@ fn record_may_attribute_to_locus(
 /// Primary reads (`-F 2308`; under `--assignments` also non-primary records) overlapping a region, capped by name hash order. With `only`, records whose name is not
 /// in the set are skipped BEFORE the RecordBuf decode (the decode is the cost: a structural-only locus needs its
 /// few insertion-carrying reads, not the whole pile).
+#[cfg(test)] // the per-locus query pass 2 used before audit round 17; its test pins the overlap rule the sweeps share
 fn pile(
     reader: &mut noodles_bam::io::Reader<
         noodles_bgzf::MultithreadedReader<std::io::BufReader<std::fs::File>>,
@@ -400,6 +401,17 @@ fn pile(
     out.dedup_by(|a, b| a.name == b.name);
     out.truncate(cap);
     Ok(out)
+}
+
+/// The pass-1 mixture trigger on a locus's capped de values (two_means split: low-mean group in [m_min, 0.5], gap delta_min,
+/// >= min_sub reads above the split).
+fn mixture_fires(de: &[f64], args: &Args) -> bool {
+    match two_means(de) {
+        Some((m, _, delta, mid)) => {
+            m >= args.m_min && m <= 0.5 && delta >= args.delta_min && de.iter().filter(|&&d| d > mid).count() >= args.min_sub
+        }
+        None => false,
+    }
 }
 
 /// Order for the read caps: a stable hash of the name, so a capped pile is a pseudo-random subset instead of the reads of
@@ -589,14 +601,15 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
     let contigs: rustle::types::DetHashSet<String> = loci.iter().map(|l| l.1.clone()).collect();
     let genome = rustle::genome::GenomeIndex::from_fasta_contigs(&args.fasta, &contigs)?;
     let bai = format!("{}.bai", args.bam);
-    let file = std::fs::File::open(&args.bam)?;
-    let worker = std::num::NonZeroUsize::new(args.threads.max(1)).unwrap();
-    let bgzf = noodles_bgzf::MultithreadedReader::with_worker_count(
-        worker,
-        std::io::BufReader::with_capacity(1 << 20, file),
-    );
-    let mut reader = noodles_bam::io::Reader::from(bgzf);
-    let header = reader.read_header()?;
+    let open_reader = |workers: usize| -> Result<noodles_bam::io::Reader<noodles_bgzf::MultithreadedReader<std::io::BufReader<std::fs::File>>>> {
+        let file = std::fs::File::open(&args.bam)?;
+        let bgzf = noodles_bgzf::MultithreadedReader::with_worker_count(
+            std::num::NonZeroUsize::new(workers.max(1)).unwrap(),
+            std::io::BufReader::with_capacity(1 << 20, file),
+        );
+        Ok(noodles_bam::io::Reader::from(bgzf))
+    };
+    let header = open_reader(1)?.read_header()?;
     let index = noodles_bam::bai::read(&bai)?;
     let cons_path = format!("{}.consensus.fa", args.out);
     let mut cons_fa = std::fs::File::create(&cons_path)?;
@@ -613,14 +626,41 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
             None => by_contig.push((l.1.clone(), vec![i])),
         }
     }
-    for (chrom, idxs) in &by_contig {
+    // round 20: split each contig's position-sorted loci into groups starting every 30 Mb. Loci are independent, so groups
+    // scan in parallel and, joined in order, give the same rows in the same order. Whole-genome A119b 509 -> 283 s
+    // (10 Mb: 294 s but 511 GB read vs 267 GB), byte-identical.
+    let group_bp: u64 = 30_000_000;
+    {
+        let mut split: Vec<(String, Vec<usize>)> = Vec::new();
+        for (c, mut idxs) in by_contig {
+            idxs.sort_by_key(|&i| (loci[i].2, loci[i].3));
+            let mut g0 = u64::MAX;
+            for i in idxs {
+                if g0 == u64::MAX || loci[i].2 >= g0 + group_bp {
+                    g0 = loci[i].2;
+                    split.push((c.clone(), Vec::new()));
+                }
+                split.last_mut().unwrap().1.push(i);
+            }
+        }
+        by_contig = split;
+    }
+    // Contigs are independent (each has its own BAM query, piles and rows): scanned in parallel, each with its own reader,
+    // and joined in by_contig order, so scan.tsv and consensus.fa are byte-identical to the serial sweep.
+    struct ContigOut { rows: Vec<Row>, cons: Vec<u8>, n: [usize; 7] }
+    let scan_contig = |chrom: &String, idxs: &Vec<usize>| -> Result<ContigOut> {
+        let mut rows: Vec<Row> = Vec::new();
+        let mut cons_fa: Vec<u8> = Vec::new();
+        let (mut n_scanned, mut n_enough, mut n_fired) = (0usize, 0usize, 0usize);
+        let (mut n_no_contig, mut n_rec, mut n_eqx, mut n_de) = (0usize, 0usize, 0usize, 0usize);
+        let mut reader = open_reader(2)?;
         let Some(len) = header
             .reference_sequences()
             .get(chrom.as_bytes())
             .map(|r| usize::from(r.length()))
         else {
             n_no_contig += idxs.len();
-            continue;
+            return Ok(ContigOut { rows, cons: cons_fa, n: [0, 0, 0, n_no_contig, 0, 0, 0] });
         };
         let mut order: Vec<usize> = idxs.clone();
         order.sort_by_key(|&i| (loci[i].2, loci[i].3));
@@ -629,7 +669,9 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
         // locus they overlap; the structural branch reads them from here instead of re-querying the BAM per locus
         let mut ins_reads: Vec<Vec<std::sync::Arc<PileRead>>> = vec![Vec::new(); order.len()];
         const INS_CAP: usize = 300;
-        let region: noodles_core::Region = format!("{chrom}:1-{len}").parse()?;
+        // the sweep spans this call's loci only (one round-20 group of a contig)
+        let (q0, q1) = (loci[order[0]].2, order.iter().map(|&i| loci[i].3).max().unwrap_or(0).min(len as u64));
+        let region: noodles_core::Region = format!("{chrom}:{}-{}", q0 + 1, q1.max(q0 + 1)).parse()?;
         let (mut ptr, mut active): (usize, Vec<usize>) = (0, Vec::new());
         for result in reader.query(&header, &index, &region)? {
             let record = result?;
@@ -729,6 +771,85 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
             }
         }
         let mut ins_reads = ins_reads;
+        // PASS 2 as ONE more sweep of the contig (audit round 17): a mixture-firing locus needs its pile decoded. Querying
+        // the BAM per locus re-read the same blocks for every overlapping locus (A119b chr13 hotspot: 4.4 TB read from a
+        // 96 GB BAM, one thread waiting on I/O). pile()'s capped set is pass 1's capped set (same records admitted, same
+        // overlap rule, same name-hash order and cap), so the sweep keeps only those names; sorted, deduped and capped
+        // below exactly as pile() does, so the piles are the same.
+        let mut piles = piles;
+        for p in piles.iter_mut() {
+            p.sort_by_cached_key(|x| (cap_key(&x.0), x.0.clone()));
+            p.dedup_by(|a, b| a.0 == b.0); // one entry per molecule (as in `pile`)
+        }
+        let wanted: Vec<Option<std::collections::HashSet<String>>> = piles
+            .iter()
+            .map(|p| {
+                let top = &p[..p.len().min(args.max_reads)];
+                (p.len() >= args.min_reads && mixture_fires(&top.iter().map(|x| x.1).collect::<Vec<_>>(), args))
+                    .then(|| top.iter().map(|x| x.0.clone()).collect())
+            })
+            .collect();
+        let mut got: Vec<Vec<PileRead>> = vec![Vec::new(); order.len()];
+        if wanted.iter().any(|w| w.is_some()) {
+            let fired: Vec<usize> = (0..order.len()).filter(|&k| wanted[k].is_some()).collect();
+            // rounds 18-19: one query from the first fired locus to the last. Per-span queries (100 kb merge gap) re-read
+            // the BAI's coarse bins each time: A119b chr13 read 84 GB for its 9 GB of reads (455 s), one span 15 GB (370 s).
+            let (s0, e0) = (loci[order[fired[0]]].2, fired.iter().map(|&k| loci[order[k]].3).max().unwrap_or(0));
+            let span_region: noodles_core::Region = format!("{chrom}:{}-{}", s0 + 1, e0.max(s0 + 1)).parse()?;
+            let (mut ptr, mut active): (usize, Vec<usize>) = (0, Vec::new());
+            for result in reader.query(&header, &index, &span_region)? {
+                let record = result?;
+                let flags = record.flags();
+                if flags.is_unmapped() {
+                    continue;
+                }
+                let Some(start) = record.alignment_start() else {
+                    continue;
+                };
+                let rs = (usize::from(start?) as u64).saturating_sub(1);
+                let mut span = 0u64;
+                for op in record.cigar().iter() {
+                    use noodles_sam::alignment::record::cigar::op::Kind;
+                    let op = op?;
+                    if matches!(op.kind(), Kind::Match | Kind::SequenceMatch | Kind::SequenceMismatch | Kind::Deletion | Kind::Skip) {
+                        span += op.len() as u64;
+                    }
+                }
+                let re = rs + span;
+                while ptr < fired.len() && loci[order[fired[ptr]]].2 < re {
+                    active.push(fired[ptr]);
+                    ptr += 1;
+                }
+                active.retain(|&k| loci[order[k]].3 > rs);
+                if active.is_empty() {
+                    continue;
+                }
+                let name = record.name().map(|n| n.to_string()).unwrap_or_default();
+                let mut decoded: Option<Option<PileRead>> = None;
+                for &k in &active {
+                    let l = &loci[order[k]];
+                    if !(l.2 < re && l.3 > rs) || !wanted[k].as_ref().is_some_and(|w| w.contains(&name)) {
+                        continue;
+                    }
+                    if !record_may_attribute_to_locus(&name, &flags, locus_keys[order[k]].as_ref(), assignments.as_ref()) {
+                        continue;
+                    }
+                    if decoded.is_none() {
+                        let rb = RecordBuf::try_from_alignment_record(&header, &record)?;
+                        decoded = Some(aligned_read_from_record(&rb).map(|(read, _mapq, name, _as, de, _sup, _sec)| PileRead {
+                            name,
+                            de: de as f64,
+                            ref_start: read.ref_start,
+                            ops: read.cigar,
+                            seq: read.seq,
+                        }));
+                    }
+                    if let Some(Some(r)) = decoded.as_ref() {
+                        got[k].push(r.clone());
+                    }
+                }
+            }
+        }
         for (k, mut pile1) in piles.into_iter().enumerate() {
             let mut ins_here: Vec<PileRead> = std::mem::take(&mut ins_reads[k])
                 .into_iter()
@@ -738,26 +859,13 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
             ins_here.dedup_by(|a, b| a.name == b.name);
             let (id, chrom, start, end, name) = &loci[order[k]];
             n_scanned += 1;
-            if n_scanned % 2000 == 0 {
-                eprintln!("[missing_copy_flag] {n_scanned}/{} loci, {n_enough} with reads, {n_fired} fired", loci.len());
-            }
-            pile1.sort_by_cached_key(|x| (cap_key(&x.0), x.0.clone()));
-            pile1.dedup_by(|a, b| a.0 == b.0); // one entry per molecule (as in `pile`)
             if pile1.len() < args.min_reads {
                 continue;
             }
             n_enough += 1;
             pile1.truncate(args.max_reads);
             let de: Vec<f64> = pile1.iter().map(|x| x.1).collect();
-            let fires_mixture = match two_means(&de) {
-                Some((m, _, delta, mid)) => {
-                    m >= args.m_min
-                        && m <= 0.5
-                        && delta >= args.delta_min
-                        && de.iter().filter(|&&d| d > mid).count() >= args.min_sub
-                }
-                None => false,
-            };
+            let fires_mixture = mixture_fires(&de, args);
             let bigins: std::collections::HashSet<&str> = pile1
                 .iter()
                 .filter(|x| x.2 >= 50)
@@ -808,18 +916,11 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
             // fires only on the structural trigger decodes just its insertion-carrying reads; the mixture branch
             // needs every read (host and sub-pile), so it decodes the whole pile.
             let reads = if fires_mixture {
-                pile(
-                    &mut reader,
-                    &header,
-                    &index,
-                    chrom,
-                    *start,
-                    *end,
-                    args.max_reads,
-                    None,
-                    locus_keys[order[k]].as_ref(),
-                    assignments.as_ref(),
-                )?
+                let mut r = std::mem::take(&mut got[k]);
+                r.sort_by_cached_key(|r| (cap_key(&r.name), r.name.clone()));
+                r.dedup_by(|a, b| a.name == b.name);
+                r.truncate(args.max_reads);
+                r
             } else {
                 ins_here // structural-only: the insertion reads captured in pass 1, no second BAM query
             };
@@ -983,6 +1084,20 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
             }
             rows.push(row);
         }
+        eprintln!("[missing_copy_flag] {chrom}: {n_scanned} loci, {n_enough} with reads, {n_fired} fired");
+        Ok(ContigOut { rows, cons: cons_fa, n: [n_scanned, n_enough, n_fired, n_no_contig, n_rec, n_eqx, n_de] })
+    };
+    let pool = rayon::ThreadPoolBuilder::new().num_threads(args.threads.max(1)).build()?;
+    let outs: Vec<Result<ContigOut>> = pool.install(|| {
+        use rayon::prelude::*;
+        by_contig.par_iter().map(|(c, i)| scan_contig(c, i)).collect()
+    });
+    for o in outs {
+        let o = o?;
+        rows.extend(o.rows);
+        cons_fa.write_all(&o.cons)?;
+        n_scanned += o.n[0]; n_enough += o.n[1]; n_fired += o.n[2]; n_no_contig += o.n[3];
+        n_rec += o.n[4]; n_eqx += o.n[5]; n_de += o.n[6];
     }
     // warnings, not errors: a hand-made or non-minimap2 BAM still runs, but the reader sees why nothing fires
     if n_rec > 0 && n_eqx == 0 {

@@ -58018,6 +58018,10 @@ pub mod fam_from_gtf {
         // shared-exon fraction; every chain of such a pair is aligned, so each record the graph can use is the stock
         // record. The key names the gate file by its content, never its path.
         let mut key_cmd = format!("{mm2} {}", mm_args.join(" "));
+        // audit round 22: one query batch, not minimap2's 500 Mb default. Each batch waits for its slowest query (A119b's
+        // 1.8 GB loci FASTA: 4 batches, three 15-20 s near-idle gaps). 399 -> 326 s, PAF byte-identical, +2.5 GB peak.
+        // Not in the cache key: the output does not depend on it.
+        mm_args.extend(["-K".to_string(), "4G".to_string()]);
         let mut gate_version: Option<String> = None;
         if let Some((margin, frac)) = exon_gate {
             match minimap2_gate_version(&mm2) {
