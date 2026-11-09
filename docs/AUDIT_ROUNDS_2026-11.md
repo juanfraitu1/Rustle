@@ -619,3 +619,20 @@ gated PAF, all 7 assign tables (params included), the flag scan table and consen
     run does not reuse a 72-thread run's PAF: it aligns once more. That is acceptable for a memory profile. New test
     `low_mem_caps_family_threads_at_16` (stub `mcl_families`, records `--threads`): it fails with the cap removed and
     passes with it. Driver units 5/5, dispatch 8/8. PERFORMANCE.md gains a `--low-mem` row.
+
+## Round 44: the low-mem run with families capped
+
+53. **Result (`audit/r44`, job 4455851): `all --low-mem` on gorilla with families at 16 threads.** 1,648 s, exit 0
+    (r40: 1,549 s). Families took 224 s (134). All 9 compared products are byte-identical to r40, flag verdicts
+    included. Node memory in use during families is now about 25 GB (r40: 44 GB). The run's peak moved to flag's
+    align step: 39.7 GB at 1,563 s, with a 6.4 GB baseline. Queued (job 4455947): flag's minimap2 call (`-I 1G`,
+    on-the-fly index parts) alone at 72/16/4 threads, peak RSS each, PAF compared.
+
+## Round 45: flag's align under `--low-mem`
+
+54. **Flag's minimap2 call (`-I 1G` on-the-fly parts) scales with threads too** (`audit/r45`, job 4455947): 72 threads
+    171 s / 43.6 GB, 16 threads 203 s / 25.4 GB, 4 threads 317 s / 18.8 GB, PAF byte-identical in all. Applied: one
+    driver variable, `MM_THREADS`, caps families' all-vs-all and flag's align at 16 threads under `--low-mem` (replacing
+    round 43's families-only line). Verified (job 4455993): `flag --low-mem` on a copy of r44 wrote a verdict table
+    byte-identical to r44's, peak RSS 24.9 GB. A first attempt (job 4455987) exited 2 because a named `flag` needs
+    `--index`; its "same" compared the untouched copy and was discarded. Driver tests: dispatch 8, samples 10, units 5.

@@ -319,10 +319,11 @@ else
   [ -n "$BAM" ] && [ -n "$FASTA" ] && [ -n "$OUT" ] || { echo "need --bam, --fasta, --out" >&2; exit 2; }
 fi
 # --low-mem (docs/archive/2026-11/LEDGER_O1.md:3502 (GENOMEWIDE_FAST_2026-10-12.md)): the splice index in 1-Gbp parts (flag holds one part at a time) and one
-# assign region at a time; families' all-vs-all on at most 16 threads (minimap2 memory scales with threads: gorilla 38 GB at 72,
-# 18 GB at 16, PAF identical; audit round 43); every other setting unchanged
+# assign region at a time; MM_THREADS caps families' all-vs-all and flag's align at 16 threads (their minimap2 memory scales with
+# threads, outputs identical; gorilla families 38 -> 18 GB, flag align 44 -> 25 GB; audit rounds 43, 45); every other setting unchanged
 [[ "$MAX_WINDOW_RECORDS" =~ ^[0-9]+$ ]] || { echo "[rustle_pipeline] --max-window-records must be a whole number (got '$MAX_WINDOW_RECORDS')" >&2; exit 2; }
 if [ "$LOW_MEM" = 1 ]; then INDEX_GB=1; export RUSTLE_REGION_THREADS=1; [ "$MAX_WINDOW_RECORDS" -gt 0 ] || MAX_WINDOW_RECORDS=500000; fi
+MM_THREADS=$JOB_THREADS; [ "$LOW_MEM" = 1 ] && [ "$MM_THREADS" -gt 16 ] && MM_THREADS=16
 [[ "$INDEX_GB" =~ ^[1-9][0-9]*$ ]] || { echo "[rustle_pipeline] --index-gb must be a positive integer (got '$INDEX_GB')" >&2; exit 2; }
 # skip lists that `merged` and the --candidates assign do not apply: refused here, before assemble and families run (round-23 audit);
 # the stage functions refuse them again. Same `case "$STAGE"` form as the checks above.
@@ -780,8 +781,7 @@ stage_families() {
   # an earlier run's copy table must not survive a run that writes none (a binary older than the copy table): assign would read it
   rm -f "$OUT".fam.copies.{tsv,fa,regions,merged.tsv}
   # threads: JOB_THREADS (the all-vs-all is ~98% of this stage; A119b 72 threads 410 s, the same families as 12 threads, 2026-11-09)
-  local fth=$JOB_THREADS
-  [ "$LOW_MEM" = 1 ] && [ "$fth" -gt 16 ] && fth=16
+  local fth=$MM_THREADS
   say "families: $fth threads"
   "$BIN/mcl_families" --from-gtf "$FAM_GTF" --fasta "$FASTA" --threads "$fth" \
     --min-exonic-bp 1 "${edge[@]}" "${copies[@]}" "${FAM_EXTRA[@]}" "${FAM_REL[@]}" "${FAM_COV[@]}" "${rep[@]}" "${sd[@]}" --out "$OUT.fam" > "$OUT.families.log" 2>&1
@@ -1130,7 +1130,7 @@ stage_flag() {
   # a FASTA as --index (the --low-mem profile) is indexed on the fly in INDEX_GB-Gbp parts; a prebuilt .mmi is used as it is
   local igb=()
   case "$INDEX" in *.mmi) ;; *) igb=(--index-gb "$INDEX_GB");; esac
-  "$BIN/missing_copy_flag" --bam "$BAM" --fasta "$FASTA" --loci "$LOCI" --index "$INDEX" --threads "$JOB_THREADS" "${igb[@]}" \
+  "$BIN/missing_copy_flag" --bam "$BAM" --fasta "$FASTA" --loci "$LOCI" --index "$INDEX" --threads "$MM_THREADS" "${igb[@]}" \
     "${CONFIRM[@]}" "${FOREIGN[@]}" "${cand[@]}" --out "$OUT.flag" --from-scan "$OUT.flag_scan" > "$OUT.flag.log" 2>&1
   say "flag: $(grep -o 'verdicts: .*' "$OUT.flag.log")"
   if [ ${#cand[@]} -gt 0 ]; then say "flag: $(grep -o '[0-9]* flagged candidates with a nearest locus; [0-9]* rows name one' "$OUT.flag.log") (o3_candidate column)"; fi
