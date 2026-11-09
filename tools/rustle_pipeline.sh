@@ -179,7 +179,7 @@ case "$STAGE" in
        fi
      done;;
 esac
-BAM=""; FASTA=""; OUT=""; INDEX=""; GFF=""; THREADS=4; BIN="$(dirname "$0")/../target/release"; CONFIRM=(); FOREIGN=(); SEED_POOL=${RUSTLE_SEED_POOL:-good}; SEED_RATIO=${RUSTLE_SEED_AS_RATIO:-0.98}; SEED_RATIO_FLAG=0; AS_TABLE=""; CONTIG=""; CONTIG_FLAG=0; CACHE=1; INSPECT=0
+BAM=""; FASTA=""; OUT=""; INDEX=""; GFF=""; THREADS=4; THREADS_SET=0; BIN="$(dirname "$0")/../target/release"; CONFIRM=(); FOREIGN=(); SEED_POOL=${RUSTLE_SEED_POOL:-good}; SEED_RATIO=${RUSTLE_SEED_AS_RATIO:-0.98}; SEED_RATIO_FLAG=0; AS_TABLE=""; CONTIG=""; CONTIG_FLAG=0; CACHE=1; INSPECT=0
 PIECEWISE=0; MAX_PIECES=0; BUDGET_S=0; PIECE_RECORDS=0; PIECE=""
 LEGACY_CATALOG=0; CANDIDATES=0; DELTA=0.00958; CAND_MAX=1000
 # `all --to STAGE` stops after STAGE (the escape hatch: `--to families` = the loci and their copy table before any read is
@@ -189,7 +189,7 @@ INDEX_GB=8; LOW_MEM=0; NO_FLAG=0; RESUME=1; MAX_WINDOW_RECORDS=${RUSTLE_MAX_WIND
 while [ $# -gt 0 ]; do
   case "$1" in
     --bam) BAM=$2; shift 2;; --fasta) FASTA=$2; shift 2;; --out) OUT=$2; shift 2;; --index) INDEX=$2; shift 2;;
-    --gff) GFF=$2; shift 2;; --threads) THREADS=$2; shift 2;; --bin) BIN=$2; shift 2;;
+    --gff) GFF=$2; shift 2;; --threads) THREADS=$2; THREADS_SET=1; shift 2;; --bin) BIN=$2; shift 2;;
     --confirm) CONFIRM+=(--confirm "$2"); shift 2;; --foreign) FOREIGN+=(--foreign "$2"); shift 2;;
     --seed-pool) SEED_POOL=$2; shift 2;; --seed-as-ratio) SEED_RATIO=$2; SEED_RATIO_FLAG=1; shift 2;; --as-table) AS_TABLE=$2; shift 2;;
     --contig) CONTIG=$2; CONTIG_FLAG=1; shift 2;;
@@ -760,7 +760,12 @@ stage_families() {
   fi
   # an earlier run's copy table must not survive a run that writes none (a binary older than the copy table): assign would read it
   rm -f "$OUT".fam.copies.{tsv,fa,regions,merged.tsv}
-  "$BIN/mcl_families" --from-gtf "$FAM_GTF" --fasta "$FASTA" --threads "$THREADS" \
+  # threads: without --threads, every CPU of the job (the all-vs-all is ~98% of this stage; A119b 72 threads 410 s, the same
+  # families as 12 threads, 2026-11-09). The products do not depend on it, so the settings record keeps $THREADS.
+  local fth=$THREADS
+  [ "$THREADS_SET" = 1 ] || fth=${SLURM_CPUS_PER_TASK:-$(nproc)}
+  say "families: $fth threads"
+  "$BIN/mcl_families" --from-gtf "$FAM_GTF" --fasta "$FASTA" --threads "$fth" \
     --min-exonic-bp 1 "${edge[@]}" "${copies[@]}" "${FAM_EXTRA[@]}" "${FAM_REL[@]}" "${FAM_COV[@]}" "${rep[@]}" "${sd[@]}" --out "$OUT.fam" > "$OUT.families.log" 2>&1
   say "families: $(awk 'NR>1' "$OUT.fam.clusters.tsv" | cut -f1 | sort -u | wc -l) clusters ($OUT.fam.clusters.tsv)"
   if [ ${#copies[@]} -gt 0 ]; then
