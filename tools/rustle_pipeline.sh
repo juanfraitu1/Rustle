@@ -1186,8 +1186,27 @@ stage_all() {
     plan+=(flag:"$OUT.flag.missing_copy.tsv")
   fi
   local started=1; [ -n "$FROM_STAGE" ] && started=0
+  # round-38 audit: the index depends on the FASTA alone, so a missing or stale one is built in the background from the start
+  # (under assemble, which is BAM-bound) instead of after assign: ~130 s off a new genome's first run. Its step below waits.
+  local idx_pid=""
+  if [[ " ${plan[*]} " == *" index:"* ]] && [ -z "$FROM_STAGE$TO_STAGE" ] \
+     && ! { [ -s "$INDEX" ] && [ "$(cat "$INDEX.key" 2>/dev/null)" = "$(index_key)" ]; }; then
+    (
+      if [ -x /usr/bin/time ]; then /usr/bin/time -f $'wall_s\t%e\npeak_rss_kb\t%M' -o "$OUT.index.time.tmp" bash "$0" index "${args[@]}"
+      else st0=$SECONDS; rc=0; bash "$0" index "${args[@]}" || rc=$?; printf 'wall_s\t%s\n' "$(( SECONDS - st0 ))" > "$OUT.index.time.tmp"; exit "$rc"; fi
+    ) 2> "$OUT.index.bg.err" &
+    idx_pid=$!
+    say "all: index building in the background ($INDEX)"
+  fi
   for item in "${plan[@]}"; do
     st=${item%%:*}; prod=${item#*:}; env_now=$(stage_all_env "$st")
+    if [ "$st" = index ] && [ -n "$idx_pid" ]; then
+      ran=1; rm -f "$OUT.$st.env"; say "all: index (waiting for the background build)"
+      local rc=0; wait "$idx_pid" || rc=$?; cat "$OUT.index.bg.err" >&2; rm -f "$OUT.index.bg.err"
+      { cat "$OUT.$st.time.tmp" 2>/dev/null | grep -E '^(wall_s|peak_rss_kb)'; printf 'exit\t%s\n' "$rc"; } > "$OUT.$st.time"; rm -f "$OUT.$st.time.tmp"
+      [ "$rc" = 0 ] || { say "all: $st FAILED (exit $rc); see $OUT.$st.time and $OUT.index.log"; exit "$rc"; }
+      printf '%s\n' "$env_now" > "$OUT.$st.env"; continue
+    fi
     if [ "$started" = 0 ]; then
       if [ "$st" = "$FROM_STAGE" ]; then started=1; else say "all: $st skipped (--from $FROM_STAGE)"; continue; fi
     fi

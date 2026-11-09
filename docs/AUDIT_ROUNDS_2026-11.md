@@ -523,3 +523,21 @@ gated PAF, all 7 assign tables (params included), the flag scan table and consen
     scan table and consensus, verdicts. Walls at 4 threads: as_table 595 s (72 threads: inside assemble's 299 s), index
     158 s (134 s), scan 344 s (flag stage 61 s in all at 72), verdict 30 s. Adopted: a run without `--threads` on a
     72-core gorilla job saves about 10 min.
+
+## Round 38: the index waits behind assign for no reason
+
+47. **The index needs only the FASTA, yet `all` builds it after assign** (`stage_all`). On a genome's first run, or
+    whenever the FASTA's directory takes no file, that is about 130 s of serial wall (gorilla 134 s of 756 s). Applied:
+    when the plan has an index stage, no `--from`/`--to` is given, and the index is missing or its key is stale, `all`
+    builds it in the background from the start. The build uses the same timing wrapper and records. The index step
+    waits for it (before the resume check, so a half-built index is never skipped past) and replays its log. The build
+    still writes a temporary name and renames, so a failed earlier stage leaves a finished index or none. Driver tests
+    pass. They pass `--index`, so this path is checked by a run: job 4455730, gorilla `all` with a fresh
+    `RUSTLE_INDEX_DIR` and `--as-table` on e2e_kb's table (which also exercises that switch). Products and the index
+    are compared with e2e_kb's.
+
+    **Result (job 4455730): passes.** 459 s end to end, exit 0. All 9 compared products plus the index are
+    byte-identical to e2e_kb's. Stage walls: assemble 136 s (table reused through `--as-table`, so that switch works),
+    families 134 s, assign 122 s, index 144 s (background, under assemble; the wait found it done), flag 67 s. Against
+    e2e_kb's 756 s: about 160 s comes from the reused table and 134 s from the overlapped index. A new genome's first
+    run now pays the index under assemble instead of after assign. Adopted.
