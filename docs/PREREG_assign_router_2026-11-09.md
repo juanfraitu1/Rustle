@@ -144,6 +144,7 @@ The in-memory store is withdrawn. Design section 5 becomes: **per-region slice f
   The region converts the lists, then deletes its files.
 - The directory is removed when assign ends, and on error. A rerun starts from an empty directory.
 - Router RSS stays at its buffers. Peak RSS stays today's in-flight regions; nothing else changes.
-- Disk: 43 GB written once per run (the duplicates are written once per region they route to, about 16.7M records) on
-  the run directory's filesystem (/anvme, ~610 MB/s one stream).
+- Disk: a record goes to a region's file once, with the ordinals of every window of that region it overlaps. Bytes
+  written are between 43 GB (distinct) and about 69 GB (16.7M of 10.5M, if no two windows of one region shared a record),
+  once per run, on the run directory's filesystem (/anvme, ~610 MB/s one stream).
 - Acceptance is unchanged: A1-A5 as registered, A3 against 36.4 GB.
