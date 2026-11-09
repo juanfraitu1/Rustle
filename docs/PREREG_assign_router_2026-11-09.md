@@ -156,3 +156,23 @@ Note (2026-11-10, after Addendum 1, before any implementation): the pipeline run
 
 The 10.5M routed records are the Light step's input. Full raw records are needed only for the tied molecules. Which store
 replaces Addendum 1 is the user's call, recorded as Addendum 2 before Task 2 starts.
+
+## Addendum 2 (2026-11-10, user's choice after step 0; supersedes Addendum 1 and design section 5; before any implementation)
+**The router runs two passes over the same merged ranges, mirroring `--tied-prefilter`'s two-step read.**
+
+- **Pass 1 (light).** Each record that overlaps at least one window is converted once, by the same per-record conversion
+  the query path uses: `PrimaryRead` plus a `Light` `BamRead`. A copy goes to every overlapping window, in file order.
+  Then every region pools its windows (`pool_windows`), runs its AS-tied gate, and keeps its `light_spans` and its tied
+  set, exactly as today's first step does.
+- **Pass 2 (full).** Each record whose read name is in the union of all regions' tied sets is converted once (`Full`) and
+  given to each overlapping window whose region's tied set holds that name. This is today's `ReadMode::Only(tied)` read.
+  Each region then applies today's cross-window de-duplication on (name, chrom, ref_start).
+- Regions compute from these prepared inputs. Nothing from `pool_windows` and the gate onward changes.
+- **Scope.** The router applies when `--tied-prefilter` is on (the pipeline default), a `.bai` exists, the run is not
+  streaming, and the two per-window rules are off: `RUSTLE_GTF_SECONDARY_AS_RATIO <= 0` and no `RUSTLE_READ_HOME_TABLE`.
+  Both are unset for assign in the pipeline (`a1.assign.env`). Otherwise assign takes today's query path, which stays.
+- **Memory.** Light store and primaries for 16.7M routed copies, plus the tied full records (the 1.45M reads), all freed
+  per region when it takes them. Bar A3 (<= 36.4 GB) decides.
+- **Time.** Two passes over 19.7 GB compressed (the counting probe alone: 103 s at 16 threads), plus the gate, plus region
+  compute. Bar A2 (<= 250 s) decides.
+- **Unchanged:** acceptance A1-A5 as registered, and the rollout.

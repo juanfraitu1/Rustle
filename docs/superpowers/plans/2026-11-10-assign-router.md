@@ -17,7 +17,7 @@ schedules regions by their exact record counts. The output stays byte-identical.
 **Tech Stack:** Rust; noodles-bam 0.70, noodles-bgzf 0.33, noodles-csi 0.40, noodles-core 0.15; bash and Slurm for the
 acceptance runs.
 
-**Spec:** `docs/PREREG_assign_router_2026-11-09.md` (r1600). It holds the decision rule, and the bars are copied below.
+**Spec:** `docs/PREREG_assign_router_2026-11-09.md` (r1600). It holds the decision rule, and the bars are copied below. **Addendum 2 (two passes) governs Tasks 2-4; their text below is revised to match (2026-11-10).**
 
 ## Global Constraints
 
@@ -93,33 +93,32 @@ acceptance runs.
 - [ ] **Step 5: Clean up and commit.** Revert the dump patch and delete the example (`git diff --stat` shows only the
   prereg). Commit the prereg with message `r1600 step 0: today's assign peak, window bytes, routed records`.
 
-### Task 2: Split the per-window conversion out of the query
+### Task 2: Split the per-record conversion out of the query
 
 **Files:**
-- Modify: `src/family.rs:51045-51180`, the body of `BamIndexCache::reads_in_region_from`.
+- Modify: `src/family.rs`, the `ratio <= 0.0` loop of `BamIndexCache::reads_in_region_from` (near 51080).
 - Test: `tests/bam_window_convert.rs` (new).
 
 **Interfaces:**
-- Produces: in `rustle::denovo_assemble`, on `impl BamIndexCache`:
-  - `pub fn convert_window_records<I: Iterator<Item = std::io::Result<noodles_bam::Record>>>(&self, records: I, chrom: &str, lo: u64, hi: u64, mode: ReadMode<'_>) -> Result<(Vec<PrimaryRead>, Vec<BamRead>)>`
-    holds every rule after the query, unchanged: the `ratio <= 0.0` path, the buffered AS-ratio path, the
-    `ReadMode::Only` skip, the read-home table and `home_report`.
+- Produces, on `impl BamIndexCache` in `rustle::denovo_assemble`:
+  - `pub fn convert_record(&self, record: &noodles_bam::Record, chrom: &str, mode: ReadMode<'_>) -> Result<(Option<PrimaryRead>, Option<BamRead>)>`.
+    It holds the body of that loop when no read-home table is set: the `Only` name skip, `RecordBuf` conversion,
+    `alignment_read_from_record`, `bam_read_for`. The loop calls it; the home-table and buffered-ratio paths are untouched.
   - `pub fn header(&self) -> &noodles_sam::Header`
   - `pub fn index(&self) -> &noodles_bam::bai::Index`
-- `reads_in_region_from` becomes: build the region, run `reader.query(...)`, then
-  `self.convert_window_records(query, chrom, lo, hi, mode)`.
 
-- [ ] **Step 1: Write the failing test.** `convert_equals_reads_in_region` in `tests/bam_window_convert.rs`. For each
-  fixture BAM (`tests/fixtures/{xfam_conflict,o2_origin_resolve,candidate_copies,same_chrom_supplement}/reads.bam`) and
-  each `@SQ` contig, use 3 windows: the whole contig, `[100, 2000)` and `[0, 1)`.
-  - Assert that `cache.reads_in_region(bam, chrom, lo, hi)` equals `cache.convert_window_records(<own noodles query>, chrom, lo, hi, ReadMode::Full)`.
-  - Compare with `format!("{:?}")` on both tuples, and repeat with `ReadMode::Light`.
+- [ ] **Step 1: Write the failing test.** `convert_record_equals_reads_in_region`. For each fixture BAM
+  (`tests/fixtures/{xfam_conflict,o2_origin_resolve,candidate_copies,same_chrom_supplement}/reads.bam`) and each `@SQ`
+  contig, use 3 windows: the whole contig, `[100, 2000)` and `[0, 1)`. Run a noodles query, map every record through
+  `convert_record`, and collect the `Some`s.
+  - The result must equal `cache.reads_in_region_mode(bam, chrom, lo, hi, mode)`, compared with `format!("{:?}")`.
+  - Check this for `Full` and for `Light`, and for `Only(names)` with the names of the first two records.
 - [ ] **Step 2: Run it and see it fail.** `cargo test --profile dev-opt --test bam_window_convert` → compile error: no
-  `convert_window_records`.
-- [ ] **Step 3: Implement.** Move the code; no logic changes.
-- [ ] **Step 4: Run the tests.** The new test passes, and the full `cargo test --profile dev-opt` passes. Check the
-  suite's pass count against the count before the change.
-- [ ] **Step 5: Commit** `family.rs: per-window record conversion split from the BAM query (r1600 task 2, no output change)`.
+  `convert_record`.
+- [ ] **Step 3: Implement.** Move the loop body into `convert_record`; the logic is unchanged.
+- [ ] **Step 4: Run the tests.** The new test passes, and the full `cargo test --profile dev-opt` passes with the same
+  count as before plus 1.
+- [ ] **Step 5: Commit** `family.rs: per-record conversion split from the BAM query (r1600 task 2, no output change)`.
 
 ### Task 3: The router
 
@@ -131,24 +130,26 @@ acceptance runs.
 **Interfaces:**
 - Consumes: `BamIndexCache::{header, index}` from Task 2.
 - Produces, in `rustle::bam_router`:
-  - `pub struct Routed { lists: Vec<Vec<std::sync::Arc<noodles_bam::Record>>> }`, one list per input window, in input
-    order.
-  - `impl Routed { pub fn count(&self, w: usize) -> usize; pub fn take(&mut self, w: usize) -> Vec<Arc<noodles_bam::Record>> }`.
-    `take` leaves the list empty, so records are freed once no window holds them.
-  - `pub fn route(bam_path: &str, cache: &BamIndexCache, windows: &[(String, u64, u64)], workers: usize) -> anyhow::Result<Routed>`
+  - `pub fn route<T: Clone + Send>(bam_path: &str, cache: &BamIndexCache, windows: &[(String, u64, u64)], workers: usize, convert: &(dyn Fn(&noodles_bam::Record, &[usize]) -> anyhow::Result<Option<T>> + Sync)) -> anyhow::Result<Vec<Vec<T>>>`.
+    - The result has one list per input window, in input order, each in file order.
+    - `convert` is called once per record that overlaps at least one window. Its second argument is the sorted list of
+      overlapping window indices.
+    - A `Some(t)` is cloned into every one of those windows; `None` adds the record to none of them.
+    - A caller that needs per-window selection (pass 2) returns `None` when no listed window wants the record, and filters
+      per window afterwards with the indices it already knows. Simplest form: return `Some(t)` and let pass 2's caller
+      drop the copies whose region's tied set lacks the name.
 - Algorithm (the part a signature does not fix):
   1. Per window, parse `"{chrom}:{lo+1}-{hi}"`, resolve the reference id through the header (an error names the window),
      and collect `index.query(id, interval)` chunks.
   2. Merge every chunk into sorted, non-overlapping `(start_vpos, end_vpos)` ranges.
-  3. Split the ranges into `workers` parts with about equal compressed bytes. Cut only at range boundaries, or inside a
-     range at a record start found by the owning worker. A record belongs to the part in which it starts.
-  4. Each part's worker opens its own `noodles_bam::io::Reader` (single-threaded BGZF) and seeks to each range. It reads
-     records while `virtual_position < end`. For each record it binary-searches that reference's windows (sorted by `lo`;
-     keep a prefix max of `hi` to bound the scan) and pushes `(window, record_ordinal)` for every window that passes the
-     overlap test.
-  5. Join the parts in part order and build each window's list in file order. One `Arc` per record is shared across its
-     windows.
-  - Errors carry `format!("routing window {chrom}:{lo}-{hi} at compressed offset {}", vpos.compressed())`.
+  3. Split the ranges into `workers` contiguous groups of about equal compressed bytes. Cut only at range boundaries.
+  4. Each worker opens its own `noodles_bam::io::Reader` (single-threaded BGZF), seeks to each of its ranges, and reads
+     while `virtual_position < end`. Overlapping windows come from per-reference windows sorted by `lo`, with a prefix
+     max of `hi`. The overlap test is noodles' `intersects`.
+  5. Each worker returns its `(window, T)` pushes in its own order. Groups are concatenated in group order, which is file
+     order.
+  - Errors carry `format!("routing window {chrom}:{lo}-{hi} at compressed offset {}", vpos.compressed())`, or the offset
+    alone for a decode error.
 
 - [ ] **Step 1: Write the failing tests.**
   - `routed_equals_query_on_edge_windows`. Build a BAM with these records on `c1`:
@@ -163,6 +164,9 @@ acceptance runs.
     that window's noodles query, both as a record sequence and as a `Vec<Vec<u8>>`.
   - `routed_is_identical_at_1_2_7_and_8_workers`: on the same BAM plus 5,000 random records across 40 BGZF blocks (seed
     fixed), the `route` output is the same for every worker count.
+  - `convert_is_called_once_per_record`: count the calls with an atomic counter; the count must equal the number of
+    distinct records overlapping any window.
+  - In every test, `T` is the record's `RecordBuf` rendered with `{:?}`. The query side is rendered the same way.
   - `duplicate_windows_each_get_the_full_list`: the same window given twice → both lists equal.
   - `unknown_contig_fails_naming_the_window`: a window on `c9` → `route` errors, and the message contains `c9`.
 - [ ] **Step 2: Run them and see them fail.** `cargo test --profile dev-opt --test bam_router` → unresolved
@@ -183,23 +187,25 @@ acceptance runs.
 - Test: `tests/copy_assign_router.rs` (new). It follows `tests/copy_assign_xfam.rs::determinism_across_repeats_and_region_threads`.
 
 **Interfaces:**
-- Consumes: `route`, `Routed::{count, take}` (Task 3); `convert_window_records` (Task 2).
-- Behaviour when `RUSTLE_ASSIGN_ROUTER=1`, a `.bai` is present, the run is not streaming and `RUSTLE_WINDOW_SWEEP` is
-  unset:
-  - **Window plan.** For each region in `flat` order, use its `region_windows` entry, or `vec![region]`. Concatenate them
-    into one `Vec<(String, u64, u64)>`, with per-region offsets.
-  - **One routing pass.** `route(&args.bam, cache, &plan, args.threads)` runs once, before the batch loop, and is held in
-    a `Mutex<Routed>`. Time it under `[timing] router`.
-  - **Window fetch.** Each window takes `routed.take(offset + wi)` and converts it with
-    `convert_window_records(list.into_iter().map(|r| Ok(Arc::unwrap_or_clone(r))), wchrom, wlo, whi, mode)`. Here `mode`
-    is `Light` under `--tied-prefilter` and `Full` otherwise.
-  - **The prefilter's second read.** Today it calls `reads_in_region_mode(..., Only(names))`. Under the router, when
-    `args.tied_prefilter` is set, clone the window's list before the first conversion, then convert the clone with
-    `ReadMode::Only(names)`.
-  - **Budget.** Charge `Σ routed.count(window)` in place of `estimate_records`.
-  - **Order.** Order by that exact count, descending, with ties by `flat` index. This applies whether or not
-    `RUSTLE_DISPATCH_DEFER` is set.
-- Without the variable, every line behaves as today.
+- Consumes: `route` (Task 3); `convert_record` (Task 2).
+- Behaviour when `RUSTLE_ASSIGN_ROUTER=1` and the Addendum 2 scope holds (`--tied-prefilter`, a `.bai` present, not
+  streaming, `gtf_secondary_as_ratio() <= 0.0`, `read_home_table().is_none()`, `RUSTLE_WINDOW_SWEEP` unset):
+  - **Plan.** For each region in `flat` order, its `region_windows` entry, or `vec![region]`, concatenated, with
+    per-region offsets.
+  - **Pass 1, before the batch loop.** Call `route` with `convert = cache.convert_record(rec, chrom_of(rec), Light)`.
+    Then, per region and in parallel over regions, run exactly today's code from `pool_windows` through the tied gate.
+    The code that today reads the windows takes the routed lists instead, and the readthrough buffer is fed from them in
+    window order as today. Keep per region `(pr, light_spans, tied)` plus anything else the existing code computes
+    there.
+  - **Pass 2.** Take the union of the tied sets. `convert` returns `None` when the record's name is not in the union,
+    and otherwise `convert_record(rec, chrom, Full)`. Afterwards, per window, keep only the items whose name is in that
+    window's region's tied set. Then apply today's `fseen` de-duplication per region.
+  - **compute.** It takes its region's prepared `(pr, full, light_spans)` from a `Mutex<Vec<Option<...>>>` with `take()`,
+    in place of reading. Everything after is unchanged.
+  - **Budget and order.** The budget is charged the region's pass-1 routed count. The start order is that count,
+    descending, with ties by `flat` index.
+  - **Timing lines:** `[timing] router pass1`, `[timing] router gate`, `[timing] router pass2`.
+- Outside the scope, every line behaves as today.
 
 - [ ] **Step 1: Write the failing test.** `router_arm_is_byte_identical` in `tests/copy_assign_router.rs`.
   - For both fixtures (`xfam_conflict` with its `--region` arguments copied from `copy_assign_xfam.rs`, and
@@ -207,8 +213,9 @@ acceptance runs.
     with it set to `1`.
   - Each run uses `--region-threads 1` and `--region-threads 4`.
   - Assert that every output file (`OUT.*`) is byte-identical across all 4 runs of a fixture.
-  - Also assert that the router arm's stderr contains `[timing] router` when `RUSTLE_TIMING=1`. This proves the arm took
-    the router.
+  - Also assert that the router arm's stderr contains `[timing] router pass2` when `RUSTLE_TIMING=1`. This proves the
+    arm took the router.
+  - Both arms pass `--tied-prefilter`, the pipeline's setting.
 - [ ] **Step 2: Run it and see it fail.** `cargo test --profile dev-opt --test copy_assign_router` → FAIL on the
   `[timing] router` assertion.
 - [ ] **Step 3: Implement the wiring** as above.
