@@ -810,7 +810,7 @@ Workspace: `/anvme/workspace/v138da13-rustle/` (`r6aln/`, `r1571/clu/`, `r1578sp
   >= half of its span. Exons alone let long sparse-exon pericentromeric loci (chr10:43 Mb, chr2:94.8 Mb, chr22:11.3 Mb)
   collect SD support as hubs; the numpy prototype's first big gain came from a bug that happened to exclude them. With
   the span half, the binary links 115,510 of 525,890 edges.
-- **Damping (row 1580, opt-in `--sd-damp-bed BED --sd-damp 0.25`).** A119b at the default inflation: .925/.718 vs the
+- **Damping (row 1580; DEFAULT whenever a SEDEF BED is given since 2026-11-09, user decision: `mcl_families --sd-damp-bed BED` damps at 0.25, `tools/rustle_pipeline.sh` via `RUSTLE_SEDEF_BED`; `--sd-damp 1` / `RUSTLE_SD_DAMP=1` = off).** A119b at the default inflation: .925/.718 vs the
   plain curve's .844 at that recall (+0.081); vs today's default .802/.740 it trades 47 true pairs for 270 fewer false
   ones. Gorilla OR6737 (88 truth pairs) points the same way. **HG002 held-out PASS** (2026-11-08): .719/.321 vs the plain
   curve's .559 at that recall (+0.160); plain default .466/.345 -> 10 fewer true pairs for 112 fewer false.

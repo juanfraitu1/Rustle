@@ -156,6 +156,10 @@
 #     FAILED, Compara F 0.444 -> 0.372, on pre-f1v2 GTFs (docs/archive/2026-10/LOCUS_REPRESENTATIVE_RULE_2026-10-04.md); an mcl_families
 #     without the flag is refused;
 #   RUSTLE_FAMILY_CONTAINER=1 adds `--emit-container` to `families` (PREFIX.fam.container*.tsv; default unset = off).
+#   RUSTLE_SEDEF_BED=FILE turns on SD damping in `families` (`--sd-damp-bed FILE --sd-damp ${RUSTLE_SD_DAMP:-0.25}`): edges
+#     between loci no SEDEF pair links are down-weighted before MCL (row 1580: HG002 held-out +0.160 precision at equal
+#     recall; A119b .802/.740 -> .925/.718). Set it whenever the genome has a SEDEF build (human CHM13, gorilla; paths in
+#     docs/DATA.md); RUSTLE_SD_DAMP=1 keeps the BED but turns damping off. Unset = off, the earlier products.
 # `families` is the DE NOVO mode (loci from the assembled GTF). The GUIDED mode (loci = the annotation's gene and
 # pseudogene bodies, PREREG_heldout_families_2026-09-20 §2) is not a driver stage: figures/_o1_recovery.py
 # (guided_families) runs its recipe step by step. Every product carries the PREFIX.
@@ -725,10 +729,20 @@ stage_families() {
     0.[0-9]*|1|1.0) ;;
     *) echo "[rustle_pipeline] RUSTLE_MIN_SHARED_EXON_FRAC must be a fraction 0-1 (got '$RUSTLE_MIN_SHARED_EXON_FRAC')" >&2; exit 2 ;;
   esac
+  # RUSTLE_SEDEF_BED=FILE (SEDEF pairs BED of THIS genome; human CHM13 and gorilla have one, docs/DATA.md): SD damping ON at
+  # RUSTLE_SD_DAMP (default 0.25, row 1580 PASS on HG002 held-out, default per user 2026-11-09; 1 = off). Unset = no damping,
+  # the same command as before. The factor is always passed, so an older binary cannot fall back to its own default.
+  local sd=()
+  if [ -n "${RUSTLE_SEDEF_BED:-}" ]; then
+    [ -s "$RUSTLE_SEDEF_BED" ] || { echo "[rustle_pipeline] RUSTLE_SEDEF_BED=$RUSTLE_SEDEF_BED: no such non-empty file" >&2; exit 2; }
+    [[ "$help" == *'--sd-damp-bed'* ]] || { echo "[rustle_pipeline] RUSTLE_SEDEF_BED is set but $BIN/mcl_families predates --sd-damp-bed; rebuild it" >&2; exit 2; }
+    sd=(--sd-damp-bed "$RUSTLE_SEDEF_BED" --sd-damp "${RUSTLE_SD_DAMP:-0.25}")
+    say "families: SD damping ${RUSTLE_SD_DAMP:-0.25} with $RUSTLE_SEDEF_BED"
+  fi
   # an earlier run's copy table must not survive a run that writes none (a binary older than the copy table): assign would read it
   rm -f "$OUT".fam.copies.{tsv,fa,regions,merged.tsv}
   "$BIN/mcl_families" --from-gtf "$FAM_GTF" --fasta "$FASTA" --threads "$THREADS" \
-    --min-exonic-bp 1 --min-shared-exon-frac "${RUSTLE_MIN_SHARED_EXON_FRAC:-0.60}" "${copies[@]}" "${FAM_EXTRA[@]}" "${FAM_REL[@]}" "${FAM_COV[@]}" "${rep[@]}" --out "$OUT.fam" > "$OUT.families.log" 2>&1
+    --min-exonic-bp 1 --min-shared-exon-frac "${RUSTLE_MIN_SHARED_EXON_FRAC:-0.60}" "${copies[@]}" "${FAM_EXTRA[@]}" "${FAM_REL[@]}" "${FAM_COV[@]}" "${rep[@]}" "${sd[@]}" --out "$OUT.fam" > "$OUT.families.log" 2>&1
   say "families: $(awk 'NR>1' "$OUT.fam.clusters.tsv" | cut -f1 | sort -u | wc -l) clusters ($OUT.fam.clusters.tsv)"
   if [ ${#copies[@]} -gt 0 ]; then
     say "families: $(awk 'NR>1' "$OUT.fam.copies.tsv" | wc -l) copies (locus representatives) in $(awk 'NR>1' "$OUT.fam.copies.tsv" | cut -f1 | sort -u | wc -l) families ($OUT.fam.copies.tsv)"

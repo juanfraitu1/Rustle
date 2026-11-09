@@ -79,6 +79,10 @@ Driver uses: utilities (sd-scan, candidate-augment, window-depth), as_table, cop
 | bench/denovo_eval/sdbio.py | KEEP-PY | why SDs matter: share of Compara paralog pairs held by one SD, by age (LEDGER_O1 SD section) |
 | bench/denovo_eval/soto80score.py | KEEP-PY | scores family catalogs against a Soto 2025 panel BED (80_fams; register 1580 amendment 1) |
 | bench/soto/qm2_compare.py | KEEP-PY | row 1588: QuicK-mer2 est windows -> per-gene parCN vs Soto Table S1E (bars A/B) |
+| bench/soto/rnacn.py | KEEP-PY | row 1594: copy_phasing extra-copy calls vs Soto S1E parCN classes (subset / score) |
+| bench/denovo_eval/exonshare.py | KEEP-PY | rows 1591-1593: exon sharing (SHARE) per gated-PAF record / locus pair; `--locus-scores` feeds `--extra-edges-only` |
+| bench/denovo_eval/protedge.py | KEEP-PY | row 1590: locus ORFs + SD-linked protein edges for `--extra-edges` (STOP, recorded negative) |
+| bench/denovo_eval/protedge_step0.py | KEEP-PY | row 1589: protein links between CAT genes, step 0 (STOP) |
 | bench/f1_bridge.py | PORTED | `copy_assign --bridge-regroup` (family::bridge_regroup) |
 | bench/family_container.py | PORTED | `mcl_families --emit-container` (rustle::family_container) |
 | bench/guided_eval/cdsseed.py | TO-MERGE | -> famtruth.py (only load_genes("hg002") + HG002_XREF are used by pair/seqscore) |

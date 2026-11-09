@@ -206,11 +206,12 @@ struct Args {
     /// skipped) for `--sd-damp`.
     #[arg(long)]
     sd_damp_bed: Option<String>,
-    /// Opt-in (row 1580): multiply every edge whose two loci are NOT in the two copies of one SD pair of `--sd-damp-bed`
-    /// (>= half of each representative's exon bases AND of its span inside its copy) by this factor before MCL.
-    /// 1.0 = off (byte-identical).
-    #[arg(long, default_value_t = 1.0)]
-    sd_damp: f64,
+    /// Row 1580 (PASS on HG002 held-out): multiply every edge whose two loci are NOT in the two copies of one SD pair of
+    /// `--sd-damp-bed` (>= half of each representative's exon bases AND of its span inside its copy) by this factor before
+    /// MCL. **Default 0.25 whenever `--sd-damp-bed` is given (user decision 2026-11-09)**; without a BED, off. 1.0 = off
+    /// (byte-identical to a run without the BED).
+    #[arg(long)]
+    sd_damp: Option<f64>,
     /// Opt-in (row 1581): add an edge of this weight between every pair of loci that one SD pair of `--sd-damp-bed`
     /// links (the `--sd-damp` rule) but that have no homology edge. Applied after `--sd-damp`. Off when unset.
     #[arg(long, requires = "sd_damp_bed")]
@@ -1248,6 +1249,14 @@ fn write_hierarchy(
 /// The exon gate's `(margin, shared-exon fraction)` when it may engage ([`Args::exon_gate_margin`]): every edge must need
 /// an exon-to-exon record (an exonic floor with both-sided evidence, or a shared-exon fraction, which also needs one), and
 /// nothing may read the PAF's other records.
+impl Args {
+    /// The SD damping factor in force: `--sd-damp` if given, else 0.25 with `--sd-damp-bed` (default since 2026-11-09,
+    /// row 1580), else 1.0 (off).
+    fn sd_damp(&self) -> f64 {
+        self.sd_damp.unwrap_or(if self.sd_damp_bed.is_some() { 0.25 } else { 1.0 })
+    }
+}
+
 fn exon_gate_margin(a: &Args) -> Option<(u64, f64)> {
     if a.no_exon_gate {
         return None;
@@ -1501,23 +1510,24 @@ fn main() -> Result<()> {
             g.n_nodes() - n_before
         );
     }
-    anyhow::ensure!(args.sd_damp > 0.0 && args.sd_damp <= 1.0, "--sd-damp {} must be in (0, 1]", args.sd_damp);
-    anyhow::ensure!(args.sd_damp == 1.0 || args.sd_damp_bed.is_some(), "--sd-damp {} needs --sd-damp-bed", args.sd_damp);
+    let sd_damp = args.sd_damp();
+    anyhow::ensure!(sd_damp > 0.0 && sd_damp <= 1.0, "--sd-damp {sd_damp} must be in (0, 1]");
+    anyhow::ensure!(sd_damp == 1.0 || args.sd_damp_bed.is_some(), "--sd-damp {sd_damp} needs --sd-damp-bed");
     if let Some(w) = args.sd_add_edges {
         anyhow::ensure!(w > 0.0 && w <= 1.0, "--sd-add-edges {w} must be in (0, 1]");
     }
     // (linked edges, damped edges, SD-only edges added)
     let sd_damp_counts = match &args.sd_damp_bed {
-        Some(bed) if args.sd_damp < 1.0 || args.sd_add_edges.is_some() => {
+        Some(bed) if sd_damp < 1.0 || args.sd_add_edges.is_some() => {
             let sd = SdPairs::from_bed_str(&std::fs::read_to_string(bed).with_context(|| format!("reading {bed}"))?);
             anyhow::ensure!(sd.n_pairs() > 0, "--sd-damp-bed {bed}: no SD pair parsed");
             let linked = sd_linked_pairs(&g, &blocks, &sd);
-            let (kept, damped) = if args.sd_damp < 1.0 { damp_non_sd_edges(&mut g, &linked, args.sd_damp) } else { (0, 0) };
+            let (kept, damped) = if sd_damp < 1.0 { damp_non_sd_edges(&mut g, &linked, sd_damp) } else { (0, 0) };
             let added = args.sd_add_edges.map_or(0, |w| add_sd_edges(&mut g, &linked, w));
             eprintln!(
                 "[mcl_families] --sd-damp {} --sd-add-edges {:?}: {} SD pair(s) from {bed}; {} SD-linked node pair(s); \
                  {kept} edge(s) SD-linked, {damped} damped, {added} SD-only edge(s) added",
-                args.sd_damp,
+                sd_damp,
                 args.sd_add_edges,
                 sd.n_pairs(),
                 linked.len()
@@ -2972,7 +2982,7 @@ fn main() -> Result<()> {
     }
     // PREREG DENOVOFAM opt-in arms: rows only when on, so a default run's params.tsv is unchanged
     if let Some((kept, damped, added)) = sd_damp_counts {
-        writeln!(ph, "sd_damp\t{}", args.sd_damp)?;
+        writeln!(ph, "sd_damp\t{}", args.sd_damp())?;
         writeln!(ph, "sd_damp_bed\t{}", args.sd_damp_bed.as_deref().unwrap_or(""))?;
         writeln!(ph, "sd_damp_edges_linked\t{kept}")?;
         writeln!(ph, "sd_damp_edges_damped\t{damped}")?;
@@ -3075,6 +3085,17 @@ mod tests {
     use super::*;
     use rustle::copy_split::AlignedRead;
     use rustle::denovo_assemble::BamRead;
+
+    /// `--sd-damp` defaults to 0.25 when `--sd-damp-bed` is given (2026-11-09, row 1580), stays off without a BED, and an
+    /// explicit value (1 = off) wins.
+    #[test]
+    fn sd_damp_defaults_to_0_25_with_a_bed_and_off_without() {
+        let a = |v: &[&str]| Args::try_parse_from(["mcl_families", "--out", "o"].into_iter().chain(v.iter().copied())).unwrap();
+        assert_eq!(a(&[]).sd_damp(), 1.0);
+        assert_eq!(a(&["--sd-damp-bed", "x.bed"]).sd_damp(), 0.25);
+        assert_eq!(a(&["--sd-damp-bed", "x.bed", "--sd-damp", "1"]).sd_damp(), 1.0);
+        assert_eq!(a(&["--sd-damp-bed", "x.bed", "--sd-damp", "0.5"]).sd_damp(), 0.5);
+    }
 
     /// `--min-cov-shorter` defaults to 0.70 (2026-09-29); `0` is the explicit OFF that `graph_from_paf` treats as
     /// "no escape" (`p.min_cov_shorter > 0.0`), the edge weights of every catalog built before the flip.

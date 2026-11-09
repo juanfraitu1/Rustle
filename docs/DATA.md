@@ -227,6 +227,11 @@ All under `/anvme/workspace/v138da13-rustle/` (workspace expires 2027-01-31; `ws
 pair coordinates in 1-6, identity (`fracMatch`) in 21, CIGAR in 33, and a trailing `#chr1 start1 ...` header line, which
 `SdPairs::from_bed_str` skips.
 
+**Families default (user decision 2026-11-09):** SD damping is on whenever a genome's SEDEF BED is given:
+`tools/rustle_pipeline.sh` with `RUSTLE_SEDEF_BED=<file below>` (factor `RUSTLE_SD_DAMP`, default 0.25; 1 = off), or
+`mcl_families --sd-damp-bed <file>` directly (`--sd-damp` defaults to 0.25 with a BED). Human CHM13 runs use
+`final_human.bed`, gorilla runs `gorilla/final.bed`, HG002 runs `hg002pat/final.bed`.
+
 | genome | file | provenance |
 |---|---|---|
 | CHM13 v2.0 | `sedef_dl/incoming/sedef_send/final_human.bed` (88,756 pairs, md5 2cd7d079...) | user-supplied (croc 2026-11-07), SEDEF v1.1 `sedef.sh` defaults on soft-masked chm13v2.0.fa (Penn State Roar); `sedef_send/sedef_provenance.txt` |

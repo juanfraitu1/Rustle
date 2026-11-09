@@ -31,6 +31,11 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_crossind_copyphasing_2026-11-08.md`](PREREG_crossind_copyphasing_2026-11-08.md) | PREREG: does copy_phasing certify the cross-individual strong loci? (register 1582, 2026-11-08) | 2026-11-08 | register ×1 |
 | [`PREREG_sd_add_edges_2026-11-08.md`](PREREG_sd_add_edges_2026-11-08.md) | PREREG row 1581: add weak SD-only edges on top of SD damping (`--sd-add-edges W`), held out on HG002 | 2026-11-08 | register ×1 |
 | [`PREREG_sd_damp_span_2026-11-08.md`](PREREG_sd_damp_span_2026-11-08.md) | PREREG row 1580: damp non-SD edges before MCL (`--sd-damp`, exons + span link rule), held out on HG002 and gorilla | 2026-11-08 | register ×1 |
+| [`PREREG_prot_sd_edges_2026-11-08.md`](PREREG_prot_sd_edges_2026-11-08.md) | PREREG row 1590: protein edges between SD-linked loci on top of SD damping (STOP at dev, +0.035) | 2026-11-08 | register ×1 |
+| [`PREREG_exon_sharing_2026-11-08.md`](PREREG_exon_sharing_2026-11-08.md) | PREREG row 1591: exon sharing vs exon coverage as the edge score (edge level, HG002 PASS +0.368) | 2026-11-08 | register ×1 |
+| [`PREREG_exon_sharing_family_2026-11-08.md`](PREREG_exon_sharing_family_2026-11-08.md) | PREREG row 1592: exon sharing as the family edge rule (STOP at dev, +0.0399) | 2026-11-08 | register ×1 |
+| [`PREREG_exon_sharing_lowI_2026-11-09.md`](PREREG_exon_sharing_lowI_2026-11-09.md) | PREREG row 1593: exon sharing >= 0.5 at low inflation (HG002 PASS: plain +0.317, damped +0.145) | 2026-11-09 | register ×1 |
+| [`PREREG_rna_copynumber_soto_2026-11-09.md`](PREREG_rna_copynumber_soto_2026-11-09.md) | PREREG row 1594: copy_phasing extra-copy calls vs Soto S1E population parCN classes | 2026-11-09 | pending |
 | [`PREREG_as_table_parallel_2026-11-07.md`](PREREG_as_table_parallel_2026-11-07.md) | PREREG row 1567: parallel `as_table` scan (ms columns kept) | 2026-11-07 | register ×1 |
 | [`PREREG_as_table_shared_2026-11-07.md`](PREREG_as_table_shared_2026-11-07.md) | PREREG row 1568: one best-AS table per BAM, shared by every run on it | 2026-11-07 | register ×1 |
 | [`PREREG_assemble_region_threads_2026-11-07.md`](PREREG_assemble_region_threads_2026-11-07.md) | PREREG row 1564: run the assemble stage's region sweep in parallel (`--region-threads`) | 2026-11-07 | register ×1 |
