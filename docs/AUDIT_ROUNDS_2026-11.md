@@ -603,3 +603,19 @@ gated PAF, all 7 assign tables (params included), the flag scan table and consen
     about families, and families sets the peak. Queued (job 4455848): families' all-vs-all on the gorilla loci at
     threads 72/16 and `-K` 4G/500M, peak RSS each, PAF must stay identical. If fewer threads or a smaller batch
     cuts the peak without changing the PAF, `--low-mem` gets it; otherwise the doc names families as the peak.
+
+    **Result (`audit/r43`, job 4455848):** families' all-vs-all on the gorilla loci, peak RSS by arm. Threads set the
+    peak, `-K` barely does. The PAF is byte-identical in every arm:
+
+    | threads | `-K` | wall | peak RSS |
+    |---|---|---|---|
+    | 72 | 4G | 127 s | 38.3 GB |
+    | 16 | 4G | 219 s | 17.7 GB |
+    | 72 | 500M | 143 s | 36.4 GB |
+    | 8 | 500M | 391 s | 14.2 GB |
+
+    Applied: under `--low-mem`, families runs on at most 16 threads, and the driver's `--low-mem` comment says so.
+    That halves families' peak for +92 s on gorilla. Threads are part of the families PAF cache key, so a `--low-mem`
+    run does not reuse a 72-thread run's PAF: it aligns once more. That is acceptable for a memory profile. New test
+    `low_mem_caps_family_threads_at_16` (stub `mcl_families`, records `--threads`): it fails with the cap removed and
+    passes with it. Driver units 5/5, dispatch 8/8. PERFORMANCE.md gains a `--low-mem` row.

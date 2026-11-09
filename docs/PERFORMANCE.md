@@ -16,6 +16,7 @@ Current (`all` on A119b, 72 threads, `audit/e2e0`, 2026-11-09; censat exclusion 
 | flag scan | 283-314 s, peak 16.6 GB | BAM sweeps. Audit rounds 17-20: before them the old scan ran over 5 h on chr13 alone and hit the job limit |
 | flag align + verdict | 41 s, peak 41 GB | the 12.3 GB splice index in memory |
 | **`all` end to end, from scratch** | **1,328 s (22 min)**, `audit/e2e2` (1,572 s in e2e1, before the background flag scan of audit 39). The scan runs under families and assign only when assemble runs in the same call: a resumed run that skips assemble, or `--low-mem`, scans after assign (about +290 s) | assemble 397 (as_table cached; +~190 s once per new BAM), families 372, assign 475, index 0 (shared), flag 327. Every product identical to e2e0. Gorilla KB3781 with no extra env: 756 s |
+| `all --low-mem` (gorilla KB3781) | 1,549 s, node peak 43.7 GB in families (audit 40) | the split index changes 7 of 16,467 flag rows, no verdict class; every other product identical. Families' minimap2 memory scales with threads (gorilla 38 GB at 72, 18 GB at 16, 14 GB at 8; `-K` 4G vs 500M changes it by 2 GB; PAF identical in all, audit 43), so since audit 43 `--low-mem` runs families on at most 16 threads (127 -> 219 s on gorilla) |
 
 History (2026-11-02, before the region threads, the censat exclusion and the window fixes):
 

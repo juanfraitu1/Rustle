@@ -319,7 +319,8 @@ else
   [ -n "$BAM" ] && [ -n "$FASTA" ] && [ -n "$OUT" ] || { echo "need --bam, --fasta, --out" >&2; exit 2; }
 fi
 # --low-mem (docs/archive/2026-11/LEDGER_O1.md:3502 (GENOMEWIDE_FAST_2026-10-12.md)): the splice index in 1-Gbp parts (flag holds one part at a time) and one
-# assign region at a time; every other setting unchanged
+# assign region at a time; families' all-vs-all on at most 16 threads (minimap2 memory scales with threads: gorilla 38 GB at 72,
+# 18 GB at 16, PAF identical; audit round 43); every other setting unchanged
 [[ "$MAX_WINDOW_RECORDS" =~ ^[0-9]+$ ]] || { echo "[rustle_pipeline] --max-window-records must be a whole number (got '$MAX_WINDOW_RECORDS')" >&2; exit 2; }
 if [ "$LOW_MEM" = 1 ]; then INDEX_GB=1; export RUSTLE_REGION_THREADS=1; [ "$MAX_WINDOW_RECORDS" -gt 0 ] || MAX_WINDOW_RECORDS=500000; fi
 [[ "$INDEX_GB" =~ ^[1-9][0-9]*$ ]] || { echo "[rustle_pipeline] --index-gb must be a positive integer (got '$INDEX_GB')" >&2; exit 2; }
@@ -780,6 +781,7 @@ stage_families() {
   rm -f "$OUT".fam.copies.{tsv,fa,regions,merged.tsv}
   # threads: JOB_THREADS (the all-vs-all is ~98% of this stage; A119b 72 threads 410 s, the same families as 12 threads, 2026-11-09)
   local fth=$JOB_THREADS
+  [ "$LOW_MEM" = 1 ] && [ "$fth" -gt 16 ] && fth=16
   say "families: $fth threads"
   "$BIN/mcl_families" --from-gtf "$FAM_GTF" --fasta "$FASTA" --threads "$fth" \
     --min-exonic-bp 1 "${edge[@]}" "${copies[@]}" "${FAM_EXTRA[@]}" "${FAM_REL[@]}" "${FAM_COV[@]}" "${rep[@]}" "${sd[@]}" --out "$OUT.fam" > "$OUT.families.log" 2>&1

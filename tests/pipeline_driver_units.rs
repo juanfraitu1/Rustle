@@ -284,3 +284,29 @@ fn a_sedef_sidecar_turns_on_sd_damping_unless_the_variable_is_set() {
     let o = run_in(&[("RUSTLE_SEDEF_BED", "")]);
     assert!(o.status.success() && !recorded(&dir).contains("--sd-damp-bed"), "an empty variable turns it off");
 }
+
+/// `--low-mem` caps families' all-vs-all at 16 threads: minimap2's memory scales with threads (gorilla 38 GB at 72,
+/// 18 GB at 16, the PAF identical; audit round 43). Without `--low-mem` the threads asked for are used.
+#[test]
+fn low_mem_caps_family_threads_at_16() {
+    let dir = scratch("lowmem");
+    gtfs(&dir, true);
+    let run = |extra: &[&str]| {
+        let o = Command::new("bash")
+            .arg(DRIVER)
+            .args(["families", "--bam", "x.bam", "--fasta", "g.fa", "--threads", "72", "--out"])
+            .arg(dir.join("run"))
+            .arg("--bin")
+            .arg(dir.join("bin"))
+            .args(extra)
+            .env_remove("RUSTLE_BRIDGE_REGROUP")
+            .env_remove("RUSTLE_SEDEF_BED")
+            .env("TMPDIR", &dir)
+            .output()
+            .unwrap();
+        assert!(o.status.success(), "{}", err(&o));
+        recorded(&dir)
+    };
+    assert!(run(&["--low-mem"]).contains("--threads 16 "), "{}", recorded(&dir));
+    assert!(run(&[]).contains("--threads 72 "), "{}", recorded(&dir));
+}
