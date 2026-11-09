@@ -51004,6 +51004,40 @@ pub mod denovo_pipeline {
                 Some(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, ms, de, is_supplementary, is_secondary, reverse, ts })
             }
 
+            /// The BAM header this cache was opened with.
+            pub fn header(&self) -> &noodles_sam::Header {
+                &self.header
+            }
+
+            /// The BAM index this cache was opened with.
+            pub fn index(&self) -> &noodles_bam::bai::Index {
+                &self.index
+            }
+
+            /// One record of a window, as the query path converts it when no read-home table is set (the r1600 router
+            /// calls it once per routed record): its `PrimaryRead` and its `BamRead` in `mode`.
+            pub fn convert_record(
+                &self,
+                record: &noodles_bam::Record,
+                chrom: &str,
+                mode: ReadMode<'_>,
+            ) -> Result<(Option<PrimaryRead>, Option<BamRead>)> {
+                // r1505: the `Only(names)` pass (the tied prefilter's second read) keeps nothing but the named reads'
+                // records, and its callers discard the primaries — so a record whose name is not wanted is skipped
+                // before the full conversion. (With a read-home table the query path converts every record instead.)
+                if let ReadMode::Only(names) = mode {
+                    if !record
+                        .name()
+                        .map(|n| names.contains(std::str::from_utf8(n.as_ref()).unwrap_or("")))
+                        .unwrap_or(false)
+                    {
+                        return Ok((None, None));
+                    }
+                }
+                let rb = RecordBuf::try_from_alignment_record(&self.header, record)?;
+                Ok((alignment_read_from_record(&rb, chrom, gtf_secondary_enabled()), self.bam_read_for(&rb, chrom, mode)))
+            }
+
             /// Query one region using the cached header+index (the reader seeks via the index, independent of the
             /// freshly-opened handle's position). Byte-identical to `reads_in_region_indexed`'s output.
             pub fn reads_in_region(
@@ -51072,19 +51106,11 @@ pub mod denovo_pipeline {
                 if ratio <= 0.0 {
                     for result in query {
                         let record = result?;
-                        // r1505: the `Only(names)` pass (the tied prefilter's second read) keeps nothing but the
-                        // named reads' records, and its callers discard the primaries — so a record whose name is
-                        // not wanted is skipped before the full conversion. Kept when a read-home table is set,
-                        // whose counts/report come from every record.
-                        if let ReadMode::Only(names) = mode {
-                            if home.is_none()
-                                && !record
-                                    .name()
-                                    .map(|n| names.contains(std::str::from_utf8(n.as_ref()).unwrap_or("")))
-                                    .unwrap_or(false)
-                            {
-                                continue;
-                            }
+                        if home.is_none() {
+                            let (pr, br) = self.convert_record(&record, chrom, mode)?;
+                            primary.extend(pr);
+                            bam_reads.extend(br);
+                            continue;
                         }
                         let rb = RecordBuf::try_from_alignment_record(&self.header, &record)?;
                         if let Some(home_keep) = home_decide_buf(home, &rb, chrom) {
