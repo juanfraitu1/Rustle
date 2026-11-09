@@ -541,3 +541,27 @@ gated PAF, all 7 assign tables (params included), the flag scan table and consen
     families 134 s, assign 122 s, index 144 s (background, under assemble; the wait found it done), flag 67 s. Against
     e2e_kb's 756 s: about 160 s comes from the reused table and 134 s from the overlapped index. A new genome's first
     run now pays the index under assemble instead of after assign. Adopted.
+
+## Round 39: the flag scan could start after assemble
+
+48. **The scan reads only the BAM and `families.gtf`, an assemble product, yet it waits for families and assign.**
+    Overlapping it with them (about 850 s on A119b) could take up to about 290 s off. But assign's fetch also reads
+    the BAM, and families' minimap2 uses every core, so contention may eat the gain. Measured before any driver code
+    (job 4455735): families (no cache) and then assign on e2e1's assembly, with the scan running alongside from the
+    start. Walls are compared with e2e1's serial 372 + 475 + about 290 s, and products with e2e1's.
+
+    **Measurement (job 4455735):** with the scan alongside from the start, the scan took 302 s (about 290 alone),
+    families 419 s (372), assign 471 s (475). Together 890 s against about 1,137 s serial, so about 247 s saved.
+    fam.copies, assignments, quant, scan table and consensus are identical to e2e1's.
+    **Applied (`tools/rustle_pipeline.sh`):**
+    - The scan is its own internal step, `stage_flag_scan` (dispatch `flag_scan`).
+    - In `all`, once assemble has run (so flag will run) and with no `--from`/`--to`, it starts in the background.
+    - The flag step waits for it, fails if it failed, then runs flag with `RP_FLAG_SCAN_DONE=1`, which skips the scan.
+    - A direct `flag` call still scans first.
+    `tests/pipeline_driver_dispatch.rs`: the plan's order is checked without the `flag_scan` line, which may land
+    anywhere after assemble. A new test asserts it runs once, after assemble and before flag. 7 pass, 3 runs in a row.
+    Check queued (`audit/e2e2`, job 4455739): `all` from scratch on A119b, all 16 products against e2e0's.
+
+    **Result (`audit/e2e2`, job 4455739): passes.** `all` from scratch on A119b took 1,328 s (22.1 min), against
+    1,572 s in e2e1. All 16 products are byte-identical. Stage walls: assemble 401 s, families 380 s (372 in e2e1),
+    assign 502 s (475), index 0 s, flag 43 s (the verdict step; the scan ran under families and assign). Adopted.

@@ -15,7 +15,7 @@ Current (`all` on A119b, 72 threads, `audit/e2e0`, 2026-11-09; censat exclusion 
 | index | 124 s, once per genome | minimap2 `-d`; shared next to the FASTA |
 | flag scan | 283-314 s, peak 16.6 GB | BAM sweeps. Audit rounds 17-20: before them the old scan ran over 5 h on chr13 alone and hit the job limit |
 | flag align + verdict | 41 s, peak 41 GB | the 12.3 GB splice index in memory |
-| **`all` end to end** | **1,572 s (26 min)**, `audit/e2e1` | assemble 397 (as_table cached; +~190 s once per new BAM), families 372, assign 475, index 0 (shared), flag 327. Every product identical to e2e0. Gorilla KB3781 with no extra env: 756 s |
+| **`all` end to end** | **1,328 s (22 min)**, `audit/e2e2` (1,572 s in e2e1, before the background flag scan of audit 39) | assemble 397 (as_table cached; +~190 s once per new BAM), families 372, assign 475, index 0 (shared), flag 327. Every product identical to e2e0. Gorilla KB3781 with no extra env: 756 s |
 
 History (2026-11-02, before the region threads, the censat exclusion and the window fixes):
 

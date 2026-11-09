@@ -1101,6 +1101,16 @@ stage_merged() {
   merged_env > "$OUT.merged.env"
   say "merged: done (env recorded in $OUT.merged.env; phases skip on the next identical run)"
 }
+# flag's first step alone: the loci's reads, mixture test and consensus (PREFIX.flag_scan.*). It reads only the BAM and the
+# loci, an assemble product, so `all` runs it in the background from the end of assemble (round-39 audit: A119b families +
+# assign + scan 890 s overlapped vs ~1,137 s serial, products identical).
+stage_flag_scan() {
+  [ -n "$GFF" ] || fam_gtf_guard flag
+  local LOCI=${GFF:-$FAM_GTF}
+  say "flag: scan $BAM on $LOCI"
+  "$BIN/missing_copy_flag" --bam "$BAM" --fasta "$FASTA" --loci "$LOCI" ${GFF:+--gff "$GFF"} --index x --threads "$JOB_THREADS" \
+    --out "$OUT.flag_scan" --scan-only > "$OUT.flag_scan.log" 2>&1
+}
 stage_flag() {
   [ -n "$INDEX" ] || { echo "flag needs --index (splice .mmi of the primary genome)" >&2; exit 2; }
   # the loci to scan: the annotation with --gff, else the de novo loci `families` reads (bridges are relations, not loci)
@@ -1113,9 +1123,7 @@ stage_flag() {
       || { echo "[rustle_pipeline] $OUT.cand.candidates.tsv is older than $OUT.fam.copies.tsv (families ran again): run the candidates stage again, or drop --candidates" >&2; exit 2; }
     cand=(--candidates "$OUT.cand.candidates.tsv")
   fi
-  say "flag: scan $BAM on $LOCI"
-  "$BIN/missing_copy_flag" --bam "$BAM" --fasta "$FASTA" --loci "$LOCI" ${GFF:+--gff "$GFF"} --index x --threads "$JOB_THREADS" \
-    --out "$OUT.flag_scan" --scan-only > "$OUT.flag_scan.log" 2>&1
+  if [ "${RP_FLAG_SCAN_DONE:-0}" = 1 ]; then say "flag: scan ran in the background ($OUT.flag_scan.scan.tsv)"; else stage_flag_scan; fi
   say "flag: align + verdict"
   # a FASTA as --index (the --low-mem profile) is indexed on the fly in INDEX_GB-Gbp parts; a prebuilt .mmi is used as it is
   local igb=()
@@ -1188,7 +1196,7 @@ stage_all() {
   local started=1; [ -n "$FROM_STAGE" ] && started=0
   # round-38 audit: the index depends on the FASTA alone, so a missing or stale one is built in the background from the start
   # (under assemble, which is BAM-bound) instead of after assign: ~130 s off a new genome's first run. Its step below waits.
-  local idx_pid=""
+  local idx_pid="" scan_pid=""
   if [[ " ${plan[*]} " == *" index:"* ]] && [ -z "$FROM_STAGE$TO_STAGE" ] \
      && ! { [ -s "$INDEX" ] && [ "$(cat "$INDEX.key" 2>/dev/null)" = "$(index_key)" ]; }; then
     (
@@ -1206,6 +1214,11 @@ stage_all() {
       { cat "$OUT.$st.time.tmp" 2>/dev/null | grep -E '^(wall_s|peak_rss_kb)'; printf 'exit\t%s\n' "$rc"; } > "$OUT.$st.time"; rm -f "$OUT.$st.time.tmp"
       [ "$rc" = 0 ] || { say "all: $st FAILED (exit $rc); see $OUT.$st.time and $OUT.index.log"; exit "$rc"; }
       printf '%s\n' "$env_now" > "$OUT.$st.env"; continue
+    fi
+    if [ "$st" = flag ] && [ -n "$scan_pid" ]; then
+      local src=0; wait "$scan_pid" || src=$?; cat "$OUT.flag_scan.bg.err" >&2; rm -f "$OUT.flag_scan.bg.err"
+      [ "$src" = 0 ] || { say "all: flag scan FAILED in the background (exit $src); see $OUT.flag_scan.log"; exit "$src"; }
+      export RP_FLAG_SCAN_DONE=1
     fi
     if [ "$started" = 0 ]; then
       if [ "$st" = "$FROM_STAGE" ]; then started=1; else say "all: $st skipped (--from $FROM_STAGE)"; continue; fi
@@ -1227,6 +1240,11 @@ stage_all() {
     { cat "$OUT.$st.time.tmp" 2>/dev/null | grep -E '^(wall_s|peak_rss_kb)'; printf 'exit\t%s\n' "$rc"; } > "$OUT.$st.time"; rm -f "$OUT.$st.time.tmp"
     [ "$rc" = 0 ] || { say "all: $st FAILED (exit $rc); see $OUT.$st.time and the stage's log"; exit "$rc"; }
     printf '%s\n' "$env_now" > "$OUT.$st.env"
+    # round-39 audit: assemble just ran, so flag will run: its scan starts now, under families and assign
+    if [ "$st" = assemble ] && [[ " ${plan[*]} " == *" flag:"* ]] && [ -z "$FROM_STAGE$TO_STAGE" ]; then
+      bash "$0" flag_scan "${args[@]}" 2> "$OUT.flag_scan.bg.err" & scan_pid=$!
+      say "all: flag scan running in the background"
+    fi
     if [ -n "$TO_STAGE" ] && [ "$st" = "$TO_STAGE" ]; then say "all: stopped after $st (--to $TO_STAGE); product $prod"; return 0; fi
   done
   say "all: done. stage, wall, peak memory:"
@@ -1238,7 +1256,7 @@ stage_all() {
 case "$STAGE" in
   merged) stage_merged;;
   assemble) stage_assemble;; families) stage_families;; candidates) stage_candidates;; catalog) stage_catalog;;
-  assign) stage_assign;; flag) stage_flag;; index) stage_index;;
+  assign) stage_assign;; flag) stage_flag;; flag_scan) stage_flag_scan;; index) stage_index;;
   # --legacy-catalog: `assign` reads the legacy catalog, so `all` builds it; --candidates: `all` runs the (opt-in) candidates stage
   all) stage_all;;
   *) echo "unknown stage $STAGE" >&2; exit 2;;

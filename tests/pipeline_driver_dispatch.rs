@@ -79,9 +79,12 @@ fn dispatch(tag: &str, stage: &str, legacy_catalog: bool, candidates: bool) -> (
         .arg(if candidates { "1" } else { "0" })
         .output()
         .expect("bash failed to spawn");
+    // `flag_scan` runs in the background from the end of assemble (round-39 audit), so its line may land anywhere after
+    // assemble's: the plan's order is checked without it, and its single run by `all_runs_..._flag_scan_once`
     let ran = std::fs::read_to_string(&log)
         .unwrap_or_default()
         .lines()
+        .filter(|l| *l != "flag_scan")
         .map(String::from)
         .collect();
     (ran, out.status.code().unwrap_or(-1))
@@ -92,6 +95,17 @@ fn all_runs_assemble_families_assign_flag_and_neither_catalog_nor_candidates() {
     let (ran, code) = dispatch("all_default", "all", false, false);
     assert_eq!(code, 0);
     assert_eq!(ran, ["assemble", "families", "assign", "flag"]);
+}
+
+#[test]
+fn all_runs_the_flag_scan_once_in_the_background_after_assemble() {
+    let (_, code) = dispatch("all_scan", "all", false, false);
+    assert_eq!(code, 0);
+    let log = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("pipeline_driver_dispatch").join("all_scan.log");
+    let ran: Vec<String> = std::fs::read_to_string(log).unwrap().lines().map(String::from).collect();
+    assert_eq!(ran.iter().filter(|l| *l == "flag_scan").count(), 1, "{ran:?}");
+    let pos = |s: &str| ran.iter().position(|l| l == s).unwrap();
+    assert!(pos("assemble") < pos("flag_scan") && pos("flag_scan") < pos("flag"), "{ran:?}");
 }
 
 #[test]
@@ -167,7 +181,7 @@ fn all_resumes_at_the_failed_stage_and_redoes_a_product_rewritten_outside_it() {
             .env("FAIL_STAGE", fail)
             .output()
             .expect("bash failed to spawn");
-        let ran = std::fs::read_to_string(&log).unwrap_or_default().lines().map(String::from).collect();
+        let ran = std::fs::read_to_string(&log).unwrap_or_default().lines().filter(|l| *l != "flag_scan").map(String::from).collect();
         (ran, o.status.code().unwrap_or(-1))
     };
     assert_eq!(run("a", ""), (vec!["assemble".into(), "families".into(), "assign".into(), "flag".into()], 0));
