@@ -12,6 +12,7 @@
 //! of `bam`, `util::constants`, and the `minimizers`/`bridge_detector`/`repeat_catalog` modules; tag
 //! `notebook-2026-09-24`). Build new work in `family`.
 
+pub mod bam_router;
 pub mod bam;
 pub mod genome;
 pub mod end_artifacts;
