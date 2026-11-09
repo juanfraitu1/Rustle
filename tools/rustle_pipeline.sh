@@ -156,6 +156,10 @@
 #     FAILED, Compara F 0.444 -> 0.372, on pre-f1v2 GTFs (docs/archive/2026-10/LOCUS_REPRESENTATIVE_RULE_2026-10-04.md); an mcl_families
 #     without the flag is refused;
 #   RUSTLE_FAMILY_CONTAINER=1 adds `--emit-container` to `families` (PREFIX.fam.container*.tsv; default unset = off).
+#   RUSTLE_FAMILY_EDGE_RULE=share|coverage (default share since 2026-11-09, row 1593): `families` builds edges by exon sharing
+#     (`--min-shared-exon-frac 0.0 --min-exon-share ${RUSTLE_MIN_EXON_SHARE:-0.5} --inflation ${RUSTLE_INFLATION:-2.0}`);
+#     coverage = the earlier rule (`--min-shared-exon-frac ${RUSTLE_MIN_SHARED_EXON_FRAC:-0.60}`, inflation 2.8), also chosen when
+#     RUSTLE_MIN_SHARED_EXON_FRAC is set. The share rule aligns more pairs (exon gate at fraction 0): about 2x the families wall;
 #   RUSTLE_SEDEF_BED=FILE turns on SD damping in `families` (`--sd-damp-bed FILE --sd-damp ${RUSTLE_SD_DAMP:-0.25}`): edges
 #     between loci no SEDEF pair links are down-weighted before MCL (row 1580: HG002 held-out +0.160 precision at equal
 #     recall; A119b .802/.740 -> .925/.718). Set it whenever the genome has a SEDEF build (human CHM13, gorilla; paths in
@@ -723,12 +727,27 @@ stage_families() {
       rep=(--representative "$RUSTLE_REPRESENTATIVE") ;;
     *) echo "[rustle_pipeline] RUSTLE_REPRESENTATIVE must be most-reads or most-junctions (got '$RUSTLE_REPRESENTATIVE')" >&2; exit 2 ;;
   esac
-  # RUSTLE_MIN_SHARED_EXON_FRAC=F (r1528; unset = 0.60, the same command): the shared-exon fraction a locus pair must reach to be
-  # aligned and to become an edge (r903 held-out kept 0.60; the panel's singleton expressed members sit at 0.3-0.6)
-  case "${RUSTLE_MIN_SHARED_EXON_FRAC:-0.60}" in
-    0.[0-9]*|1|1.0) ;;
-    *) echo "[rustle_pipeline] RUSTLE_MIN_SHARED_EXON_FRAC must be a fraction 0-1 (got '$RUSTLE_MIN_SHARED_EXON_FRAC')" >&2; exit 2 ;;
+  # Edge rule. DEFAULT since 2026-11-09 (user decision; row 1593 PASS on HG002 held-out): `share` = an edge needs one record on
+  # which >= half of the fewer-exon locus's exons match an exon of the other (`--min-exon-share`, RUSTLE_MIN_EXON_SHARE,
+  # default 0.5), with the coverage gate off (--min-shared-exon-frac 0.0) and MCL inflation RUSTLE_INFLATION (default 2.0).
+  # HG002: plain .545/.396 vs the coverage rule's .466/.345; with RUSTLE_SEDEF_BED .703/.355 vs .719/.321.
+  # RUSTLE_FAMILY_EDGE_RULE=coverage = the rule before 2026-11-09: RUSTLE_MIN_SHARED_EXON_FRAC=F (r1528; default 0.60) and the
+  # binary's inflation (2.8); setting RUSTLE_MIN_SHARED_EXON_FRAC alone also selects it.
+  local edge=()
+  case "${RUSTLE_FAMILY_EDGE_RULE:-$([ -n "${RUSTLE_MIN_SHARED_EXON_FRAC:-}" ] && echo coverage || echo share)}" in
+    share)
+      [[ "$help" == *'--min-exon-share'* ]] || { echo "[rustle_pipeline] the default edge rule needs an mcl_families with --min-exon-share; rebuild it (or RUSTLE_FAMILY_EDGE_RULE=coverage)" >&2; exit 2; }
+      edge=(--min-shared-exon-frac 0.0 --min-exon-share "${RUSTLE_MIN_EXON_SHARE:-0.5}" --inflation "${RUSTLE_INFLATION:-2.0}") ;;
+    coverage)
+      case "${RUSTLE_MIN_SHARED_EXON_FRAC:-0.60}" in
+        0.[0-9]*|1|1.0) ;;
+        *) echo "[rustle_pipeline] RUSTLE_MIN_SHARED_EXON_FRAC must be a fraction 0-1 (got '$RUSTLE_MIN_SHARED_EXON_FRAC')" >&2; exit 2 ;;
+      esac
+      edge=(--min-shared-exon-frac "${RUSTLE_MIN_SHARED_EXON_FRAC:-0.60}")
+      [ -n "${RUSTLE_INFLATION:-}" ] && edge+=(--inflation "$RUSTLE_INFLATION") ;;
+    *) echo "[rustle_pipeline] RUSTLE_FAMILY_EDGE_RULE must be share or coverage (got '$RUSTLE_FAMILY_EDGE_RULE')" >&2; exit 2 ;;
   esac
+  say "families: edge rule ${edge[*]}"
   # RUSTLE_SEDEF_BED=FILE (SEDEF pairs BED of THIS genome; human CHM13 and gorilla have one, docs/DATA.md): SD damping ON at
   # RUSTLE_SD_DAMP (default 0.25, row 1580 PASS on HG002 held-out, default per user 2026-11-09; 1 = off). Unset = no damping,
   # the same command as before. The factor is always passed, so an older binary cannot fall back to its own default.
@@ -742,7 +761,7 @@ stage_families() {
   # an earlier run's copy table must not survive a run that writes none (a binary older than the copy table): assign would read it
   rm -f "$OUT".fam.copies.{tsv,fa,regions,merged.tsv}
   "$BIN/mcl_families" --from-gtf "$FAM_GTF" --fasta "$FASTA" --threads "$THREADS" \
-    --min-exonic-bp 1 --min-shared-exon-frac "${RUSTLE_MIN_SHARED_EXON_FRAC:-0.60}" "${copies[@]}" "${FAM_EXTRA[@]}" "${FAM_REL[@]}" "${FAM_COV[@]}" "${rep[@]}" "${sd[@]}" --out "$OUT.fam" > "$OUT.families.log" 2>&1
+    --min-exonic-bp 1 "${edge[@]}" "${copies[@]}" "${FAM_EXTRA[@]}" "${FAM_REL[@]}" "${FAM_COV[@]}" "${rep[@]}" "${sd[@]}" --out "$OUT.fam" > "$OUT.families.log" 2>&1
   say "families: $(awk 'NR>1' "$OUT.fam.clusters.tsv" | cut -f1 | sort -u | wc -l) clusters ($OUT.fam.clusters.tsv)"
   if [ ${#copies[@]} -gt 0 ]; then
     say "families: $(awk 'NR>1' "$OUT.fam.copies.tsv" | wc -l) copies (locus representatives) in $(awk 'NR>1' "$OUT.fam.copies.tsv" | cut -f1 | sort -u | wc -l) families ($OUT.fam.copies.tsv)"

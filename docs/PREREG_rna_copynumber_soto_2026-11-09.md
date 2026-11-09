@@ -61,3 +61,24 @@ copy number is not in S1E and only its paternal assembly is on disk.
   (an RNA sample with its own DNA copy number).
 - FAIL: on RNA, Soto's copy-number half is not measurable with the current detector; families stay defined by exon sharing +
   SD, and copy number stays a DNA quantity.
+
+## Outcome (2026-11-09, job 4453941): FAIL
+
+Net 2,171,512 rows over 432 families (1,829 copies, every family >= 2 copies); copy_phasing 2,575 s.
+
+| label | S1E genes | testable | hit | rate | median family copies | median copy reads |
+|---|---|---|---|---|---|---|
+| positive (CHM13 short of nearly everyone) | 92 | 43 | 18 | **0.419** | 4 | 14 |
+| negative (fixed at 2) | 1,085 | 596 | 186 | **0.312** | 4 | 23 |
+| Polymorphic | 515 | 233 | 39 | 0.167 | 7 | 12 |
+| median parCN < 1.5 | 141 | 68 | 18 | 0.265 | 6 | 10 |
+
+Sensitivity 0.419 - FPR 0.312 = **+0.107** (bar +0.15), one-sided Fisher p = 0.10 (bar 0.01): **FAIL** as registered.
+Descriptive: within families of >= 3 copies, 13/36 vs 121/396 (+0.056, p 0.30). FPR 0.31 is above row 1583's single-origin
+null (0.23). Positives carry fewer reads per copy than negatives (14 vs 23), so depth does not inflate their hit rate.
+
+Reading: the extra-haplotype certificate fires on about a third of genes Soto calls fixed at 2 copies, and only slightly
+more often on genes where CHM13 is short of the population. At population level, with this detector, RNA does not carry
+Soto's copy-number signal. Families stay defined by exon sharing + SD (rows 1580, 1593); copy number stays a DNA quantity.
+An individual-matched test (an RNA sample with its own DNA copy number) would remove the population-label noise, but the
+detector's false-positive rate on fixed genes is the first problem. Per gene: `r1594/per_gene.tsv`.

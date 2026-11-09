@@ -810,6 +810,11 @@ Workspace: `/anvme/workspace/v138da13-rustle/` (`r6aln/`, `r1571/clu/`, `r1578sp
   >= half of its span. Exons alone let long sparse-exon pericentromeric loci (chr10:43 Mb, chr2:94.8 Mb, chr22:11.3 Mb)
   collect SD support as hubs; the numpy prototype's first big gain came from a bug that happened to exclude them. With
   the span half, the binary links 115,510 of 525,890 edges.
+- **Edge rule (rows 1591-1593; DEFAULT in `tools/rustle_pipeline.sh` since 2026-11-09, user decision):** exon sharing,
+  `--min-shared-exon-frac 0.0 --min-exon-share 0.5 --inflation 2.0` (`RUSTLE_FAMILY_EDGE_RULE=coverage` = the earlier 0.60
+  coverage gate at I 2.8). HG002 held-out: plain .545/.396 vs .466/.345; with SEDEF damping .703/.355 vs .719/.321. A119b
+  .868/.783 plain, .918/.782 damped (vs .802/.740 / .925/.718). Binary SHARE counts only records the graph accepts as
+  evidence (identity >= 0.70, >= 300 bp, no self-hits); the Python route of row 1593 also counted those (8 of 148,596 edges).
 - **Damping (row 1580; DEFAULT whenever a SEDEF BED is given since 2026-11-09, user decision: `mcl_families --sd-damp-bed BED` damps at 0.25, `tools/rustle_pipeline.sh` via `RUSTLE_SEDEF_BED`; `--sd-damp 1` / `RUSTLE_SD_DAMP=1` = off).** A119b at the default inflation: .925/.718 vs the
   plain curve's .844 at that recall (+0.081); vs today's default .802/.740 it trades 47 true pairs for 270 fewer false
   ones. Gorilla OR6737 (88 truth pairs) points the same way. **HG002 held-out PASS** (2026-11-08): .719/.321 vs the plain

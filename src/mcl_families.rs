@@ -216,6 +216,12 @@ struct Args {
     /// links (the `--sd-damp` rule) but that have no homology edge. Applied after `--sd-damp`. Off when unset.
     #[arg(long, requires = "sd_damp_bed")]
     sd_add_edges: Option<f64>,
+    /// Opt-in (row 1593, PASS on HG002 held-out at `--min-shared-exon-frac 0.0 --inflation 2.0`): an edge also needs one
+    /// record with SHARE >= this: the share of the fewer-exon locus's exons whose projection through the record overlaps
+    /// one exon of the other locus by >= 50% of both lengths (`bench/denovo_eval/exonshare.py`). 0 = off. Needs
+    /// `--min-exonic-bp 1`.
+    #[arg(long, default_value_t = 0.0)]
+    min_exon_share: f64,
     /// With `--extra-edges`: drop every PAF edge first, so the graph is the extra edges alone (nodes stay).
     #[arg(long, default_value_t = false, requires = "extra_edges")]
     extra_edges_only: bool,
@@ -1409,6 +1415,11 @@ fn main() -> Result<()> {
     if args.bam.is_some() && args.fasta.is_some() && !args.no_emit_units {
         args.emit_units = true;
     }
+    anyhow::ensure!((0.0..=1.0).contains(&args.min_exon_share), "--min-exon-share {} must be in [0, 1]", args.min_exon_share);
+    anyhow::ensure!(
+        args.min_exon_share == 0.0 || args.min_exonic_bp >= 1,
+        "--min-exon-share needs --min-exonic-bp 1 (the exon-to-exon pass that reads each record's CIGAR)"
+    );
     let p = GraphParams {
         min_identity: args.min_identity,
         min_cov_longer: args.min_cov_longer,
@@ -1422,6 +1433,7 @@ fn main() -> Result<()> {
         min_shared_exon_frac: args.min_shared_exon_frac,
         shared_exon_union: args.shared_exon_union,
         shared_exon_columns: args.shared_exon_columns,
+        min_exon_share: args.min_exon_share,
     };
 
     let blocks = match &args.gff {
@@ -1594,6 +1606,12 @@ fn main() -> Result<()> {
             p.min_shared_exon_frac,
             g.rejected_low_shared_exon,
             if p.shared_exon_columns { " (column-exact: exon-to-exon CIGAR columns)" } else { "" }
+        );
+    }
+    if p.min_exon_share > 0.0 {
+        eprintln!(
+            "[mcl_families] min-exon-share={}: {} pair(s) dropped for sharing too few exons",
+            p.min_exon_share, g.rejected_low_exon_share
         );
     }
     if p.shared_exon_columns {
@@ -3049,6 +3067,9 @@ fn main() -> Result<()> {
         writeln!(ph, "exon_gate_frac\t{}", args.min_shared_exon_frac.max(0.0))?;
         writeln!(ph, "exon_gate_minimap2\t{v}")?;
         writeln!(ph, "exon_gate_counts\taligned pairs only")?;
+    }
+    if args.min_exon_share > 0.0 {
+        writeln!(ph, "min_exon_share\t{}", args.min_exon_share)?;
     }
     // `--pair-rule` (PREREG_mcl_two_node_2026-10-13 Amendment 1(a)): always the LAST two lines, so every earlier line
     // keeps its order.

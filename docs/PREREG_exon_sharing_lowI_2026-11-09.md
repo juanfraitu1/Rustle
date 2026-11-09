@@ -74,3 +74,22 @@ INSIDE their curves (no above-range pricing).
 
 What follows (as registered): an exon-sharing edge gate inside `mcl_families`, byte-identical on membership to this route,
 proposed opt-in at I 2.0; defaults are the user's call.
+
+## Binary port (2026-11-09): `mcl_families --min-shared-exon-frac 0.0 --min-exon-share 0.5`
+
+Not byte-identical on membership to the route, as the "What follows" line asked; the difference is understood and the
+verdict is unchanged. The route took each pair's max SHARE over EVERY record of the gate-0 PAF; the binary scores only the
+records it accepts as evidence. On HG002 the route holds 8 edges of 148,596 that the port does not (0 the other way, 0
+weight differences), each resting on one record only: 6 below the identity floor (0.649-0.699 < 0.70) or 1 bp under the
+300-bp floor, 2 self-hits between overlapping loci (the same bases aligned to themselves, SHARE 1.0 trivially). The port
+keeps the binary's evidence rule. Families (job 4453956, `port1593/`) and pairscore:
+
+| run | port precision / recall (pred / hit) | route |
+|---|---|---|
+| A119b plain I2.0 | .868 / .783 (1970 / 1709) | .868 / .783 (1969 / 1710); 11 / 9 families differ of 1532 |
+| A119b damped I2.0 | .918 / .782 (1860 / 1707) | identical scores; 18 / 16 families differ of 1395 |
+| **HG002 plain I2.0** | **.545 / .396** (301 / 164) | .539 / .396 (304 / 164); 6 / 5 families differ of 661 |
+| **HG002 damped I2.0** | **.703 / .355** (209 / 147) | identical families |
+
+Both HG002 bars still pass on the port (plain +0.32, damped +0.145 against the same curves). Unit test
+`exon_share_matches_the_python_and_gates_edges` reproduces the Python selftest cases.

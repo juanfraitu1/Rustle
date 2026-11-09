@@ -35,7 +35,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_exon_sharing_2026-11-08.md`](PREREG_exon_sharing_2026-11-08.md) | PREREG row 1591: exon sharing vs exon coverage as the edge score (edge level, HG002 PASS +0.368) | 2026-11-08 | register ×1 |
 | [`PREREG_exon_sharing_family_2026-11-08.md`](PREREG_exon_sharing_family_2026-11-08.md) | PREREG row 1592: exon sharing as the family edge rule (STOP at dev, +0.0399) | 2026-11-08 | register ×1 |
 | [`PREREG_exon_sharing_lowI_2026-11-09.md`](PREREG_exon_sharing_lowI_2026-11-09.md) | PREREG row 1593: exon sharing >= 0.5 at low inflation (HG002 PASS: plain +0.317, damped +0.145) | 2026-11-09 | register ×1 |
-| [`PREREG_rna_copynumber_soto_2026-11-09.md`](PREREG_rna_copynumber_soto_2026-11-09.md) | PREREG row 1594: copy_phasing extra-copy calls vs Soto S1E population parCN classes | 2026-11-09 | pending |
+| [`PREREG_rna_copynumber_soto_2026-11-09.md`](PREREG_rna_copynumber_soto_2026-11-09.md) | PREREG row 1594: copy_phasing extra-copy calls vs Soto S1E population parCN classes (FAIL, +0.107, p 0.10) | 2026-11-09 | register ×1 |
 | [`PREREG_as_table_parallel_2026-11-07.md`](PREREG_as_table_parallel_2026-11-07.md) | PREREG row 1567: parallel `as_table` scan (ms columns kept) | 2026-11-07 | register ×1 |
 | [`PREREG_as_table_shared_2026-11-07.md`](PREREG_as_table_shared_2026-11-07.md) | PREREG row 1568: one best-AS table per BAM, shared by every run on it | 2026-11-07 | register ×1 |
 | [`PREREG_assemble_region_threads_2026-11-07.md`](PREREG_assemble_region_threads_2026-11-07.md) | PREREG row 1564: run the assemble stage's region sweep in parallel (`--region-threads`) | 2026-11-07 | register ×1 |

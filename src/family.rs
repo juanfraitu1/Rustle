@@ -61490,6 +61490,11 @@ pub mod fam_from_gtf {
             /// the two sides). A record without a usable `cg:Z:` tag carries no exon-to-exon evidence and is counted in
             /// [`HomologyGraph::no_cigar_records`]. Default off: byte-identical.
             pub shared_exon_columns: bool,
+            /// Row 1593 (PASS on HG002 held-out, opt-in): an edge also needs SHARE >= this on one of the pair's records —
+            /// the share of the fewer-exon locus's exons whose projection through the record's CIGAR overlaps one exon of
+            /// the other locus by >= 50% of both lengths (`exon_share`, = `bench/denovo_eval/exonshare.py` SHARE).
+            /// 0.0 = off (byte-identical).
+            pub min_exon_share: f64,
         }
 
         impl Default for GraphParams {
@@ -61507,6 +61512,7 @@ pub mod fam_from_gtf {
                     min_shared_exon_frac: 0.0,
                     shared_exon_union: false,
                     shared_exon_columns: false,
+                    min_exon_share: 0.0,
                 }
             }
         }
@@ -61546,6 +61552,8 @@ pub mod fam_from_gtf {
             /// Pairs dropped by `min_shared_exon_frac` — some exonic evidence existed, but on the best record it
             /// covered too small a fraction of the smaller gene. Reported, never silent.
             pub rejected_low_shared_exon: usize,
+            /// Pairs dropped by `min_exon_share` (row 1593). Reported, never silent.
+            pub rejected_low_exon_share: usize,
             /// Under `shared_exon_columns`: PAF records with no `cg:Z:` tag, or one that does not span the record, so
             /// their exon-to-exon columns could not be counted (they carry no exon-to-exon evidence). Reported, never
             /// silent; `mcl_families` refuses a run where this is not 0.
@@ -61919,7 +61927,7 @@ pub mod fam_from_gtf {
             // (a intervals, b intervals, nmatch, blocklen, best record's exon-to-exon bases, a / b intervals of the
             // records touching exon bases on both sides — kept only under `shared_exon_union`)
             // (.., best chain-pair shared-exon fraction of the pair (`--chain-gate`; 0 without))
-            type PairAcc = (Vec<(u64, u64)>, Vec<(u64, u64)>, u64, u64, u64, Vec<(u64, u64)>, Vec<(u64, u64)>, f64);
+            type PairAcc = (Vec<(u64, u64)>, Vec<(u64, u64)>, u64, u64, u64, Vec<(u64, u64)>, Vec<(u64, u64)>, f64, f64);
             // the deferred pairs, sorted by key: the order the resolution below walks (and numbers the nodes in)
             let mut pairs: Vec<((GeneKey, GeneKey), PairAcc)> = Vec::new();
 
@@ -62022,6 +62030,8 @@ pub mod fam_from_gtf {
                     aee: Vec<(u64, u64)>,
                     bee: Vec<(u64, u64)>,
                     cf: f64,
+                    /// `min_exon_share`: this record's SHARE (0 when off, or without blocks / CIGAR)
+                    sh: f64,
                     no_cigar: bool,
                     miss: [Option<u32>; 2],
                 },
@@ -62166,10 +62176,22 @@ pub mod fam_from_gtf {
                             }
                         }
                     }
+                    let sh = match (p.min_exon_share > 0.0, qn.blocks, tn.blocks, cigar_of(line)) {
+                        (true, Some(qb), Some(tb), Some(cg)) => {
+                            let rel = |b: &Vec<(u64, u64)>, start: u64| -> Vec<(i64, i64)> {
+                                let off = start.saturating_sub(1) as i64;
+                                let mut v: Vec<(i64, i64)> = b.iter().map(|&(s0, e0)| (s0 as i64 - off, e0 as i64 - off)).collect();
+                                v.sort();
+                                v
+                            };
+                            exon_share(&rel(qb, qk.1), &rel(tb, tk.1), cg, qs as i64, qe as i64, ts as i64, f[4] == "-")
+                        }
+                        _ => 0.0,
+                    };
                     return if qi <= ti {
-                        Rec::Deferred { k: (qi, ti), a: (qs, qe), b: (ts, te), nm: nmatch, bl: blocklen, ee, aee: qiv, bee: tiv, cf, no_cigar, miss }
+                        Rec::Deferred { k: (qi, ti), a: (qs, qe), b: (ts, te), nm: nmatch, bl: blocklen, ee, aee: qiv, bee: tiv, cf, sh, no_cigar, miss }
                     } else {
-                        Rec::Deferred { k: (ti, qi), a: (ts, te), b: (qs, qe), nm: nmatch, bl: blocklen, ee, aee: tiv, bee: qiv, cf, no_cigar, miss }
+                        Rec::Deferred { k: (ti, qi), a: (ts, te), b: (qs, qe), nm: nmatch, bl: blocklen, ee, aee: tiv, bee: qiv, cf, sh, no_cigar, miss }
                     };
                 }
                 let cov_longer = (aln as f64 / dq.max(dt).max(1) as f64).min(1.0);
@@ -62192,7 +62214,7 @@ pub mod fam_from_gtf {
                                 Rec::SameLocus => local.1[0] += 1,
                                 Rec::Overlapping => local.1[1] += 1,
                                 Rec::SelfHit => local.1[2] += 1,
-                                Rec::Deferred { k, a, b, nm, bl, ee, aee, bee, cf, no_cigar, miss } => {
+                                Rec::Deferred { k, a, b, nm, bl, ee, aee, bee, cf, sh, no_cigar, miss } => {
                                     local.2.extend(miss.into_iter().flatten());
                                     local.1[3] += no_cigar as usize;
                                     let e = local.0.entry(k).or_default();
@@ -62204,6 +62226,7 @@ pub mod fam_from_gtf {
                                     e.5.extend(aee);
                                     e.6.extend(bee);
                                     e.7 = e.7.max(cf);
+                                    e.8 = e.8.max(sh);
                                 }
                             }
                         }
@@ -62233,6 +62256,7 @@ pub mod fam_from_gtf {
                             e.5.extend(v.5);
                             e.6.extend(v.6);
                             e.7 = e.7.max(v.7);
+                            e.8 = e.8.max(v.8);
                         }
                         _ => {
                             pairs.push(((keys[k.0 as usize].clone(), keys[k.1 as usize].clone()), v));
@@ -62276,6 +62300,7 @@ pub mod fam_from_gtf {
                 Missing,
                 NoExonic,
                 LowShared,
+                LowShare,
                 Below { contained: bool },
                 Edge { w: f64, identity: f64, contained: bool, by_chain: bool },
             }
@@ -62283,7 +62308,7 @@ pub mod fam_from_gtf {
                 use rayon::prelude::*;
                 pairs
                     .par_iter()
-                    .map(|((ak, bk), (aiv, biv, nmatch, blocklen, exon_exon, aee, bee, cf))| {
+                    .map(|((ak, bk), (aiv, biv, nmatch, blocklen, exon_exon, aee, bee, cf, sh))| {
                         let (nmatch, blocklen, mut exon_exon) = (*nmatch, *blocklen, *exon_exon);
                         let mut by_chain = false;
                         if p.shared_exon_union && !aee.is_empty() {
@@ -62338,6 +62363,9 @@ pub mod fam_from_gtf {
                                     return Verdict::LowShared;
                                 }
                             }
+                        }
+                        if p.min_exon_share > 0.0 && *sh < p.min_exon_share {
+                            return Verdict::LowShare;
                         }
                         // `exonic_overlap` REPLACES the numerator; otherwise keep the span numerator (unioned over the
                         // pair's records, so a split alignment is not penalised for being split).
@@ -62397,6 +62425,10 @@ pub mod fam_from_gtf {
                     }
                     Verdict::LowShared => {
                         g.rejected_low_shared_exon += 1;
+                        continue;
+                    }
+                    Verdict::LowShare => {
+                        g.rejected_low_exon_share += 1;
                         continue;
                     }
                     Verdict::Below { contained } => {
@@ -62977,6 +63009,67 @@ pub mod fam_from_gtf {
         /// The `cg:Z:` CIGAR of a PAF line (minimap2 `-c`), among the optional columns after the 12th; `None` without one.
         fn cigar_of(line: &str) -> Option<&str> {
             line.split('\t').skip(12).find_map(|f| f.strip_prefix("cg:Z:"))
+        }
+
+        /// Row 1593 SHARE of one PAF record, a port of `bench/denovo_eval/exonshare.py record_scores(...)[1]`: exons of
+        /// the member with fewer exons (ties: the smaller exonic length, then the query) projected through the CIGAR onto
+        /// the other member; an exon is shared when its projection overlaps one exon there by >= 50% of both lengths.
+        /// `qx` / `tx`: each locus's exon blocks relative to its own span (0-based half-open, sorted); `minus`: strand `-`
+        /// (the query runs backwards from `qe`). Returns shared / that member's exon count (0.0 for no exons).
+        pub(crate) fn exon_share(qx: &[(i64, i64)], tx: &[(i64, i64)], cg: &str, qs: i64, qe: i64, ts: i64, minus: bool) -> f64 {
+            // aligned blocks (q0, t0, n): q0 = the lowest query base of the block
+            let mut blocks: Vec<(i64, i64, i64)> = Vec::new();
+            let (mut q, mut t, mut n) = (if minus { qe } else { qs }, ts, 0i64);
+            for c in cg.bytes() {
+                if c.is_ascii_digit() {
+                    n = n * 10 + (c - b'0') as i64;
+                    continue;
+                }
+                match c {
+                    b'M' | b'=' | b'X' => {
+                        blocks.push((if minus { q - n } else { q }, t, n));
+                        q += if minus { -n } else { n };
+                        t += n;
+                    }
+                    b'I' => q += if minus { -n } else { n },
+                    b'D' | b'N' => t += n,
+                    _ => {}
+                }
+                n = 0;
+            }
+            let lens = |x: &[(i64, i64)]| x.iter().map(|&(a, b)| b - a).sum::<i64>();
+            let from_q = (qx.len(), lens(qx)) <= (tx.len(), lens(tx));
+            let (src, dst) = if from_q { (qx, tx) } else { (tx, qx) };
+            if src.is_empty() {
+                return 0.0;
+            }
+            // segments (src0, src1, dst_at_src0, dir), sorted by src0
+            let mut segs: Vec<(i64, i64, i64, i64)> = blocks
+                .iter()
+                .map(|&(q0, t0, n)| {
+                    let (s0, d0) = if from_q { (q0, t0) } else { (t0, q0) };
+                    if minus { (s0, s0 + n, d0 + n - 1, -1) } else { (s0, s0 + n, d0, 1) }
+                })
+                .collect();
+            segs.sort();
+            let mut shared = 0usize;
+            for &(a, b) in src {
+                let mut proj: Vec<(i64, i64)> = Vec::new();
+                let i0 = segs.partition_point(|s| s.0 < a).saturating_sub(1);
+                for &(s0, s1, d0, dr) in segs[i0..].iter().take_while(|s| s.0 < b) {
+                    let (x, y) = (a.max(s0), b.min(s1));
+                    if x < y {
+                        let (u, v) = (d0 + dr * (x - s0), d0 + dr * (y - 1 - s0));
+                        proj.push((u.min(v), u.max(v) + 1));
+                    }
+                }
+                let hit = dst.iter().any(|&(c, d)| {
+                    let ov: i64 = proj.iter().map(|&(x, y)| (y.min(d) - x.max(c)).max(0)).sum();
+                    2 * ov >= b - a && 2 * ov >= d - c
+                });
+                shared += hit as usize;
+            }
+            shared as f64 / src.len() as f64
         }
 
         fn exonic_bases_in(blocks: &[(u64, u64)], gene_start: u64, s: u64, e: u64) -> u64 {
@@ -64235,6 +64328,39 @@ pub mod fam_from_gtf {
                 assert_eq!(h.edges.len(), 1);
                 assert!(h.idents.is_empty());
                 assert_eq!(h.n_nodes(), 3);
+            }
+
+            /// Row 1593: `exon_share` reproduces `bench/denovo_eval/exonshare.py` SHARE on its selftest cases, and the graph
+            /// gate keeps an exon-matched pair and drops a pair whose exons miss each other.
+            #[test]
+            fn exon_share_matches_the_python_and_gates_edges() {
+                let ea = [(0, 100), (200, 300), (400, 500)];
+                assert_eq!(exon_share(&ea, &ea, "500M", 0, 500, 0, false), 1.0);
+                let eb = [(0, 100), (220, 320), (400, 500)]; // exon 2 shifted 20 bp: still >= 50% both ways
+                assert_eq!(exon_share(&ea, &eb, "500M", 0, 500, 0, false), 1.0);
+                let mirror: Vec<(i64, i64)> = ea.iter().rev().map(|&(a, b)| (500 - b, 500 - a)).collect();
+                assert_eq!(exon_share(&mirror, &ea, "500M", 0, 500, 0, true), 1.0);
+                let (qa, tb) = ([(0, 100), (200, 310)], [(0, 100), (200, 300)]);
+                assert_eq!(exon_share(&qa, &tb, "250M10I50M", 0, 310, 0, false), 1.0);
+                let far = [(0, 40), (460, 500)]; // 40-bp exons vs 100-bp ones: < 50% of the longer
+                assert_eq!(exon_share(&far, &ea, "500M", 0, 500, 0, false), 0.0);
+                assert_eq!(exon_share(&[(0, 100), (450, 500)], &ea, "500M", 0, 500, 0, false), 1.0); // 50 bp = exactly 50% of 100
+                assert_eq!(exon_share(&[(0, 100), (470, 500)], &ea, "500M", 0, 500, 0, false), 0.5);
+
+                let mk = |tb: Vec<(u64, u64)>| {
+                    let paf = paf_line("c:1001-3000", 2000, 0, 2000, "c:9001-11000", 2000, 0, 2000, 1960, 2000) + "\tcg:Z:2000M";
+                    let mut ex = BTreeMap::new();
+                    ex.insert(("c".to_string(), 1001, 3000), 1000);
+                    ex.insert(("c".to_string(), 9001, 11000), tb.iter().map(|&(a, b)| b - a).sum());
+                    let mut bl: BTreeMap<GeneKey, Vec<(u64, u64)>> = BTreeMap::new();
+                    bl.insert(("c".to_string(), 1001, 3000), vec![(1000, 1500), (2500, 3000)]);
+                    bl.insert(("c".to_string(), 9001, 11000), tb);
+                    let p = GraphParams { min_bp: 100, min_exonic_bp: 1, exonic_both_sides: true, min_exon_share: 0.5, ..GraphParams::default() };
+                    let g = graph_from_paf(&paf, &ex, &bl, &p);
+                    (g.n_edges(), g.rejected_low_exon_share)
+                };
+                assert_eq!(mk(vec![(9000, 9500), (10500, 11000)]), (1, 0), "same exons: SHARE 1.0");
+                assert_eq!(mk(vec![(9450, 9950), (10950, 11000)]), (0, 1), "exons miss each other: SHARE 0");
             }
 
             /// PREREG DENOVOFAM arm B: two exon-to-exon records of 500 bp each cover 0.5 of the smaller gene apiece (best

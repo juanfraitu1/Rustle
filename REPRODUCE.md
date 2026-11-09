@@ -146,6 +146,10 @@ shallow library, and making it depth-aware is the top open item.
 
 ```sh
 # de novo family stage in ONE command (2026-09-23): loci from the assembled GTF, all-vs-all, MCL
+# DEFAULT edge rule since 2026-11-09 (row 1593, what tools/rustle_pipeline.sh runs): exon sharing at inflation 2.0,
+# plus --sd-damp-bed GENOME.sedef.bed when the genome has a SEDEF build (row 1580)
+target/release/mcl_families --from-gtf run.gtf --fasta GENOME.fa --min-exonic-bp 1 --min-shared-exon-frac 0.0 --min-exon-share 0.5 --inflation 2.0 --out run.fam
+# the coverage rule before 2026-11-09 (RUSTLE_FAMILY_EDGE_RULE=coverage), behind every family figure dated earlier:
 target/release/mcl_families --from-gtf run.gtf --fasta GENOME.fa --min-exonic-bp 1 --min-shared-exon-frac 0.60 --out run.fam
 #   (writes run.fam.loci.gff3 / .loci.fa / .loci.paf, then run.fam.clusters.tsv; the older two-step form:)
 target/release/mcl_families --paf all_vs_all.paf --gff loci.gff3 --min-exonic-bp 1 --min-shared-exon-frac 0.60 ...
