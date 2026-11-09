@@ -7450,6 +7450,18 @@ fn main() -> Result<()> {
         && rt_switch.is_none()
         && rustle::denovo_assemble::sweep_supported()
         && std::env::var("RUSTLE_WINDOW_SWEEP").map(|v| v == "1").unwrap_or(false);
+    // r1600 (`docs/PREREG_assign_router_2026-11-09.md`, Addendum 2): the router fills the same store for every region at
+    // once, with one pass over all windows' BAI ranges for the light records and one for the tied molecules' full records
+    // (`rustle::bam_router::route`); the regions then take their windows from it as under the sweep. Opt-in
+    // `RUSTLE_ASSIGN_ROUTER=1` until the registered acceptance decides.
+    let router_on = !sweep_on
+        && args.tied_prefilter
+        && bam_cache.is_some()
+        && !args.assemble_only
+        && rt_switch.is_none()
+        && rustle::denovo_assemble::sweep_supported()
+        && std::env::var("RUSTLE_ASSIGN_ROUTER").map(|v| v == "1").unwrap_or(false);
+    let store_on = sweep_on || router_on;
     // r1543: the store is built per BATCH of regions (`RUSTLE_SWEEP_BATCH` regions, default 64) and dropped after the batch is
     // computed: the r1507 genome-wide run held every key's windows at once (the hotspot's records once per cross-chromosome
     // key that covers them) and was OOM-killed at 250 GB. Each window's records are the same whichever batch serves them.
@@ -7482,20 +7494,39 @@ fn main() -> Result<()> {
         }
         let light: Vec<Mutex<Option<(Vec<PrimaryRead>, Vec<BamRead>)>>> = (0..n_win).map(|_| Mutex::new(None)).collect();
         let chroms: Vec<&String> = { let mut v: Vec<&String> = by_chrom.keys().collect(); v.sort(); v };
-        let swept: Vec<Vec<(usize, (Vec<PrimaryRead>, Vec<BamRead>))>> = chroms
-            .par_iter()
-            .map(|chrom| -> Result<Vec<(usize, (Vec<PrimaryRead>, Vec<BamRead>))>> {
-                let ws = &by_chrom[*chrom];
-                let spec: Vec<(u64, u64, rustle::denovo_assemble::ReadMode<'_>)> =
-                    ws.iter().map(|(_, l, h)| (*l, *h, rustle::denovo_assemble::ReadMode::Light)).collect();
-                let got = c.sweep_windows(&args.bam, chrom, &spec).with_context(|| format!("sweeping {chrom}"))?;
-                Ok(ws.iter().map(|(g, _, _)| *g).zip(got).collect())
-            })
-            .collect::<Result<Vec<_>>>()?;
-        for (g, r) in swept.into_iter().flatten() {
-            *light[g].lock().unwrap() = Some(r);
+        if router_on {
+            // each record converted once, as the query path converts it (a window's records share its chromosome)
+            let routed = rustle::bam_router::route(&args.bam, c, &win_coord, args.threads.max(1), &|rec, ws| {
+                let (p, b) = c.convert_record(rec, &win_coord[ws[0]].0, rustle::denovo_assemble::ReadMode::Light)?;
+                Ok(if p.is_none() && b.is_none() { None } else { Some((p, b)) })
+            })?;
+            for (g, items) in routed.into_iter().enumerate() {
+                let (mut p, mut b) = (Vec::new(), Vec::new());
+                for (pi, bi) in items {
+                    p.extend(pi);
+                    b.extend(bi);
+                }
+                *light[g].lock().unwrap() = Some((p, b));
+            }
+        } else {
+            let swept: Vec<Vec<(usize, (Vec<PrimaryRead>, Vec<BamRead>))>> = chroms
+                .par_iter()
+                .map(|chrom| -> Result<Vec<(usize, (Vec<PrimaryRead>, Vec<BamRead>))>> {
+                    let ws = &by_chrom[*chrom];
+                    let spec: Vec<(u64, u64, rustle::denovo_assemble::ReadMode<'_>)> =
+                        ws.iter().map(|(_, l, h)| (*l, *h, rustle::denovo_assemble::ReadMode::Light)).collect();
+                    let got = c.sweep_windows(&args.bam, chrom, &spec).with_context(|| format!("sweeping {chrom}"))?;
+                    Ok(ws.iter().map(|(g, _, _)| *g).zip(got).collect())
+                })
+                .collect::<Result<Vec<_>>>()?;
+            for (g, r) in swept.into_iter().flatten() {
+                *light[g].lock().unwrap() = Some(r);
+            }
         }
         let t_light = t.elapsed().as_secs_f64();
+        if timing && router_on {
+            eprintln!("[timing] router pass1 {:.1}s ({} windows of {} regions)", t_light, n_win, flat.len());
+        }
         // the tied names of each region, from its windows' light records exactly as `compute` pools them
         let tied: Vec<Arc<DetHashSet<String>>> = flat
             .par_iter()
@@ -7526,28 +7557,59 @@ fn main() -> Result<()> {
             v.into_iter().map(|x| x.expect("every window has a region")).collect()
         };
         let full: Vec<Mutex<Option<Vec<BamRead>>>> = (0..n_win).map(|_| Mutex::new(None)).collect();
-        let swept: Vec<Vec<(usize, Vec<BamRead>)>> = chroms
-            .par_iter()
-            .map(|chrom| -> Result<Vec<(usize, Vec<BamRead>)>> {
-                let ws = &by_chrom[*chrom];
-                let spec: Vec<(u64, u64, rustle::denovo_assemble::ReadMode<'_>)> = ws
-                    .iter()
-                    .map(|(g, l, h)| (*l, *h, rustle::denovo_assemble::ReadMode::Only(&tied_of_window[*g])))
-                    .collect();
-                let got = c.sweep_windows(&args.bam, chrom, &spec).with_context(|| format!("sweeping {chrom}"))?;
-                Ok(ws.iter().map(|(g, _, _)| *g).zip(got.into_iter().map(|(_, b)| b)).collect())
-            })
-            .collect::<Result<Vec<_>>>()?;
-        for (g, r) in swept.into_iter().flatten() {
-            *full[g].lock().unwrap() = Some(r);
+        if router_on {
+            let t_gate = t.elapsed().as_secs_f64() - t_light;
+            // every region's tied names at once; each window then keeps its own region's (`ReadMode::Only` per window)
+            let union: DetHashSet<&str> = tied.iter().flat_map(|t| t.iter().map(|n| n.as_str())).collect();
+            let routed = rustle::bam_router::route(&args.bam, c, &win_coord, args.threads.max(1), &|rec, ws| {
+                let wanted = rec.name().map(|n| union.contains(std::str::from_utf8(n.as_ref()).unwrap_or(""))).unwrap_or(false);
+                if !wanted {
+                    return Ok(None);
+                }
+                Ok(c.convert_record(rec, &win_coord[ws[0]].0, rustle::denovo_assemble::ReadMode::Full)?.1)
+            })?;
+            for (g, items) in routed.into_iter().enumerate() {
+                let want = &tied_of_window[g];
+                *full[g].lock().unwrap() = Some(items.into_iter().filter(|b| want.contains(&b.name)).collect());
+            }
+            if timing {
+                eprintln!(
+                    "[timing] router gate {:.1}s\n[timing] router pass2 {:.1}s ({} tied names)",
+                    t_gate,
+                    t.elapsed().as_secs_f64() - t_light - t_gate,
+                    union.len()
+                );
+            }
+        } else {
+            let swept: Vec<Vec<(usize, Vec<BamRead>)>> = chroms
+                .par_iter()
+                .map(|chrom| -> Result<Vec<(usize, Vec<BamRead>)>> {
+                    let ws = &by_chrom[*chrom];
+                    let spec: Vec<(u64, u64, rustle::denovo_assemble::ReadMode<'_>)> = ws
+                        .iter()
+                        .map(|(g, l, h)| (*l, *h, rustle::denovo_assemble::ReadMode::Only(&tied_of_window[*g])))
+                        .collect();
+                    let got = c.sweep_windows(&args.bam, chrom, &spec).with_context(|| format!("sweeping {chrom}"))?;
+                    Ok(ws.iter().map(|(g, _, _)| *g).zip(got.into_iter().map(|(_, b)| b)).collect())
+                })
+                .collect::<Result<Vec<_>>>()?;
+            for (g, r) in swept.into_iter().flatten() {
+                *full[g].lock().unwrap() = Some(r);
+            }
         }
-        if timing {
+        if timing && sweep_on {
             eprintln!(
                 "[timing] window sweep: {} windows of {} regions over {} chromosome(s): light {:.1}s, tie + full {:.1}s",
                 n_win, flat.len(), chroms.len(), t_light, t.elapsed().as_secs_f64() - t_light
             );
         }
         Ok(WindowStore { index, light, full })
+    };
+    // r1600: a region's exact light-record count from the router's store (its budget charge and its start order)
+    let routed_count = |key: &RegionKey| -> u64 {
+        let guard = window_store.lock().unwrap();
+        let st = guard.as_ref().expect("the store is built before its regions are scheduled");
+        st.index[key].iter().map(|g| st.light[*g].lock().unwrap().as_ref().map_or(0, |x| x.1.len() as u64)).sum()
     };
     // The expensive, INDEPENDENT per-region work: BAM read + detect_and_assign (the dominant poasta alignment
     // lives here). Pure w.r.t. the read-only genome/bam_cache. The heavy read SEQUENCES are dropped here —
@@ -7588,7 +7650,11 @@ fn main() -> Result<()> {
                         std::env::var("RUSTLE_REGION_READ_BUDGET").ok().and_then(|v| v.parse().ok()).unwrap_or(2_500_000),
                     )
                 });
-                let est = c.estimate_records(&args.bam, &wins)? as usize;
+                let est = if router_on {
+                    routed_count(&(contig.clone(), lo, hi)) as usize
+                } else {
+                    c.estimate_records(&args.bam, &wins)? as usize
+                };
                 if timing {
                     eprintln!("[timing] budget estimate {contig}:{lo}-{hi}: {est} records");
                 }
@@ -7764,7 +7830,7 @@ fn main() -> Result<()> {
             for (wi, (wchrom, wlo, whi)) in wins.iter().enumerate() {
                 let (wlo, whi) = (*wlo, *whi);
                 let (p, b) = match &bam_cache {
-                    Some(_) if sweep_on => {
+                    Some(_) if store_on => {
                         let taken = {
                             let guard = window_store.lock().unwrap();
                             let st = guard.as_ref().expect("the batch's store is built before its regions compute");
@@ -7798,6 +7864,9 @@ fn main() -> Result<()> {
             // --tied-prefilter: `br` holds LIGHT records; decide the AS-tied molecules as the gate below will, then read the
             // windows again keeping full records of those molecules only (every placement of each, in the same order)
             if args.tied_prefilter {
+                if timing {
+                    eprintln!("[timing] light records {contig}:{lo}-{hi}: {}", br.len());
+                }
                 let ev = as_evidence_per_read(&br, true);
                 let tied: DetHashSet<String> = br
                     .iter()
@@ -7810,7 +7879,7 @@ fn main() -> Result<()> {
                 let c = bam_cache.as_ref().expect("checked at startup");
                 let mut full: Vec<rustle::denovo_assemble::BamRead> = Vec::new();
                 for (wi, (wchrom, wlo, whi)) in wins.iter().enumerate() {
-                    let b = match sweep_on {
+                    let b = match store_on {
                         true => {
                             let taken = {
                                 let guard = window_store.lock().unwrap();
@@ -8735,7 +8804,7 @@ fn main() -> Result<()> {
     // raw transcript id -> the region that emitted it, per contig (ids are made unique per region only, below)
     let mut tid_region: DetHashMap<String, DetHashMap<String, (u64, u64)>> = DetHashMap::default();
     for chunk in flat.chunks(batch) {
-        if sweep_on {
+        if store_on {
             *window_store.lock().unwrap() = Some(build_store(chunk)?);
         }
         // Regions run on plain OS threads (not a rayon pool): `compute` blocks on the read budget / star
@@ -8749,7 +8818,11 @@ fn main() -> Result<()> {
             // r1548 (opt-in): widest hull first so the heaviest region takes the empty pool at t = 0; a region whose
             // budget does not fit now is pushed to `deferred` and drained (blocking) once the main list is exhausted.
             let mut order: Vec<usize> = (0..chunk.len()).collect();
-            if defer {
+            if router_on {
+                // r1600: exact routed counts, largest first, ties in flat order
+                let n: Vec<u64> = chunk.iter().map(|(c, lo, hi)| routed_count(&(c.clone(), *lo, *hi))).collect();
+                order.sort_by_key(|&i| (std::cmp::Reverse(n[i]), i));
+            } else if defer {
                 // gw13: hull span put chr3 (200 Mb) ahead of chr13 (105 Mb, 3.3M records) and chr13 starved again; the
                 // BAM-index estimate is in-memory (no decoding) and is the quantity the budget is charged in.
                 let est_of = |i: usize| -> u64 {
@@ -8848,7 +8921,7 @@ fn main() -> Result<()> {
                 .collect::<Result<Vec<_>>>()?
         };
         works.append(&mut w);
-        if sweep_on {
+        if store_on {
             *window_store.lock().unwrap() = None;
         }
     }
