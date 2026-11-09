@@ -565,3 +565,41 @@ gated PAF, all 7 assign tables (params included), the flag scan table and consen
     **Result (`audit/e2e2`, job 4455739): passes.** `all` from scratch on A119b took 1,328 s (22.1 min), against
     1,572 s in e2e1. All 16 products are byte-identical. Stage walls: assemble 401 s, families 380 s (372 in e2e1),
     assign 502 s (475), index 0 s, flag 43 s (the verdict step; the scan ran under families and assign). Adopted.
+
+## Round 40: `--low-mem` and the background scan
+
+49. **The round-39 background scan ignored `--low-mem`.** That profile bounds memory: 1 region thread and the index in
+    1-Gbp parts. Yet the scan (A119b 16.6 GB) would have run beside families' all-vs-all (about 55 GB). The index
+    background build was already off there, since `--low-mem` plans no index stage. Applied: the scan launch requires
+    `LOW_MEM=0`. Dispatch tests pass. Origin checked (`git fetch`): not moved, main is 5 commits ahead.
+    Queued (job 4455755): `all --low-mem` on gorilla to completion (round 33 was cancelled at assign), with the node's
+    memory in use sampled every 10 s.
+
+## Round 41: a failed run left its background scan running
+
+50. **When a stage failed, `all` exited but its background scan ran on.** The scan writes `PREFIX.flag_scan.*` in place,
+    and a rerun that skips assemble runs flag's own scan into the same files. Under Slurm the job end kills it;
+    interactively nothing does. Applied: on a stage failure, and on a failed background index, `all` stops the scan
+    (`pkill -P` on its wrapper's PID, then the wrapper; no name matching). A background index build is left to
+    finish: it writes a temporary name and renames, and the result is reusable. The first version broke an existing
+    test: under `set -e`, `pkill` with nothing left to kill returned 1, and `all` exited 1 instead of the stage's
+    status. Fixed with `|| true`. New test `a_failed_stage_stops_the_background_flag_scan`: the stub scan sleeps 3 s and
+    then logs `scan_end`, assign fails, and 5 s later `scan_end` must be absent. Dispatch 8/8 (3 runs), units 4,
+    samples 10.
+
+## Round 42: "22 min" holds from scratch only
+
+51. A resumed run that skips assemble, or a `--low-mem` run, scans after assign as before (about +290 s on A119b).
+    That is correct, but a reader quoting 22 min would file it as a regression. README and PERFORMANCE.md now say
+    "from scratch" and name both cases.
+
+## Round 43: the round-40 low-mem run, and what bounds families' memory
+
+52. **Result (`audit/r40`, job 4455755): `all --low-mem` on gorilla runs to the end.** 1,549 s, exit 0. Assemble,
+    families, assign and the scan are byte-identical to the normal run (`audit/e2e_kb`). `flag.missing_copy.tsv`
+    differs in 7 of 16,467 rows, with no verdict class changed: the split index (1-Gbp parts) places a few
+    consensus sequences differently, by design. Node memory in use peaked at 43.7 GB at 651 s, inside families
+    (611 s 37 GB, 641 s 41 GB, 671 s 44 GB). `--low-mem` promises a split index and one assign region; it says nothing
+    about families, and families sets the peak. Queued (job 4455848): families' all-vs-all on the gorilla loci at
+    threads 72/16 and `-K` 4G/500M, peak RSS each, PAF must stay identical. If fewer threads or a smaller batch
+    cuts the peak without changing the PAF, `--low-mem` gets it; otherwise the doc names families as the peak.

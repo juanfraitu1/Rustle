@@ -195,3 +195,40 @@ fn all_resumes_at_the_failed_stage_and_redoes_a_product_rewritten_outside_it() {
     assert_eq!((ran, code), (vec!["assemble".into(), "families".into(), "assign".into()], 3));
     assert_eq!(run("b", ""), (vec!["assign".into(), "flag".into()], 0), "assemble and families are not redone");
 }
+
+/// Round-41 audit: when a stage fails, `all` stops its background flag scan (the scan writes PREFIX.flag_scan.* in place, and a
+/// rerun's own scan would race it). The stub scan sleeps, then logs `scan_end`: after the failed run it must never get there.
+#[test]
+fn a_failed_stage_stops_the_background_flag_scan() {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("pipeline_driver_dispatch_bg_kill");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("create scratch dir");
+    let log = dir.join("stages.log");
+    let stub_driver = dir.join("driver.sh");
+    std::fs::write(
+        &stub_driver,
+        "echo \"$1\" >> \"$LOG\"\n\
+         [ \"$1\" = flag_scan ] && { sleep 3; echo scan_end >> \"$LOG\"; }\n\
+         [ \"$1\" = assign ] && exit 3\n\
+         exit 0\n",
+    )
+    .unwrap();
+    let script = format!(
+        "set -euo pipefail\n\
+         export LOG=$1 OUT={out} RUSTLE_MINIMAP2=true; STAGE=all; LEGACY_CATALOG=0; CANDIDATES=0\n\
+         RESUME=0; NO_FLAG=0; INDEX=given.mmi; LOW_MEM=0; FASTA=genome.fa; ORIG_ARGS=(); FROM_STAGE=; TO_STAGE=\n\
+         say() {{ :; }}\n\
+         stage_all_env() {{ echo env; }}\n\
+         {}\n\
+         {}\n",
+        function_block("stage_all"),
+        dispatch_block(),
+        out = dir.join("run").display()
+    );
+    let o = Command::new("bash").arg("-c").arg(&script).arg(&stub_driver).arg(&log).output().expect("bash failed to spawn");
+    assert_eq!(o.status.code(), Some(3), "assign's exit status");
+    std::thread::sleep(std::time::Duration::from_secs(5));
+    let ran = std::fs::read_to_string(&log).unwrap();
+    assert!(ran.lines().any(|l| l == "flag_scan"), "the scan started: {ran}");
+    assert!(!ran.lines().any(|l| l == "scan_end"), "the scan outlived the failed run: {ran}");
+}

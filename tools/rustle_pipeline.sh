@@ -1212,7 +1212,10 @@ stage_all() {
       ran=1; rm -f "$OUT.$st.env"; say "all: index (waiting for the background build)"
       local rc=0; wait "$idx_pid" || rc=$?; cat "$OUT.index.bg.err" >&2; rm -f "$OUT.index.bg.err"
       { cat "$OUT.$st.time.tmp" 2>/dev/null | grep -E '^(wall_s|peak_rss_kb)'; printf 'exit\t%s\n' "$rc"; } > "$OUT.$st.time"; rm -f "$OUT.$st.time.tmp"
-      [ "$rc" = 0 ] || { say "all: $st FAILED (exit $rc); see $OUT.$st.time and $OUT.index.log"; exit "$rc"; }
+      if [ "$rc" != 0 ]; then
+        if [ -n "$scan_pid" ]; then pkill -P "$scan_pid" 2>/dev/null || true; kill "$scan_pid" 2>/dev/null || true; fi   # round 41
+        say "all: $st FAILED (exit $rc); see $OUT.$st.time and $OUT.index.log"; exit "$rc"
+      fi
       printf '%s\n' "$env_now" > "$OUT.$st.env"; continue
     fi
     if [ "$st" = flag ] && [ -n "$scan_pid" ]; then
@@ -1238,10 +1241,16 @@ stage_all() {
       local st0=$SECONDS; bash "$0" "$st" "${args[@]}" || rc=$?; printf 'wall_s\t%s\n' "$(( SECONDS - st0 ))" > "$OUT.$st.time.tmp"
     fi
     { cat "$OUT.$st.time.tmp" 2>/dev/null | grep -E '^(wall_s|peak_rss_kb)'; printf 'exit\t%s\n' "$rc"; } > "$OUT.$st.time"; rm -f "$OUT.$st.time.tmp"
-    [ "$rc" = 0 ] || { say "all: $st FAILED (exit $rc); see $OUT.$st.time and the stage's log"; exit "$rc"; }
+    if [ "$rc" != 0 ]; then
+      # round-41 audit: a background scan must not outlive the run (it writes PREFIX.flag_scan.* in place; a rerun's own scan
+      # would race it). A background index build is left to finish: it writes a temporary name and renames.
+      if [ -n "$scan_pid" ]; then pkill -P "$scan_pid" 2>/dev/null || true; kill "$scan_pid" 2>/dev/null || true; fi
+      say "all: $st FAILED (exit $rc); see $OUT.$st.time and the stage's log"; exit "$rc"
+    fi
     printf '%s\n' "$env_now" > "$OUT.$st.env"
-    # round-39 audit: assemble just ran, so flag will run: its scan starts now, under families and assign
-    if [ "$st" = assemble ] && [[ " ${plan[*]} " == *" flag:"* ]] && [ -z "$FROM_STAGE$TO_STAGE" ]; then
+    # round-39 audit: assemble just ran, so flag will run: its scan starts now, under families and assign. Not under --low-mem
+    # (round 40): that profile bounds memory, and the scan (A119b 16.6 GB) would sit beside families' all-vs-all.
+    if [ "$st" = assemble ] && [ "$LOW_MEM" = 0 ] && [[ " ${plan[*]} " == *" flag:"* ]] && [ -z "$FROM_STAGE$TO_STAGE" ]; then
       bash "$0" flag_scan "${args[@]}" 2> "$OUT.flag_scan.bg.err" & scan_pid=$!
       say "all: flag scan running in the background"
     fi

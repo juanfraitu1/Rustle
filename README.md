@@ -34,7 +34,7 @@ tools/rustle_pipeline.sh all --bam reads.bam --fasta genome.fa --out run/s1 --th
 Needs `minimap2` (2.30) on PATH (or `RUSTLE_MINIMAP2`); the driver checks before the first stage. The BAM must be indexed,
 minimap2 `-ax splice:hq -uf --eqx -Y -N 50 -p 0.1 --secondary=yes` (`docs/DATA.md`), and the FASTA must carry a `.fai`. Two
 sidecars are shared by every run when their directory takes files: `BAM.as_table.tsv` (else `--as-table PATH`) and
-`FASTA.splice.I8G.mmi` (else `RUSTLE_INDEX_DIR`). A119b (96 GB BAM, CHM13) runs in 22 min on 72 cores; `docs/PERFORMANCE.md`.
+`FASTA.splice.I8G.mmi` (else `RUSTLE_INDEX_DIR`). A119b (96 GB BAM, CHM13) runs in 22 min from scratch on 72 cores; `docs/PERFORMANCE.md`.
 
 `REPRODUCE.md` is the recipe book: every shipped number, the command that produces it, and the expected
 output. `docs/DATA.md` lists the BAMs, genomes and annotations those recipes read (large inputs live outside
