@@ -484,3 +484,42 @@ gated PAF, all 7 assign tables (params included), the flag scan table and consen
     **Stopped by the user during assign (job 4455642 cancelled).** Partial result: assemble 637 s (1 region thread),
     families 135 s. `gtf`, `final.gtf`, `families.gtf`, the families clusters and copies are byte-identical to e2e_kb's.
     The assign and flag differences under `--low-mem` were not measured.
+
+## Round 34: the README could not get a new user to a run
+
+43. **`README.md` had no run command and no word on minimap2.** "Build, test, run" listed `cargo build` and the tests
+    only. A new user does not learn that `all` needs `minimap2` on PATH, which the preflight refuses without. Nor that
+    families is about 5x slower without `minimap2-gate` (`tools/minimap2_gate/build.sh`), or how the BAM must be
+    aligned. Applied: a short block with the gate build, one `all` command, the inputs (indexed BAM aligned as in
+    `docs/DATA.md`, FASTA with `.fai`), the two shared sidecars with their switches (`--as-table`,
+    `RUSTLE_INDEX_DIR`), and the A119b wall. No test reads the README.
+
+## Round 35: stale wall figures in the docs
+
+44. README, REPRODUCE, DATA and MODULE_STATUS quote no stale stage walls. The open preregistrations carry their own
+    dated estimates, as they should. `docs/PERFORMANCE.md`'s current table lacked the verdict step and the end-to-end
+    total. Applied: rows for the verdict step (41 s, 41 GB) and `all` (1,572 s, e2e1; gorilla 756 s).
+
+## Round 36: `pile()` is test-only
+
+45. **Kept, with the reason written down.** Since round 17, `pile()` (`src/missing_copy_flag.rs`) runs only in its
+    test, which could read as dead code. The test still pins what rounds 18-20 rely on: a BAI region query returns the
+    records that start before the range but reach into it (its spliced read, 0-based [500,1100), against a locus at
+    1,000). That is why both sweeps can query [first locus, last locus] instead of the whole contig. Its comment now
+    says so. Unit tests 8/8.
+
+## Round 37: `--threads` left out ran four stages' steps on 4 threads
+
+46. **Without `--threads`, only families used the job's CPUs** (commit 9a511731). as_table, both flag steps and the
+    index build ran on the default 4. The flag scan then keeps 4 of its 30 Mb groups going at once, about 4x its
+    72-thread wall. A user who follows a README without `--threads` gets a slow run for no reason. Applied
+    (`tools/rustle_pipeline.sh`): one `JOB_THREADS`, set after argument parsing: `--threads` if given, else
+    `SLURM_CPUS_PER_TASK` or `nproc`. Families now uses it too, replacing its own copy of the rule. The settings
+    records keep `$THREADS`, so a resumed run does not rerun. Left alone: catalog and candidates (opt-in, their thread
+    dependence unchecked) and `merged`'s region threads (memory). Driver tests pass (units 4, dispatch 6, samples 10).
+    Check queued (job 4455689): as_table, index, flag scan and verdict at 4 threads, against e2e_kb's 72-thread products.
+
+    **Result (job 4455689): all identical at 4 threads to e2e_kb's 72-thread products**: as_table, splice index, flag
+    scan table and consensus, verdicts. Walls at 4 threads: as_table 595 s (72 threads: inside assemble's 299 s), index
+    158 s (134 s), scan 344 s (flag stage 61 s in all at 72), verdict 30 s. Adopted: a run without `--threads` on a
+    72-core gorilla job saves about 10 min.

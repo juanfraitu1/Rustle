@@ -216,6 +216,10 @@ while [ $# -gt 0 ]; do
     *) echo "unknown argument $1" >&2; exit 2;;
   esac
 done
+# JOB_THREADS: without --threads, every CPU of the job for the steps whose products do not depend on the thread count
+# (families' all-vs-all, as_table, the flag scan and verdict, the index build; round-37 audit). The settings records keep
+# $THREADS, so a resumed run is not rerun for it.
+JOB_THREADS=$THREADS; [ "$THREADS_SET" = 1 ] || JOB_THREADS=${SLURM_CPUS_PER_TASK:-$(nproc)}
 # --candidates and --legacy-catalog name two different copy tables for assign: refused together, whatever the stage. Written
 # as a `case "$STAGE"` block, as the final dispatch is, so figures/samples.py's driver_stage_code leaves it out of every
 # stage's code hash: it refuses a call and changes no product.
@@ -602,7 +606,7 @@ stage_assemble() {
     else   # absent, truncated, from another BAM, or older than the BAM
       say "assemble: genome-wide best-AS table -> $table (one pass over the BAM)"
       local tmp="$table.tmp.$$"
-      if "$BIN/as_table" --bam "$BAM" --out "$tmp" --threads "$THREADS" > "$OUT.as_table.log" 2>&1 && [ -s "$tmp" ]; then
+      if "$BIN/as_table" --bam "$BAM" --out "$tmp" --threads "$JOB_THREADS" > "$OUT.as_table.log" 2>&1 && [ -s "$tmp" ]; then
         [ -e "$tmp.asbin" ] && mv -f "$tmp.asbin" "$table.asbin"
         mv -f "$tmp" "$table"
       else
@@ -774,10 +778,8 @@ stage_families() {
   fi
   # an earlier run's copy table must not survive a run that writes none (a binary older than the copy table): assign would read it
   rm -f "$OUT".fam.copies.{tsv,fa,regions,merged.tsv}
-  # threads: without --threads, every CPU of the job (the all-vs-all is ~98% of this stage; A119b 72 threads 410 s, the same
-  # families as 12 threads, 2026-11-09). The products do not depend on it, so the settings record keeps $THREADS.
-  local fth=$THREADS
-  [ "$THREADS_SET" = 1 ] || fth=${SLURM_CPUS_PER_TASK:-$(nproc)}
+  # threads: JOB_THREADS (the all-vs-all is ~98% of this stage; A119b 72 threads 410 s, the same families as 12 threads, 2026-11-09)
+  local fth=$JOB_THREADS
   say "families: $fth threads"
   "$BIN/mcl_families" --from-gtf "$FAM_GTF" --fasta "$FASTA" --threads "$fth" \
     --min-exonic-bp 1 "${edge[@]}" "${copies[@]}" "${FAM_EXTRA[@]}" "${FAM_REL[@]}" "${FAM_COV[@]}" "${rep[@]}" "${sd[@]}" --out "$OUT.fam" > "$OUT.families.log" 2>&1
@@ -1112,13 +1114,13 @@ stage_flag() {
     cand=(--candidates "$OUT.cand.candidates.tsv")
   fi
   say "flag: scan $BAM on $LOCI"
-  "$BIN/missing_copy_flag" --bam "$BAM" --fasta "$FASTA" --loci "$LOCI" ${GFF:+--gff "$GFF"} --index x --threads "$THREADS" \
+  "$BIN/missing_copy_flag" --bam "$BAM" --fasta "$FASTA" --loci "$LOCI" ${GFF:+--gff "$GFF"} --index x --threads "$JOB_THREADS" \
     --out "$OUT.flag_scan" --scan-only > "$OUT.flag_scan.log" 2>&1
   say "flag: align + verdict"
   # a FASTA as --index (the --low-mem profile) is indexed on the fly in INDEX_GB-Gbp parts; a prebuilt .mmi is used as it is
   local igb=()
   case "$INDEX" in *.mmi) ;; *) igb=(--index-gb "$INDEX_GB");; esac
-  "$BIN/missing_copy_flag" --bam "$BAM" --fasta "$FASTA" --loci "$LOCI" --index "$INDEX" --threads "$THREADS" "${igb[@]}" \
+  "$BIN/missing_copy_flag" --bam "$BAM" --fasta "$FASTA" --loci "$LOCI" --index "$INDEX" --threads "$JOB_THREADS" "${igb[@]}" \
     "${CONFIRM[@]}" "${FOREIGN[@]}" "${cand[@]}" --out "$OUT.flag" --from-scan "$OUT.flag_scan" > "$OUT.flag.log" 2>&1
   say "flag: $(grep -o 'verdicts: .*' "$OUT.flag.log")"
   if [ ${#cand[@]} -gt 0 ]; then say "flag: $(grep -o '[0-9]* flagged candidates with a nearest locus; [0-9]* rows name one' "$OUT.flag.log") (o3_candidate column)"; fi
@@ -1144,7 +1146,7 @@ stage_index() {
   if [ -s "$idx" ] && [ "$(cat "$idx.key" 2>/dev/null)" = "$key" ]; then say "index: $idx present"; return 0; fi
   rm -f "$idx.key"
   say "index: minimap2 -x splice -I ${INDEX_GB}G -d $idx"
-  "${RUSTLE_MINIMAP2:-minimap2}" -x splice -I "${INDEX_GB}G" -t "$THREADS" -d "$idx.tmp.$$" "$FASTA" > "$OUT.index.log" 2>&1
+  "${RUSTLE_MINIMAP2:-minimap2}" -x splice -I "${INDEX_GB}G" -t "$JOB_THREADS" -d "$idx.tmp.$$" "$FASTA" > "$OUT.index.log" 2>&1
   mv -f "$idx.tmp.$$" "$idx"
   printf '%s\n' "$key" > "$idx.key"
 }

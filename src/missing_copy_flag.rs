@@ -352,7 +352,10 @@ fn record_may_attribute_to_locus(
 /// Primary reads (`-F 2308`; under `--assignments` also non-primary records) overlapping a region, capped by name hash order. With `only`, records whose name is not
 /// in the set are skipped BEFORE the RecordBuf decode (the decode is the cost: a structural-only locus needs its
 /// few insertion-carrying reads, not the whole pile).
-#[cfg(test)] // the per-locus query pass 2 used before audit round 17; its test pins the overlap rule the sweeps share
+// Test-only since audit round 17 (pass 2 was this per-locus query). Kept because its test pins what rounds 18-20 rely on:
+// a BAI region query returns the records that start before the range but reach into it (a spliced read), so the
+// sweeps can query [first locus, last locus] instead of the whole contig.
+#[cfg(test)]
 fn pile(
     reader: &mut noodles_bam::io::Reader<
         noodles_bgzf::MultithreadedReader<std::io::BufReader<std::fs::File>>,
