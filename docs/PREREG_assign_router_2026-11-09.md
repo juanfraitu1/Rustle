@@ -129,7 +129,7 @@ On A119b, with e2e2's families products:
 | 1 | today's assign, A119b, defaults (target_e2e1, e2e2 inputs) | wall 553 s, peak RSS 36.4 GB; all 7 tables identical to e2e2 |
 | 2 | windows / merged BAI ranges / compressed bytes covered | 1,471 windows in 416 regions / 175,459 ranges / 19.71 GB (of the 96 GB BAM) |
 | 3 | records routed (with duplicates / distinct) and distinct raw bytes | 16,677,922 / 10,473,604 / 43.14 GB; throwaway probe: one pass at 16 threads in 103 s, 85 MB RSS |
-| 4 | predicted in-memory router peak = (1) - R + D, R = 8 largest regions' raw bytes 21.09 GB, D = 43.14 GB | **58.4 GB > 36.4 GB** |
+| 4 | in-memory raw store alone, D = 43.14 GB (today's in-flight regions hold converted records, not raw bytes, so no subtraction is quoted) | **>= 43 GB > 36.4 GB** |
 
 The routed records are about 7x the 1.45M reads assign keeps after its own filters: the conversion and the pool drop most
 of them. The counting pass alone (103 s for every window) is about 1/20 of today's summed fetch time (2,229 s).
@@ -148,3 +148,11 @@ The in-memory store is withdrawn. Design section 5 becomes: **per-region slice f
   written are between 43 GB (distinct) and about 69 GB (16.7M of 10.5M, if no two windows of one region shared a record),
   once per run, on the run directory's filesystem (/anvme, ~610 MB/s one stream).
 - Acceptance is unchanged: A1-A5 as registered, A3 against 36.4 GB.
+
+Note (2026-11-10, after Addendum 1, before any implementation): the pipeline runs assign with `--tied-prefilter`
+(`tools/rustle_pipeline.sh`, the `mem+=` line). Each region already reads in two steps:
+- a Light read of every record (span only, ~100 bytes);
+- a Full read (`ReadMode::Only(tied)`) of the molecules its AS-tied gate keeps, the 1.45M "reads" of `[timing]`.
+
+The 10.5M routed records are the Light step's input. Full raw records are needed only for the tied molecules. Which store
+replaces Addendum 1 is the user's call, recorded as Addendum 2 before Task 2 starts.
