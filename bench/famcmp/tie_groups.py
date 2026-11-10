@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """PREREG r1603 (docs/PREREG_tie_groups_2026-11-10.md): tie groups from the reads' own tie sets, and their score.
 
+  tie_groups.py genes SPECIES > GENES_TABLE
   tie_groups.py names GENES_TSV CAT_TSV BAM > names.txt
   samtools view -N names.txt BAM | tie_groups.py build PREFIX [exact|as98|asms98] [LINK_FRACTION] [LOCUS_FLOOR] [RMSK_BED[:MIN_FRACTION]] [unstranded|locus]
   tie_groups.py score PREFIX GENES_TSV CAT_TSV SIGNAL_TSV [full]   (full = r1605 scorer; needs the DENOVO_* truth variables)
@@ -28,6 +29,14 @@ def table(path):
         h = fh.readline().rstrip('\n').split('\t'); return [dict(zip(h, l.rstrip('\n').split('\t'))) for l in fh]
 
 mode = sys.argv[1]
+if mode == 'genes':  # tie_groups.py genes SPECIES > GENES_TABLE (the CAT genes-table layout, from famtruth's loader)
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'denovo_eval'))
+    import famtruth as F
+    print('gene_id\tgene_name\tgene_biotype\tsource\tchrom\tstart0\tend\tstrand\tn_transcripts\texon_blocks')
+    for g, d in F.load_genes(sys.argv[2]).items():
+        print(g, d['name'], d['biotype'], 'annotation', d['chrom'], d['exons'][0][0], d['exons'][-1][1], d['strand'], 1, ','.join(f'{a}-{b}' for a, b in d['exons']), sep='\t')
+    sys.exit()
 if mode == 'names':
     import pysam
     genes = {r['gene'] for r in table(sys.argv[2])}; G = load_cat(sys.argv[3], genes); bam = pysam.AlignmentFile(sys.argv[4]); names = set()
@@ -177,7 +186,7 @@ elif mode == 'score':
     if len(sys.argv) > 6 and sys.argv[6] == 'full':  # r1605: full truth families, same-family pseudogenes, grouped reach, group size
         sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'denovo_eval'))
         import famtruth as F
-        GG = F.load_cat(); pairs, _ = F.truth_pairs(GG, F.PARALOGS, set(F.LEVELS['primates']))
+        GG = F.load_genes(os.environ.get('TIE_SPECIES', 'human')); pairs, _ = F.truth_pairs(GG, F.PARALOGS, set(F.LEVELS['primates']))
         full = {g: k for k, c in enumerate(F.components(pairs)) for g in c}
         pre_ = lambda n: re.match(r'[A-Za-z]*', n).group(0)
         stems = collections.defaultdict(set)
@@ -214,6 +223,10 @@ elif mode == 'score':
         print(f"B2f purity (full truth + same-family pseudogenes) {p2} of {j2} = {p2 / max(j2, 1):.3f} (bar 0.90)")
         print(f"B1g grouped reach {sum(gr(r) for r in ind)} of {len(ind)} (bar 58); TAF11L grouped {sum(gr(r) for r in taf)} of {len(taf)}")
         print(f"B5 largest group {max(len(v) for v in grp.values())} loci (bar <= 60)")
+        bg = max(grp, key=lambda g: len(grp[g])); ts = grp[bg]; c = collections.Counter(full[x] for t in ts for x in hits[t] if x in full)
+        withcat = [t for t in ts if hits[t]]; top = c.most_common(1)[0][0] if c else None
+        share = sum(any(in_family(x, top) for x in hits[t]) for t in withcat) / max(len(withcat), 1) if c else 0.0
+        print(f"B5r largest group {len(ts)} loci on {len({M[t][0] for t in ts})} chromosome(s); {share:.3f} of its {len(withcat)} annotated loci in one family (bar: 1 chromosome or >= 0.90)")
     print(f"B3 TAF11L reached by a model <= 5 kb: {sum(any(x <= 5000 for x in reach.get(r['gene'], [])) for r in taf)} of {len(taf)} (bar 20)")
     print(f"descriptive: other hard members reached {sum(r['gene'] in reach for r in rest)} of {len(rest)}; groups {len(grp)}, loci {len(M)}; group sizes", sorted(collections.Counter(min(len(v), 20) for v in grp.values()).items()))
     print('unreached indistinguishable:', sorted(r['name'] for r in ind if r['gene'] not in reach))

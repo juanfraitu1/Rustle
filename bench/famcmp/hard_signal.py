@@ -35,7 +35,7 @@ for r in H:
         b, sec = best.get(n, (s, -1))
         c['decisive' if s == b and sec < b else 'tied' if s == b else 'weaker'] += 1
     cnt[r['gene']] = c
-grp = lambda r: 'L3+' if int(r['a1']) >= 3 else 'L1-2' if int(r['a1']) >= 1 else 'missed'
+grp = lambda r: 'L3+' if int(r.get('a1', 0)) >= 3 else 'L1-2' if int(r.get('a1', 0)) >= 1 else 'missed'  # no levels column: all 'missed'
 cls = lambda c: 'distinguishable' if c['decisive'] >= 2 else 'weak' if c['decisive'] == 1 else 'indistinguishable'
 with open(out, 'w') as w:
     w.write('family\tgene\tname\tclass\tr1601_group\tdecisive\ttied\tweaker\tsignal\n')
