@@ -29,5 +29,17 @@ locus. Arms: FRACTION 0 (control = r1604 as98), 0.25, 0.5.
 - The control under the old scorer must reproduce r1604 (72 / 0.803 / 31).
 - Not addressed, reported only: groups holding different genes of one segmental duplication (NPIPB with BOLA2 / EIF3C).
 
-## Outcome
-(empty until the run)
+## Outcome (2026-11-10, job 4456385, `/anvme/workspace/v138da13-rustle/r1603/link{0,0.25,0.5}.*`): all arms FAIL as registered
+| link fraction | groups | B1g grouped reach (>= 58) | B2f purity (>= 0.90) | B3 TAF11L (>= 20) | B5 largest group (<= 60) |
+|---|---|---|---|---|---|
+| 0 (control) | 2,599 | 70 | 201/234 = 0.859 | 31 | 831 |
+| 0.25 | 2,624 | 70 | 211/248 = 0.851 | 31 | 831 |
+| 0.5 | 2,677 | 70 | 226/264 = 0.856 | 31 | 818 |
+
+- B4: 1,653 s (slim file 298 s, 17.6M records in 86 MB; arms from it) - pass. Control under the old scorer reproduces
+  r1604 (72 / 0.803 / 31).
+- The scorer change moves purity 0.803 -> 0.859 (13 groups); the link fraction moves nothing: purity and the largest group
+  are unchanged at 0.25 and 0.5. Grouped reach holds at 70 of 72 in every arm.
+- Post hoc (not registered): the largest group (818 loci, 1,303 molecules at 0.5) is spread over every chromosome with
+  about 1.6 molecules per locus: a dispersed sequence (retrocopies or a repeat inside the reads), not a gene family and
+  not chaining through strong loci. A floor on molecules per locus is the lever this suggests; the fraction rule is closed.
