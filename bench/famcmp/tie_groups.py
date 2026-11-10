@@ -2,7 +2,7 @@
 """PREREG r1603 (docs/PREREG_tie_groups_2026-11-10.md): tie groups from the reads' own tie sets, and their score.
 
   tie_groups.py names GENES_TSV CAT_TSV BAM > names.txt
-  samtools view -N names.txt BAM | tie_groups.py build PREFIX
+  samtools view -N names.txt BAM | tie_groups.py build PREFIX [exact|as98|asms98]
   tie_groups.py score PREFIX GENES_TSV CAT_TSV SIGNAL_TSV
 """
 import sys, re, collections, statistics
@@ -37,16 +37,21 @@ if mode == 'names':
     sys.stdout.write('\n'.join(sorted(names)) + '\n')
 
 elif mode == 'build':
-    pre = sys.argv[2]; recs = collections.defaultdict(list)  # name -> [(AS, chrom, strand, blocks)]
+    pre = sys.argv[2]; rule = sys.argv[3] if len(sys.argv) > 3 else 'exact'  # exact (r1603) | as98 | asms98 (r1604)
+    assert rule in ('exact', 'as98', 'asms98'), rule
+    recs = collections.defaultdict(list)  # name -> [(AS, chrom, strand, blocks, ms)]
     for l in sys.stdin:
         f = l.split('\t'); flag = int(f[1])
         if flag & 0x804: continue
         m = re.search(r'\tAS:i:(-?\d+)', l)
-        recs[f[0]].append((int(m.group(1)) if m else 0, f[2], '-' if flag & 16 else '+', blocks_of(int(f[3]) - 1, f[5])))
+        ms = re.search(r'\tms:i:(-?\d+)', l)
+        recs[f[0]].append((int(m.group(1)) if m else 0, f[2], '-' if flag & 16 else '+', blocks_of(int(f[3]) - 1, f[5]), int(ms.group(1)) if ms else 0))
     tied = []  # (chrom, strand, start, end, blocks, name)
     for n, rs in recs.items():
-        b = max(r[0] for r in rs); t = [r for r in rs if r[0] == b]
-        if len(t) >= 2: tied += [(c, s, bl[0][0], bl[-1][1], bl, n) for _, c, s, bl in t]
+        b = max(r[0] for r in rs); bm = max(r[4] for r in rs)
+        if rule == 'exact': t = [r for r in rs if r[0] == b]
+        else: t = [r for r in rs if r[0] >= 0.98 * b > 0 or (rule == 'asms98' and r[4] >= 0.98 * bm > 0)]
+        if len(t) >= 2: tied += [(c, s, bl[0][0], bl[-1][1], bl, n) for _, c, s, bl, _ in t]
     tied.sort(key=lambda r: r[:4]); loci = []; key = None
     for r in tied:
         if loci and key == r[:2]:
