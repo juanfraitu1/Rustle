@@ -20,5 +20,25 @@ file, not a BAM pass.
 - Any miss in an arm = that arm FAILS as registered, with the numbers.
 - Descriptive: tied records, loci, groups, single-locus groups, loci with no CAT gene, per arm.
 
-## Outcome
-(empty until the run)
+## Outcome (2026-11-10, job 4456250, `/anvme/workspace/v138da13-rustle/r1603/{exact,as98,asms98}.*`): both arms FAIL as registered, on purity only
+| arm | tied records | loci / groups | B1 reach (>= 58) | B2 purity (>= 0.90) | B3 TAF11L (>= 20) |
+|---|---|---|---|---|---|
+| exact (control) | 76,500 | 2,658 / 1,615 | 39 | 273/318 = 0.858 | 11 |
+| as98 | 405,324 | 5,541 / 2,599 | **72** | 188/234 = **0.803** | **31** |
+| asms98 | 493,065 | 5,854 / 2,881 | **70** | 181/222 = **0.815** | **31** |
+
+- B4: 2,077 s for the whole job (records 406 s; three builds in parallel) - pass. The control reproduces r1603.
+- Near ties fix reach and the TAF11L unit models completely; purity falls further below the bar.
+- asms98 unreached: TSPY3, TSPY4. Loci with no CAT gene in judged groups: 1,328 / 1,438 (247 at exact).
+- Other 78 hard members reached: 29 in both arms (16 at exact).
+
+## Addendum (2026-11-10, user: older Compara paralogues as an extra "or" category; written before it is computed)
+Descriptive split of the judged groups, per arm; the registered B2 verdict above does not change.
+- **pure**: as B2.
+- **older paralogue**: every foreign locus overlaps a CAT gene that Compara lists as a paralogue (any last common ancestor,
+  `DENOVO_PARALOGS`) of a gene of the group's top panel family.
+- **unrelated**: at least one foreign locus has no such gene.
+`tie_groups.py score` prints the split when `DENOVO_PARALOGS` and `DENOVO_CAT_GFF` are set.
+
+### Split
+(empty until computed)

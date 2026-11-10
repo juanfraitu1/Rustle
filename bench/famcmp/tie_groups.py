@@ -113,14 +113,28 @@ elif mode == 'score':
     S = table(sig_tsv); ind = [r for r in S if r['signal'] == 'indistinguishable']; rest = [r for r in S if r['signal'] != 'indistinguishable']
     taf = [r for r in ind if r['name'].startswith('TAF11L')]
     print(f"B1 reach {sum(r['gene'] in reach for r in ind)} of {len(ind)} (bar 58)")
-    judged = pure = 0; nocat = 0
+    judged = pure = 0; nocat = 0; impure = []
     for g, ts in grp.items():
         fams = collections.Counter(fam[x] for t in ts for x in hits[t] if x in fam)
         if not fams: continue
         top = fams.most_common(1)[0][0]; judged += 1
         foreign = [t for t in ts if hits[t] and not any(fam.get(x) == top for x in hits[t])]
         pure += not foreign; nocat += sum(not hits[t] for t in ts)
+        if foreign: impure.append((top, [hits[t] for t in foreign]))
     print(f"B2 purity {pure} of {judged} = {pure / max(judged, 1):.3f} (bar 0.90); loci with no CAT gene in judged groups {nocat}")
+    import os
+    if os.environ.get('DENOVO_PARALOGS') and os.environ.get('DENOVO_CAT_GFF'):  # r1604 addendum: older Compara paralogues
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'denovo_eval'))
+        import famtruth as F
+        ens = {g: d['ens'] for g, d in F.load_cat().items()}; par = collections.defaultdict(set)
+        for l in open(os.environ['DENOVO_PARALOGS']):
+            f = l.rstrip('\n').split('\t')
+            if len(f) > 1 and f[1].startswith('ENSG'): par[f[0]].add(f[1]); par[f[1]].add(f[0])
+        fam_ens = collections.defaultdict(set)
+        for g, fm in fam.items(): fam_ens[fm] |= ens.get(g, set())
+        rel = lambda top, hs: any(par[e] & fam_ens[top] for x in hs for e in ens.get(x, ()))
+        older = sum(all(rel(top, hs) for hs in fl) for top, fl in impure)
+        print(f"split: pure {pure}, older paralogue {older}, unrelated {len(impure) - older} of {judged}; pure or older = {(pure + older) / max(judged, 1):.3f}")
     print(f"B3 TAF11L reached by a model <= 5 kb: {sum(any(x <= 5000 for x in reach.get(r['gene'], [])) for r in taf)} of {len(taf)} (bar 20)")
     print(f"descriptive: other hard members reached {sum(r['gene'] in reach for r in rest)} of {len(rest)}; groups {len(grp)}, loci {len(M)}; group sizes", sorted(collections.Counter(min(len(v), 20) for v in grp.values()).items()))
     print('unreached indistinguishable:', sorted(r['name'] for r in ind if r['gene'] not in reach))
