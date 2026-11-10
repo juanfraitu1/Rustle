@@ -15,5 +15,18 @@ are not emitted. Arms: FLOOR 1 (control = r1605 fraction 0), 3, 5. Ties as98, li
 - The control must reproduce r1605 (70 / 0.859 / 31 / 831).
 - Descriptive: loci and groups left, and which indistinguishable members lose grouped reach.
 
-## Outcome
-(empty until the run)
+## Outcome (2026-11-10, job 4456389, `/anvme/workspace/v138da13-rustle/r1603/floor{1,3,5}.*`): all arms FAIL as registered
+| floor | loci / groups | B1g grouped reach (>= 58) | B2f purity (>= 0.90) | B3 TAF11L (>= 20) | B5 largest group (<= 60) |
+|---|---|---|---|---|---|
+| 1 (control) | 5,541 / 2,599 | 70 | 201/234 = 0.859 | 31 | 831 |
+| 3 | 2,838 / 450 | 68 | 113/145 = 0.779 | 31 | 719 |
+| 5 | 2,154 / 308 | 62 | 95/125 = 0.760 | 31 | 543 |
+
+- B4: 1,359 s - pass. The control reproduces r1605.
+- The floor removes small pure groups (judged 234 -> 145 -> 125) and leaves the impure ones (33 -> 32 -> 30), so the purity
+  ratio falls. The r1605 post hoc reading (a group of tiny loci) was wrong: the largest group survives the floor.
+- Lost grouped reach: at 3 DEFB103A, OR4F5, PPIAL4E, PRAMEF7; at 5 also CFC1, CFC1B, DEFA1, DEFA1B, DEFB105A, MBD3L4.
+- Post hoc (not registered): the largest group at floor 5 has 543 loci and 5,172 molecules, median 21 molecules and ~2 kb
+  per locus; 377 loci overlap no CAT gene and the rest sit inside unrelated long genes (PRKCA, CADM2, LSAMP, AUTS2, 124
+  protein-coding hits). That is a transcribed interspersed repeat, reached from the panel through one POTEF locus. The
+  about 30 impure groups are stable under every rule tried (tie width, link fraction, floor).
