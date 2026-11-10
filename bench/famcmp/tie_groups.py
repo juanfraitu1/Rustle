@@ -2,8 +2,8 @@
 """PREREG r1603 (docs/PREREG_tie_groups_2026-11-10.md): tie groups from the reads' own tie sets, and their score.
 
   tie_groups.py names GENES_TSV CAT_TSV BAM > names.txt
-  samtools view -N names.txt BAM | tie_groups.py build PREFIX [exact|as98|asms98]
-  tie_groups.py score PREFIX GENES_TSV CAT_TSV SIGNAL_TSV
+  samtools view -N names.txt BAM | tie_groups.py build PREFIX [exact|as98|asms98] [LINK_FRACTION]
+  tie_groups.py score PREFIX GENES_TSV CAT_TSV SIGNAL_TSV [full]   (full = r1605 scorer; needs the DENOVO_* truth variables)
 """
 import sys, re, collections, statistics
 
@@ -39,6 +39,7 @@ if mode == 'names':
 elif mode == 'build':
     pre = sys.argv[2]; rule = sys.argv[3] if len(sys.argv) > 3 else 'exact'  # exact (r1603) | as98 | asms98 (r1604)
     assert rule in ('exact', 'as98', 'asms98'), rule
+    frac = float(sys.argv[4]) if len(sys.argv) > 4 else 0.0  # r1605: a link also needs >= frac x the smaller locus's molecules
     recs = collections.defaultdict(list)  # name -> [(AS, chrom, strand, blocks, ms)]
     for l in sys.stdin:
         f = l.split('\t'); flag = int(f[1])
@@ -70,8 +71,9 @@ elif mode == 'build':
     def find(x):
         while par[x] != x: par[x] = par[par[x]]; x = par[x]
         return x
+    nmol = [len({r[5] for r in L}) for L in loci]
     for (i, j), n in edge.items():
-        if n >= 2: par[find(i)] = find(j)
+        if n >= 2 and n >= frac * min(nmol[i], nmol[j]): par[find(i)] = find(j)
     groups = collections.defaultdict(list)
     for i in range(len(loci)): groups[find(i)].append(i)
     with open(pre + '.gtf', 'w') as g, open(pre + '.groups.tsv', 'w') as t:
@@ -135,6 +137,29 @@ elif mode == 'score':
         rel = lambda top, hs: any(par[e] & fam_ens[top] for x in hs for e in ens.get(x, ()))
         older = sum(all(rel(top, hs) for hs in fl) for top, fl in impure)
         print(f"split: pure {pure}, older paralogue {older}, unrelated {len(impure) - older} of {judged}; pure or older = {(pure + older) / max(judged, 1):.3f}")
+    if len(sys.argv) > 6 and sys.argv[6] == 'full':  # r1605: full truth families, same-family pseudogenes, grouped reach, group size
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'denovo_eval'))
+        import famtruth as F
+        GG = F.load_cat(); pairs, _ = F.truth_pairs(GG, F.PARALOGS, set(F.LEVELS['primates']))
+        full = {g: k for k, c in enumerate(F.components(pairs)) for g in c}
+        pre_ = lambda n: re.match(r'[A-Za-z]*', n).group(0)
+        stems = collections.defaultdict(set)
+        for g, k in full.items(): stems[k].add(pre_(GG[g]['name']))
+        def in_family(x, top):
+            if full.get(x) == top: return True
+            q = pre_(GG[x]['name']) if x in GG and 'pseudogene' in GG[x]['biotype'] else ''
+            return bool(q) and (q in stems[top] or (q.endswith('P') and q[:-1] in stems[top]))
+        j2 = p2 = 0
+        for g, ts in grp.items():
+            if not any(x in fam for t in ts for x in hits[t]): continue
+            c = collections.Counter(full[x] for t in ts for x in hits[t] if x in full)
+            if not c: continue
+            top = c.most_common(1)[0][0]; j2 += 1
+            p2 += not any(hits[t] and not any(in_family(x, top) for x in hits[t]) for t in ts)
+        big = {g for g, ts in grp.items() if len(ts) >= 2}; gr = lambda r: any(M[t][2] in big for t in M if r['gene'] in hits[t])
+        print(f"B2f purity (full truth + same-family pseudogenes) {p2} of {j2} = {p2 / max(j2, 1):.3f} (bar 0.90)")
+        print(f"B1g grouped reach {sum(gr(r) for r in ind)} of {len(ind)} (bar 58); TAF11L grouped {sum(gr(r) for r in taf)} of {len(taf)}")
+        print(f"B5 largest group {max(len(v) for v in grp.values())} loci (bar <= 60)")
     print(f"B3 TAF11L reached by a model <= 5 kb: {sum(any(x <= 5000 for x in reach.get(r['gene'], [])) for r in taf)} of {len(taf)} (bar 20)")
     print(f"descriptive: other hard members reached {sum(r['gene'] in reach for r in rest)} of {len(rest)}; groups {len(grp)}, loci {len(M)}; group sizes", sorted(collections.Counter(min(len(v), 20) for v in grp.values()).items()))
     print('unreached indistinguishable:', sorted(r['name'] for r in ind if r['gene'] not in reach))
