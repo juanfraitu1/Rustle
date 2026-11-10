@@ -27,5 +27,19 @@ the r1521 run's GTF (`fusedgw/A/x.gtf`) overlaps 68 of them; 82 are missed by al
   no member falls out of L3.
 - Descriptive, no bar: the read class (T-only / MAPQ0 >= 0.5 / ordinary) of members at each level; the misses by family name.
 
-## Outcome
-(empty until the run)
+## Outcome (2026-11-10, `~/famcmp/r1601.hard.tsv`)
+| arm | L1+ | L2+ | L3+ | L4 |
+|---|---|---|---|---|
+| x.gtf (r1521 base) | 68 | 39 | 35 | 26 |
+| x.cut.gtf (r1523 cuts) | 68 | 66 | 35 | 26 |
+| a1.gtf (current default) | 68 | 39 | 35 | 26 |
+| a1.final.gtf (current layered) | 38 | 37 | 36 | 26 |
+| StringTie / FLAIR | 0 | 0 | 0 | 0 |
+
+- **Q1 FAIL as registered**: L3 35 < 0.7 x 68 and < 40. Of the 35, 32 are multimapper members (MAPQ0 18, T-only 14): TSPY 14,
+  GAGE 4, CT45 3, SPDYE 3, PRR 2, CFC 2, SPANXA/SSX/LGALS/GGTLC/PGA/VCY/TCAF 1 each; 26 match a CAT intron chain exactly.
+- The 33 at L1-L2 are 27 TAF11L members (26 T-only): one model spans several copies of the chr5 tandem array (tandem
+  readthrough, register 1516/1517); plus 2 OR, GAGE12E, NOTCH2NLR, FAM, IFNA.
+- **Q2 FAIL** on both pairs: cuts +0 L3 (they make 27 more models copy-specific but carry no CAT intron); final.gtf +1 (H2AB3),
+  none lost; final drops the 30 overlap-only models.
+- Missed by all three: 82, of them 63 ordinary (OR 7, TAF11L 6, DEFB 6, DEFA 4, SIGLEC 4, ...), 19 multimapper.
