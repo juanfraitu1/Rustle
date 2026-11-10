@@ -27,5 +27,14 @@ Reported: the class counts per r1601 group and by read class (T-only / MAPQ0 / o
 No bars. The partition decides what to propose next: an emitter only for distinguishable members; for indistinguishable
 groups, an equivalence-class product (one structure, the set of compatible loci, a family-level count).
 
-## Outcome
-(empty until the run)
+## Outcome (2026-11-10, `~/famcmp/r1602.signal.tsv`)
+| r1601 group (a1.gtf) | distinguishable (>= 2 decisive) | weak (1) | indistinguishable (0) |
+|---|---|---|---|
+| L3+ (copy-specific model with a CAT intron), 35 | 4 | 4 | 27 |
+| L1-2 (overlap / fused only), 33 | 3 | 1 | 29 (TAF11L 26, GAGE12E, NOTCH2NLR, OR11H12) |
+| missed by all, 82 | 54 | 12 | 16 (TAF11L 5, PRAMEF7, DEFA1/1B, MBD3L4, H2AB1/3, OR4F5, DEFB105A, CENPVL2, ...) |
+
+- 72 of 150 hard members have no read that prefers them over another placement. For them a per-copy claim is not supported
+  by the reads: 27 already get a copy-specific model (TSPY, GAGE, ...), i.e. a structure placed on each tied copy.
+- The 54 distinguishable misses carry 2-7 decisive molecules (median 2; one 15) and are almost all ordinary
+  (unique-read) members: low expression, not ambiguity. That is the r1534-1536 low-support class.
