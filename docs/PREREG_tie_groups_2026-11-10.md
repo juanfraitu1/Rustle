@@ -32,5 +32,18 @@ A member is **reached** when a locus model on its strand has an exon overlapping
 ## Not in this row
 A Rust port, a pipeline stage, per-copy abundance. Decided after the outcome.
 
-## Outcome
-(empty until the run)
+## Outcome (2026-11-10, job 4456161, `/anvme/workspace/v138da13-rustle/r1603/`): FAIL as registered
+| bar | result | verdict |
+|---|---|---|
+| B1 reach >= 58 of 72 | 39 | FAIL |
+| B2 purity >= 0.90 | 273 of 318 = 0.858 | FAIL |
+| B3 TAF11L <= 5 kb models >= 20 of 31 | 11 | FAIL |
+| B4 wall <= 1 h | 1,957 s (names 234 s, BAM pass + build 1,721 s) | pass |
+
+- 1,072,265 molecules -> 76,500 tied records, 2,658 loci, 1,615 groups; 1,210 groups have one locus (their partner tied
+  with < 2 molecules, or lies on the other strand of the seed rule). 247 loci in judged groups overlap no CAT gene.
+- Unreached: 20 of 31 TAF11L, TSPY10 x2, and 11 singles (CENPVL2, DEFA1B, DEFB103A, H2AB1, LGALS9C, NOTCH2NLR, OR11H12,
+  PPIAL4E, PRAMEF7, PRR20E, SPDYE13).
+- Post hoc (not a registered result): over the TAF11L array the group models are unit-length (1.9-4.8 kb, 25 of 27) but
+  carry 1-2 molecules each. The array has 1,818 secondary records; exact AS equality keeps few of them. The panel's own T
+  definition is AS >= 0.98 x best; the exact-tie rule is the likely cause of the reach miss. A near-tie arm is a new row.
