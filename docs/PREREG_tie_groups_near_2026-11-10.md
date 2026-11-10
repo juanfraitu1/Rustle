@@ -40,5 +40,23 @@ Descriptive split of the judged groups, per arm; the registered B2 verdict above
 - **unrelated**: at least one foreign locus has no such gene.
 `tie_groups.py score` prints the split when `DENOVO_PARALOGS` and `DENOVO_CAT_GFF` are set.
 
-### Split
-(empty until computed)
+### Split (2026-11-10)
+| arm | pure | older paralogue | unrelated | pure or older |
+|---|---|---|---|---|
+| exact | 273 | 5 | 40 | 0.874 |
+| as98 | 188 | 4 | 42 | 0.821 |
+| asms98 | 181 | 3 | 38 | 0.829 |
+
+Older Compara paralogues explain 3-5 groups per arm; the bar stays missed with them counted.
+
+### Post hoc reading of the 46 impure as98 groups (not a registered result)
+- The "foreign" genes are mostly not in the panel at all: lncRNA 43, unprocessed pseudogene 40, transcribed unprocessed
+  pseudogene 36, protein-coding outside the panel 17, TEC 12; protein-coding of another panel family 30.
+- Three kinds: (a) pseudogene or unexpressed copies of the same family, which the scorer cannot see because its family table
+  lists expressed members only and Compara has no pseudogenes (TSPY13P/6P/7P, AGAP10P..., AMYP1, CBWD4P + CBWD1, RBMY1HP,
+  CNTNAP3P2, NUDT4P2, OR11H13P, DHFRP1, SPATA31D5P, PLGLB1, CTAGE4, SPDYE18, NOTCH2 for NOTCH2NLR); (b) co-duplicated
+  neighbours in the same segmental duplication (NPIPB with BOLA2 / EIF3C / SMG1P, GTF2H2 with SMN2 / NAIPP1, RASA4 with
+  POLR2J3 / POM121B, NPIPA with NOMO1): the tie group is a duplication-level unit, not a gene family; (c) one 831-locus
+  group around POTE, and groups of 86-110 loci (CLEC18A, NBPF, TAF11L): single-linkage chaining.
+- Scorer limits to fix in a new row before purity is judged again: family membership from the full truth (not the expressed
+  panel rows) and a rule for same-family pseudogenes.
