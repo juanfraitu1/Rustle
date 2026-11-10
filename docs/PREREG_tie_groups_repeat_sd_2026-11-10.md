@@ -26,5 +26,16 @@ Repeat filter off (control = r1605/r1606 baseline) and on. Ties as98, link fract
 - PASS = all five. The control must reproduce 70 / 0.859 (B2f) / 31 / 831.
 - Descriptive: loci set aside as repeat (count, molecules), B2f strict, the remaining impure groups by name.
 
-## Outcome
-(empty until the run)
+## Outcome (2026-11-10, job 4456405, `/anvme/workspace/v138da13-rustle/r1603/rep{off,on}.*`): FAIL as registered, on B5 only
+| repeat filter | loci / groups | B1g grouped reach (>= 58) | B2s purity (>= 0.90) | B2f strict | B3 TAF11L (>= 20) | B5 largest group (<= 60) |
+|---|---|---|---|---|---|---|
+| off (control) | 5,541 / 2,599 | 70 | 223/234 = 0.953 | 0.859 | 31 | 831 |
+| on | 2,509 / 1,141 | 70 | 220/224 = **0.982** | 0.884 | 31 | **86** |
+
+- B4: 1,346 s - pass. The control reproduces r1605/r1606.
+- 3,032 loci are set aside as interspersed repeat (55% of all loci); the 831-locus group is gone. Reach is untouched
+  (only PPIAL4E loses plain reach). Loci with no CAT gene in judged groups: 1,328 -> 240.
+- 22 groups are impure only through co-duplicated loci; with them counted, 4 of 224 groups stay impure.
+- B5 misses at 86 loci. Post hoc (not registered): that group is the TAF11L array itself, all 86 loci on chr5 (46 on `+`,
+  40 on `-`; the array's reads map to both strands), 32 molecules. The next largest are chr1 54, chrY 46 / 40 / 32,
+  chr15 31. The bar of 60 was set against chaining and is exceeded by a real family counted on both strands.
