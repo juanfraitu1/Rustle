@@ -31,5 +31,15 @@ molecules (r1602 rule, `hard_signal.py`). If M has fewer than 20 members the row
 - PASS = all four. No TAF11L bar (human-specific); the largest groups are named in the outcome.
 - Descriptive: human figures beside gorilla (70/72 = 0.972, 0.982, strict 0.884), loci set aside as repeat, strict B2f.
 
-## Outcome
-(empty until the run)
+## Outcome (2026-11-10, job 4456437, `/anvme/workspace/v138da13-rustle/r1610/`): STOP as registered, M = 0
+- The gorilla panel is small: 75 judged families, 198 members listed, 176 expressed under T (human: 324 families, 1,136
+  members). 12 members have no StringTie and no FLAIR model; 11 of them have >= 2 decisive molecules and 1 has one, so none
+  is indistinguishable: **M = 0 < 20**. The bars are not judged.
+- The panel has no member with MAPQ0 share >= 0.5 and one T-only member. Member hit rates: ours 0.858, StringTie 0.869,
+  FLAIR 0.898.
+- The recipe ran end to end in 341 s (panel 99 s, records 78 s): 70,008 molecules, 2,710 tied records, 151 loci, 80
+  groups, 181 loci set aside as repeat. 23 judged groups: 17 pure, 6 impure only through co-duplicated loci (B2s 23/23,
+  strict 0.739). Largest group 17 loci on 4 chromosomes, none of its loci in one truth family (B5r would fail).
+- Cause of the small panel: a gorilla gene takes its family from the human gene of the same symbol, and the copies of
+  multi-copy families in the RefSeq gorilla annotation are mostly `LOC` genes with no symbol, so they are outside the truth.
+  A gorilla transfer needs a truth that names those copies (gorilla's own paralogue table, or sequence-based membership).
