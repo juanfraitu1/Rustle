@@ -120,5 +120,72 @@ On A119b, with e2e2's families products:
 - HG002: a 131 GB BAM, and assign there needs > 250 GB.
 - HG002 and OR6737 are not in the bars.
 
-## Outcome
-(empty until the acceptance runs)
+## Outcome (2026-11-10): FAIL as registered; router abandoned
+Binary: branch `r1600-router` at e9b85a27 (frozen in `target_r1600`); runs under `audit/r1600/acc/`.
+
+| # | run | result | bar |
+|---|---|---|---|
+| A1 | A119b, router, defaults | all 7 tables identical | pass |
+| A2 | same run | wall 583 s (pass 1 199 s, gate 9 s, pass 2 100 s) vs today 553 s | **FAIL** (<= 250 s) |
+| A3 | same run | peak RSS 58.5 GB vs 36.4 GB | **FAIL** |
+| A4 | A119b, router, `--threads 16` | all 7 identical; 596 s, 60.1 GB | pass |
+| A5 | KB3781, rt {1,8} x t {16,72} | all 4 runs, all 7 tables identical | pass |
+
+- Determinism holds, speed and memory do not. The light pass over every windowed record (19.7 GB compressed, 16.7M routed
+  copies) costs about as much as today's per-window queries, and holding every window's light records at once adds ~22 GB.
+- Rollout per the FAIL rule: the router is not merged; main never carried it. The branch `r1600-router` stays as the record.
+- User decision 2026-11-10: the router idea is dropped for now.
+
+## Step 0 RESULT (2026-11-10; `audit/r1600/step0`, jobs 4456018, 4456021, 4456022)
+| # | measure | value |
+|---|---|---|
+| 1 | today's assign, A119b, defaults (target_e2e1, e2e2 inputs) | wall 553 s, peak RSS 36.4 GB; all 7 tables identical to e2e2 |
+| 2 | windows / merged BAI ranges / compressed bytes covered | 1,471 windows in 416 regions / 175,459 ranges / 19.71 GB (of the 96 GB BAM) |
+| 3 | records routed (with duplicates / distinct) and distinct raw bytes | 16,677,922 / 10,473,604 / 43.14 GB; throwaway probe: one pass at 16 threads in 103 s, 85 MB RSS |
+| 4 | in-memory raw store alone, D = 43.14 GB (today's in-flight regions hold converted records, not raw bytes, so no subtraction is quoted) | **>= 43 GB > 36.4 GB** |
+
+The routed records are about 7x the 1.45M reads assign keeps after its own filters: the conversion and the pool drop most
+of them. The counting pass alone (103 s for every window) is about 1/20 of today's summed fetch time (2,229 s).
+
+## Addendum 1 (2026-11-10, before any implementation; registered rule: (4) > (1) -> file-backed store)
+The in-memory store is withdrawn. Design section 5 becomes: **per-region slice files.**
+
+- The router does not keep records in memory. Each worker writes the raw records of its part to one file per region,
+  `PREFIX.assign.route/<part>.<region-ordinal>.bin`. A file holds length-prefixed raw BAM records with their window ordinal.
+  Only (part, region) pairs that receive records get a file.
+- A region reads its part files in part order. That rebuilds every window's list in file order, which equals its query.
+  The region converts the lists, then deletes its files.
+- The directory is removed when assign ends, and on error. A rerun starts from an empty directory.
+- Router RSS stays at its buffers. Peak RSS stays today's in-flight regions; nothing else changes.
+- Disk: a record goes to a region's file once, with the ordinals of every window of that region it overlaps. Bytes
+  written are between 43 GB (distinct) and about 69 GB (16.7M of 10.5M, if no two windows of one region shared a record),
+  once per run, on the run directory's filesystem (/anvme, ~610 MB/s one stream).
+- Acceptance is unchanged: A1-A5 as registered, A3 against 36.4 GB.
+
+Note (2026-11-10, after Addendum 1, before any implementation): the pipeline runs assign with `--tied-prefilter`
+(`tools/rustle_pipeline.sh`, the `mem+=` line). Each region already reads in two steps:
+- a Light read of every record (span only, ~100 bytes);
+- a Full read (`ReadMode::Only(tied)`) of the molecules its AS-tied gate keeps, the 1.45M "reads" of `[timing]`.
+
+The 10.5M routed records are the Light step's input. Full raw records are needed only for the tied molecules. Which store
+replaces Addendum 1 is the user's call, recorded as Addendum 2 before Task 2 starts.
+
+## Addendum 2 (2026-11-10, user's choice after step 0; supersedes Addendum 1 and design section 5; before any implementation)
+**The router runs two passes over the same merged ranges, mirroring `--tied-prefilter`'s two-step read.**
+
+- **Pass 1 (light).** Each record that overlaps at least one window is converted once, by the same per-record conversion
+  the query path uses: `PrimaryRead` plus a `Light` `BamRead`. A copy goes to every overlapping window, in file order.
+  Then every region pools its windows (`pool_windows`), runs its AS-tied gate, and keeps its `light_spans` and its tied
+  set, exactly as today's first step does.
+- **Pass 2 (full).** Each record whose read name is in the union of all regions' tied sets is converted once (`Full`) and
+  given to each overlapping window whose region's tied set holds that name. This is today's `ReadMode::Only(tied)` read.
+  Each region then applies today's cross-window de-duplication on (name, chrom, ref_start).
+- Regions compute from these prepared inputs. Nothing from `pool_windows` and the gate onward changes.
+- **Scope.** The router applies when `--tied-prefilter` is on (the pipeline default), a `.bai` exists, the run is not
+  streaming, and the two per-window rules are off: `RUSTLE_GTF_SECONDARY_AS_RATIO <= 0` and no `RUSTLE_READ_HOME_TABLE`.
+  Both are unset for assign in the pipeline (`a1.assign.env`). Otherwise assign takes today's query path, which stays.
+- **Memory.** Light store and primaries for 16.7M routed copies, plus the tied full records (the 1.45M reads), all freed
+  per region when it takes them. Bar A3 (<= 36.4 GB) decides.
+- **Time.** Two passes over 19.7 GB compressed (the counting probe alone: 103 s at 16 threads), plus the gate, plus region
+  compute. Bar A2 (<= 250 s) decides.
+- **Unchanged:** acceptance A1-A5 as registered, and the rollout.
