@@ -22,5 +22,25 @@ r1610 is rerun unchanged with `DENOVO_GGO_ENS_MAP` set: same frozen recipe, same
 M, B2s >= 0.90, B5r, B4 <= 1 h), same STOP rule at M < 20. Reported beside it: panel size before and after (176 expressed
 members, 75 families).
 
-## Outcome
-(empty until the run)
+## Outcome (2026-11-10, job 4456439, `/anvme/workspace/v138da13-rustle/r1611/`): PASS as registered
+**Truth check: pass.** 20,741 of 22,650 gorilla proteins have an accepted human hit. Among 16,029 named genes with a hit, 15,918
+(0.993, bar 0.90) hit the gene of their own symbol. 4,712 protein-coding genes without a symbol-inherited id get one.
+
+**Panel with the map** (symbol-only in brackets): 171 judged families (75), 661 expressed members (176), 138 of them
+reachable only by a tied secondary (1), 34 with MAPQ0 share >= 0.5 (0). Member hit rate under T: ours 0.716, StringTie 0.651,
+FLAIR 0.579; on the 138 T-only members ours 0.601, StringTie 0.000, FLAIR 0.000.
+
+**M = 128**: 214 members have no StringTie and no FLAIR model; 128 of them have no decisive molecule (73 have >= 2, 13 one).
+
+| bar | gorilla OR6737 | human A119b (r1607) | verdict |
+|---|---|---|---|
+| B1g grouped reach >= 0.80 of M | 124 of 128 = 0.969 | 70 of 72 = 0.972 | pass |
+| B2s purity, co-duplicated counted, >= 0.90 | 129 of 129 = 1.000 | 0.982 | pass |
+| B5r largest group: one chromosome or >= 0.90 one family | 33 loci, 1 chromosome, 23 of 23 annotated loci in one family | 86 loci, chr5 (TAF11L) | pass |
+| B4 wall <= 1 h | 528 s (truth 76 s, panel 141 s, records 97 s) | 1,346 s | pass |
+
+- Strict purity (B2f) 117 of 129 = 0.907; 12 groups are impure only through co-duplicated loci.
+- 123,558 molecules, 15,780 tied records, 843 loci in 471 groups; 366 loci set aside as interspersed repeat.
+- Unreached: LOC129529770, LOC129530492.
+- The recipe, frozen on human A119b, transfers to gorilla OR6737 with nothing retuned. Limits: the truth for LOC copies is a
+  best-protein-hit family label; `or.gtf` is the base run's assembly; OR6737 has been used in earlier rows.
