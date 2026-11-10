@@ -2,7 +2,7 @@
 """PREREG r1603 (docs/PREREG_tie_groups_2026-11-10.md): tie groups from the reads' own tie sets, and their score.
 
   tie_groups.py names GENES_TSV CAT_TSV BAM > names.txt
-  samtools view -N names.txt BAM | tie_groups.py build PREFIX [exact|as98|asms98] [LINK_FRACTION]
+  samtools view -N names.txt BAM | tie_groups.py build PREFIX [exact|as98|asms98] [LINK_FRACTION] [LOCUS_FLOOR]
   tie_groups.py score PREFIX GENES_TSV CAT_TSV SIGNAL_TSV [full]   (full = r1605 scorer; needs the DENOVO_* truth variables)
 """
 import sys, re, collections, statistics
@@ -59,6 +59,8 @@ elif mode == 'build':
             a, b = seed; o = min(b, r[3]) - max(a, r[2])
             if o >= 0.5 * min(b - a, r[3] - r[2]): loci[-1].append(r); continue
         loci.append([r]); key = r[:2]; seed = (r[2], r[3])
+    floor = int(sys.argv[5]) if len(sys.argv) > 5 else 1  # r1606: a locus needs >= floor tied molecules to exist
+    loci = [L for L in loci if len({r[5] for r in L}) >= floor]
     of = collections.defaultdict(set)
     for i, L in enumerate(loci):
         for r in L: of[r[5]].add(i)
