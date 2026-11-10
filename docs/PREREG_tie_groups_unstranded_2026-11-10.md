@@ -15,5 +15,16 @@ and, in the scorer, can reach or overlap genes on either strand. Everything else
 - PASS = all five. Control = r1607 filter-on (70 / 0.982 / 31 / 86), not rerun.
 - If it passes, the rules are frozen for the gorilla OR6737 transfer row.
 
-## Outcome
-(empty until the run)
+## Outcome (2026-11-10, job 4456417, `/anvme/workspace/v138da13-rustle/r1603/uns.*`): FAIL as registered (B5)
+| arm | loci kept / set aside as repeat | groups | B1g (>= 58) | B2s (>= 0.90) | B2f strict | B3 (>= 20) | B5 (<= 60) |
+|---|---|---|---|---|---|---|---|
+| r1607 filter-on (control) | 2,509 / 3,032 | 1,141 | 70 | 220/224 = 0.982 | 0.884 | 31 | 86 |
+| unstranded | 5,116 / 4,349 | 2,311 | 71 | 902/907 = 0.994 | 0.917 | 31 | **151** |
+
+- The rule is defective as written: taking the unspliced records out to `.` splits every locus that has spliced and
+  unspliced records into two (9,465 loci before the repeat filter against 5,541), so loci and groups grow (largest: 151
+  loci on chr16, 127 on chr1). Models by strand: `.` 3,804, `+` 679, `-` 633.
+- It does what it was for on TAF11L: 86 loci -> 56 (48 on `.`).
+- Judged groups rise 224 -> 907 because a `.` model reaches panel genes on either strand; purity figures are therefore not
+  comparable with the control.
+- Next row: form loci without strand and give each locus the strand of its spliced records.

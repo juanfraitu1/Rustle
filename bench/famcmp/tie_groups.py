@@ -2,7 +2,7 @@
 """PREREG r1603 (docs/PREREG_tie_groups_2026-11-10.md): tie groups from the reads' own tie sets, and their score.
 
   tie_groups.py names GENES_TSV CAT_TSV BAM > names.txt
-  samtools view -N names.txt BAM | tie_groups.py build PREFIX [exact|as98|asms98] [LINK_FRACTION] [LOCUS_FLOOR] [RMSK_BED[:MIN_FRACTION]] [unstranded]
+  samtools view -N names.txt BAM | tie_groups.py build PREFIX [exact|as98|asms98] [LINK_FRACTION] [LOCUS_FLOOR] [RMSK_BED[:MIN_FRACTION]] [unstranded|locus]
   tie_groups.py score PREFIX GENES_TSV CAT_TSV SIGNAL_TSV [full]   (full = r1605 scorer; needs the DENOVO_* truth variables)
 """
 import sys, re, collections, statistics
@@ -41,6 +41,7 @@ elif mode == 'build':
     assert rule in ('exact', 'as98', 'asms98'), rule
     frac = float(sys.argv[4]) if len(sys.argv) > 4 else 0.0  # r1605: a link also needs >= frac x the smaller locus's molecules
     unstranded = len(sys.argv) > 7 and sys.argv[7] == 'unstranded'  # r1608: an unspliced record has no strand; its loci are '.'
+    bylocus = len(sys.argv) > 7 and sys.argv[7] == 'locus'  # r1609: loci are formed without strand; a locus takes its spliced records' majority strand, '.' if it has none
     recs = collections.defaultdict(list)  # name -> [(AS, chrom, strand, blocks, ms)]
     for l in sys.stdin:
         f = l.split('\t'); flag = int(f[1])
@@ -53,13 +54,18 @@ elif mode == 'build':
         b = max(r[0] for r in rs); bm = max(r[4] for r in rs)
         if rule == 'exact': t = [r for r in rs if r[0] == b]
         else: t = [r for r in rs if r[0] >= 0.98 * b > 0 or (rule == 'asms98' and r[4] >= 0.98 * bm > 0)]
-        if len(t) >= 2: tied += [(c, '.' if unstranded and len(bl) == 1 else s, bl[0][0], bl[-1][1], bl, n) for _, c, s, bl, _ in t]
+        if len(t) >= 2: tied += [(c, '.' if (unstranded and len(bl) == 1) or bylocus else s, bl[0][0], bl[-1][1], bl, n, s) for _, c, s, bl, _ in t]
     tied.sort(key=lambda r: r[:4]); loci = []; key = None
     for r in tied:
         if loci and key == r[:2]:
             a, b = seed; o = min(b, r[3]) - max(a, r[2])
             if o >= 0.5 * min(b - a, r[3] - r[2]): loci[-1].append(r); continue
         loci.append([r]); key = r[:2]; seed = (r[2], r[3])
+    if bylocus:
+        for L in loci:
+            c = collections.Counter(r[6] for r in L if len(r[4]) > 1).most_common(2)
+            st = '.' if not c or (len(c) > 1 and c[0][1] == c[1][1]) else c[0][0]
+            L[:] = [(r[0], st) + r[2:] for r in L]
     floor = int(sys.argv[5]) if len(sys.argv) > 5 else 1  # r1606: a locus needs >= floor tied molecules to exist
     loci = [L for L in loci if len({r[5] for r in L}) >= floor]
     def model(L):  # the most common intron chain of the locus; ends = medians over the records with it
