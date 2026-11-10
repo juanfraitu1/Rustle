@@ -1,45 +1,63 @@
-# docs/ index — every document, one line each (generated 2026-11-08)
+# docs/ index — every document, one line each (generated 2026-11-10)
 
 Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or archiving a document. Archived files keep their names; only the directory changed, so grepping a filename still finds it. Verdicts of archived studies are in the register rows that cite them; pre-registrations are kept verbatim (the commit that introduced each one is the proof it preceded the result).
 
-## Living documents (15, undated, maintained in place)
+## Living documents (16, undated, maintained in place)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
 | [`ADVISOR_QUESTIONS.md`](ADVISOR_QUESTIONS.md) | The advisor's standing questions — and what the codebase can answer | 2026-11-08 | — |
-| [`DATA.md`](DATA.md) | Datasets — what they are, where they came from, how to rebuild them | 2026-11-08 | — |
+| [`AUDIT_ROUNDS_2026-11.md`](AUDIT_ROUNDS_2026-11.md) | Audit rounds, November 2026 (ponytail-audit, goal: 100 rounds) | 2026-11-09 | memory ×2 |
+| [`DATA.md`](DATA.md) | Datasets — what they are, where they came from, how to rebuild them | 2026-11-09 | memory ×3 |
 | [`LEDGER_GENERAL.md`](LEDGER_GENERAL.md) | Ledger: general (handoffs, pending lists, register drafts, overviews) | 2026-11-08 | — |
-| [`LEDGER_O1.md`](LEDGER_O1.md) | Ledger: O1 (family definition, assembler, locus units) | 2026-11-08 | — |
-| [`LEDGER_O2.md`](LEDGER_O2.md) | Ledger: O2 (copy assignment of tied reads) | 2026-11-08 | — |
+| [`LEDGER_O1.md`](LEDGER_O1.md) | Ledger: O1 (family definition, assembler, locus units) | 2026-11-09 | memory ×2 |
+| [`LEDGER_O2.md`](LEDGER_O2.md) | Ledger: O2 (copy assignment of tied reads) | 2026-11-08 | memory ×1 |
 | [`LEDGER_O3.md`](LEDGER_O3.md) | Ledger: O3 (copies the reference lacks) | 2026-11-08 | — |
 | [`MODULE_STATUS.md`](MODULE_STATUS.md) | Module status — what is SHIPPED vs what was TRIED | 2026-11-08 | — |
-| [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) | REGISTER OF NEGATIVE RESULTS (full: archive/2026-11/NEGATIVE_RESULTS_REGISTER.md:1) | 2026-11-08 | — |
-| [`PERFORMANCE.md`](PERFORMANCE.md) | Pipeline performance: where the time goes and the switches that change it | 2026-11-06 | — |
+| [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) | REGISTER OF NEGATIVE RESULTS (full: archive/2026-11/NEGATIVE_RESULTS_REGISTER.md:1) | 2026-11-10 | — |
+| [`PERFORMANCE.md`](PERFORMANCE.md) | Pipeline performance: where the time goes and the switches that change it | 2026-11-09 | — |
 | [`README.md`](README.md) | docs/ — what is where | 2026-11-08 | — |
 | [`REFERENCE.md`](REFERENCE.md) | REFERENCE — glossary, data locations, and a worked example | 2026-11-07 | — |
-| [`SCRIPT_INVENTORY.md`](SCRIPT_INVENTORY.md) | Script inventory (2026-11-02) | 2026-11-08 | — |
+| [`SCRIPT_INVENTORY.md`](SCRIPT_INVENTORY.md) | Script inventory (2026-11-02) | 2026-11-09 | — |
 | [`THESIS_OBJECTIVES.md`](THESIS_OBJECTIVES.md) | Thesis objectives — the current three | 2026-11-05 | — |
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-05 | — |
 | [`seeded_family_definition.md`](seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-08 | — |
 
-## Open studies and current handoff (59)
+## Open studies and current handoff (81)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
-| [`PREREG_collapse_combined_2026-11-08.md`](PREREG_collapse_combined_2026-11-08.md) | PREREG: combined collapse rule (certificate on the copy's own catalog copy OR S/H pile), held out on HG002 (register 158 | 2026-11-08 | register ×1 |
-| [`PREREG_collapse_copyphasing_2026-11-08.md`](PREREG_collapse_copyphasing_2026-11-08.md) | PREREG: does copy_phasing's allele-slot certificate detect collapsed copies on GRCh38? (register 1583, 2026-11-08, befor | 2026-11-08 | register ×1 |
-| [`PREREG_crossind_copyphasing_2026-11-08.md`](PREREG_crossind_copyphasing_2026-11-08.md) | PREREG: does copy_phasing certify the cross-individual strong loci? (register 1582, 2026-11-08) | 2026-11-08 | register ×1 |
+| [`PREREG_gorilla_protein_truth_2026-11-10.md`](PREREG_gorilla_protein_truth_2026-11-10.md) | PREREG r1611: a gorilla truth that names the LOC copies, then r1610 unchanged (2026-11-10) | 2026-11-10 | register ×1 |
+| [`PREREG_hard_members_2026-11-10.md`](PREREG_hard_members_2026-11-10.md) | PREREG r1601: the family members StringTie and FLAIR both miss — are ours real copies, and do family layers add more? (2 | 2026-11-10 | register ×1 |
+| [`PREREG_hard_members_signal_2026-11-10.md`](PREREG_hard_members_signal_2026-11-10.md) | PREREG r1602 (step 0, descriptive, no bars): does any read prefer each hard member over every other placement? (2026-11- | 2026-11-10 | — |
+| [`PREREG_tie_groups_2026-11-10.md`](PREREG_tie_groups_2026-11-10.md) | PREREG r1603: tie groups — a family-level product for the copies no read can tell apart (2026-11-10) | 2026-11-10 | register ×1 |
+| [`PREREG_tie_groups_bylocus_2026-11-10.md`](PREREG_tie_groups_bylocus_2026-11-10.md) | PREREG r1609: tie groups — loci formed without strand, strand from the spliced records (2026-11-10) | 2026-11-10 | register ×1 |
+| [`PREREG_tie_groups_floor_2026-11-10.md`](PREREG_tie_groups_floor_2026-11-10.md) | PREREG r1606: tie groups — a floor on tied molecules per locus (2026-11-10) | 2026-11-10 | register ×1 |
+| [`PREREG_tie_groups_gorilla_2026-11-10.md`](PREREG_tie_groups_gorilla_2026-11-10.md) | PREREG r1610: tie groups, frozen recipe, transfer to gorilla OR6737 (2026-11-10) | 2026-11-10 | register ×1 |
+| [`PREREG_tie_groups_link_2026-11-10.md`](PREREG_tie_groups_link_2026-11-10.md) | PREREG r1605: tie groups — a scorer that sees the whole family, and a link rule against chaining (2026-11-10) | 2026-11-10 | register ×1 |
+| [`PREREG_tie_groups_near_2026-11-10.md`](PREREG_tie_groups_near_2026-11-10.md) | PREREG r1604: tie groups with near ties on AS, and on AS or ms (2026-11-10) | 2026-11-10 | register ×1 |
+| [`PREREG_tie_groups_repeat_sd_2026-11-10.md`](PREREG_tie_groups_repeat_sd_2026-11-10.md) | PREREG r1607: tie groups — interspersed repeats set aside, co-duplicated loci as their own category (2026-11-10) | 2026-11-10 | register ×1 |
+| [`PREREG_tie_groups_unstranded_2026-11-10.md`](PREREG_tie_groups_unstranded_2026-11-10.md) | PREREG r1608: tie groups — unspliced loci carry no strand (2026-11-10) | 2026-11-10 | register ×1 |
+| [`PREREG_assign_router_2026-11-09.md`](PREREG_assign_router_2026-11-09.md) | PREREG r1600: assign reads the BAM once (router), schedules from exact counts (2026-11-09) | 2026-11-10 | register ×1 |
+| [`PREREG_exon_sharing_lowI_2026-11-09.md`](PREREG_exon_sharing_lowI_2026-11-09.md) | PREREG row 1593: exon sharing (SHARE >= 0.5) at low inflation, against baselines that reach its recall; held out on HG00 | 2026-11-09 | register ×1 |
+| [`PREREG_exonmap_split_kmer_arms_2026-11-09.md`](PREREG_exonmap_split_kmer_arms_2026-11-09.md) | PREREG rows 1597-1598: does the exon map split false families, and does a looser k-mer counter reach more reads? | 2026-11-09 | register ×2 |
+| [`PREREG_family_exon_map_2026-11-09.md`](PREREG_family_exon_map_2026-11-09.md) | PREREG row 1595: a family exon map (which exon of each copy matches which), from the shipped families' own alignments | 2026-11-09 | register ×1 |
+| [`PREREG_kmer_exon_placement_2026-11-09.md`](PREREG_kmer_exon_placement_2026-11-09.md) | PREREG row 1599: k-mer counter with exon-based unique placement (row 1598 rerun, one definition changed) | 2026-11-09 | register ×1 |
+| [`PREREG_paralog_kmer_expression_2026-11-09.md`](PREREG_paralog_kmer_expression_2026-11-09.md) | PREREG row 1596: paralog-specific k-mer expression, Soto's parCN rule moved from DNA reads to RNA reads | 2026-11-09 | register ×1 |
+| [`PREREG_rna_copynumber_soto_2026-11-09.md`](PREREG_rna_copynumber_soto_2026-11-09.md) | PREREG row 1594: does RNA see Soto's copy number? copy_phasing extra-copy calls vs S1E population parCN classes | 2026-11-09 | register ×1 |
+| [`PREREG_collapse_combined_2026-11-08.md`](PREREG_collapse_combined_2026-11-08.md) | PREREG: combined collapse rule (certificate on the copy's own catalog copy OR S/H pile), held out on HG002 (register 158 | 2026-11-08 | register ×1, memory ×1 |
+| [`PREREG_collapse_copyphasing_2026-11-08.md`](PREREG_collapse_copyphasing_2026-11-08.md) | PREREG: does copy_phasing's allele-slot certificate detect collapsed copies on GRCh38? (register 1583, 2026-11-08, befor | 2026-11-08 | register ×1, memory ×1 |
+| [`PREREG_crossind_copyphasing_2026-11-08.md`](PREREG_crossind_copyphasing_2026-11-08.md) | PREREG: does copy_phasing certify the cross-individual strong loci? (register 1582, 2026-11-08) | 2026-11-08 | register ×1, memory ×1 |
+| [`PREREG_exon_sharing_2026-11-08.md`](PREREG_exon_sharing_2026-11-08.md) | PREREG row 1591: does exon-level sharing separate true from false paralog pairs better than exon coverage? | 2026-11-09 | register ×1 |
+| [`PREREG_exon_sharing_family_2026-11-08.md`](PREREG_exon_sharing_family_2026-11-08.md) | PREREG row 1592: exon sharing as the families-stage edge rule (family level, pairscore), held out on HG002 | 2026-11-09 | register ×1 |
+| [`PREREG_prot_sd_edges_2026-11-08.md`](PREREG_prot_sd_edges_2026-11-08.md) | PREREG row 1590: protein edges between SD-linked loci on top of SD damping, held out on HG002 | 2026-11-09 | register ×1 |
 | [`PREREG_sd_add_edges_2026-11-08.md`](PREREG_sd_add_edges_2026-11-08.md) | PREREG row 1581: add weak SD-only edges on top of SD damping (`--sd-add-edges W`), held out on HG002 | 2026-11-08 | register ×1 |
-| [`PREREG_sd_damp_span_2026-11-08.md`](PREREG_sd_damp_span_2026-11-08.md) | PREREG row 1580: damp non-SD edges before MCL (`--sd-damp`, exons + span link rule), held out on HG002 and gorilla | 2026-11-08 | register ×1 |
-| [`PREREG_prot_sd_edges_2026-11-08.md`](PREREG_prot_sd_edges_2026-11-08.md) | PREREG row 1590: protein edges between SD-linked loci on top of SD damping (STOP at dev, +0.035) | 2026-11-08 | register ×1 |
-| [`PREREG_exon_sharing_2026-11-08.md`](PREREG_exon_sharing_2026-11-08.md) | PREREG row 1591: exon sharing vs exon coverage as the edge score (edge level, HG002 PASS +0.368) | 2026-11-08 | register ×1 |
-| [`PREREG_exon_sharing_family_2026-11-08.md`](PREREG_exon_sharing_family_2026-11-08.md) | PREREG row 1592: exon sharing as the family edge rule (STOP at dev, +0.0399) | 2026-11-08 | register ×1 |
-| [`PREREG_exon_sharing_lowI_2026-11-09.md`](PREREG_exon_sharing_lowI_2026-11-09.md) | PREREG row 1593: exon sharing >= 0.5 at low inflation (HG002 PASS: plain +0.317, damped +0.145) | 2026-11-09 | register ×1 |
-| [`PREREG_rna_copynumber_soto_2026-11-09.md`](PREREG_rna_copynumber_soto_2026-11-09.md) | PREREG row 1594: copy_phasing extra-copy calls vs Soto S1E population parCN classes (FAIL, +0.107, p 0.10) | 2026-11-09 | register ×1 |
+| [`PREREG_sd_damp_span_2026-11-08.md`](PREREG_sd_damp_span_2026-11-08.md) | PREREG row 1580: damp non-SD edges before MCL (`--sd-damp`, exons + span link rule), held out on HG002 and gorilla | 2026-11-08 | register ×1, memory ×1 |
+| [`PREREG_soto_quickmer2_rerun_2026-11-08.md`](PREREG_soto_quickmer2_rerun_2026-11-08.md) | PREREG row 1588: Soto 2025's QuicK-mer2 parCN pipeline, run end to end as released, on four 1KGP genomes | 2026-11-08 | register ×1 |
 | [`PREREG_as_table_parallel_2026-11-07.md`](PREREG_as_table_parallel_2026-11-07.md) | PREREG row 1567: parallel `as_table` scan (ms columns kept) | 2026-11-07 | register ×1 |
 | [`PREREG_as_table_shared_2026-11-07.md`](PREREG_as_table_shared_2026-11-07.md) | PREREG row 1568: one best-AS table per BAM, shared by every run on it | 2026-11-07 | register ×1 |
 | [`PREREG_assemble_region_threads_2026-11-07.md`](PREREG_assemble_region_threads_2026-11-07.md) | PREREG row 1564: run the assemble stage's region sweep in parallel (`--region-threads`) | 2026-11-07 | register ×1 |
-| [`PREREG_crossind_missing_copies_2026-11-07.md`](PREREG_crossind_missing_copies_2026-11-07.md) | PREREG rows 1578-1579: does a second gorilla's Iso-Seq on Jim's T2T show copies the reference lacks? | 2026-11-08 | register ×2 |
+| [`PREREG_crossind_missing_copies_2026-11-07.md`](PREREG_crossind_missing_copies_2026-11-07.md) | PREREG rows 1578-1579: does a second gorilla's Iso-Seq on Jim's T2T show copies the reference lacks? | 2026-11-08 | register ×2, memory ×1 |
 | [`PREREG_locus_pieces_2026-11-07.md`](PREREG_locus_pieces_2026-11-07.md) | PREREG row 1571: locus pieces for the families input (genes with no locus of their own) | 2026-11-07 | register ×1 |
 | [`PREREG_locus_pieces_attach_2026-11-07.md`](PREREG_locus_pieces_attach_2026-11-07.md) | PREREG row 1573: attach locus pieces to the unchanged families (no re-clustering) | 2026-11-07 | register ×1 |
 | [`PREREG_locus_pieces_confined_2026-11-07.md`](PREREG_locus_pieces_confined_2026-11-07.md) | PREREG row 1572: locus pieces confined to loci with family evidence (follow-up to row 1571) | 2026-11-07 | register ×1 |
@@ -49,7 +67,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_locus_reps_keepall_2026-11-07.md`](PREREG_locus_reps_keepall_2026-11-07.md) | PREREG row 1577: multiple representatives, every attached group kept (no merge-back) | 2026-11-07 | register ×1 |
 | [`PREREG_mono_primed_from_sweep_2026-11-07.md`](PREREG_mono_primed_from_sweep_2026-11-07.md) | PREREG row 1566: `--polish-mono-primed` evidence from the sweep, not a second BAM pass | 2026-11-07 | register ×1 |
 | [`PREREG_mono_primed_parallel_2026-11-07.md`](PREREG_mono_primed_parallel_2026-11-07.md) | PREREG row 1565: parallel BAM pass for `--polish-mono-primed` (SnapBam::mono_primed) | 2026-11-07 | register ×1 |
-| [`PREREG_structure_view_2026-11-07.md`](PREREG_structure_view_2026-11-07.md) | PREREG row 1569: do O1's sequence families also share exon architecture? (a sequence-free second view) | 2026-11-07 | register ×1 |
+| [`PREREG_structure_view_2026-11-07.md`](PREREG_structure_view_2026-11-07.md) | PREREG row 1569: do O1's sequence families also share exon architecture? (a sequence-free second view) | 2026-11-07 | register ×1, memory ×1 |
 | [`PREREG_structure_vs_sequence_2026-11-07.md`](PREREG_structure_vs_sequence_2026-11-07.md) | PREREG row 1570: which family definition agrees better with Compara, sequence (O1) or exon architecture? | 2026-11-07 | register ×1 |
 | [`PREREG_annotated_only_2026-11-06.md`](PREREG_annotated_only_2026-11-06.md) | PREREG: annotated-only assign (row 1551, 2026-11-06 21:30, user-proposed) | 2026-11-06 | register ×1 |
 | [`PREREG_assemble_profile_2026-11-06.md`](PREREG_assemble_profile_2026-11-06.md) | PREREG row 1560: where does the assemble stage's wall go (A119b, singlenode 72 cores) | 2026-11-06 | register ×1 |
@@ -103,13 +121,13 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_seed_unspliced_support_2026-11-03.md`](archive/2026-11/PREREG_seed_unspliced_support_2026-11-03.md) | PREREG UNSPLICED SECONDARIES AS SUPPORT ONLY (register 1520, 2026-11-03) | 2026-11-04 | register ×1 |
 | [`PREREG_seed_unspliced_primary_2026-11-03.md`](archive/2026-11/PREREG_seed_unspliced_primary_2026-11-03.md) | PREREG SEED UNSPLICED FROM PRIMARIES (register 1518, 2026-11-03) | 2026-11-04 | register ×1 |
 | [`PREREG_secondary_usefulness_2026-11-03.md`](archive/2026-11/PREREG_secondary_usefulness_2026-11-03.md) | PREREG SECONDARY USEFULNESS + MULTIMAPPER FAMILY GRAPH (registers 1511-1512, 2026-11-03) | 2026-11-03 | register ×1 |
-| [`PREREG_secondary_pool_2026-11-03.md`](archive/2026-11/PREREG_secondary_pool_2026-11-03.md) | PREREG SECONDARY-POOL CANDIDATE COPIES (register 1513, 2026-11-03) | 2026-11-03 | register ×1 |
+| [`PREREG_secondary_pool_2026-11-03.md`](archive/2026-11/PREREG_secondary_pool_2026-11-03.md) | PREREG SECONDARY-POOL CANDIDATE COPIES (register 1513, 2026-11-03) | 2026-11-03 | register ×1, memory ×1 |
 | [`PREREG_project_models_v2_2026-11-03.md`](archive/2026-11/PREREG_project_models_v2_2026-11-03.md) | PREREG r1522: projected models v2, judged set gated (hotspot excluded / transcribed target) | 2026-11-04 | register ×1 |
 | [`PREREG_project_models_2026-11-03.md`](archive/2026-11/PREREG_project_models_2026-11-03.md) | PREREG PROJECTED MODELS, MULTI-COPY LAYER (register 1519, 2026-11-03) | 2026-11-04 | register ×1 |
 | [`PREREG_o2_primary_on_family_2026-11-03.md`](archive/2026-11/PREREG_o2_primary_on_family_2026-11-03.md) | PREREG O2 PRIMARY-ON-FAMILY GUARD (register 1514, 2026-11-03) | 2026-11-03 | register ×1 |
-| [`PREREG_o2_ms_tie_proof_2026-11-03.md`](archive/2026-11/PREREG_o2_ms_tie_proof_2026-11-03.md) | PREREG O2 MS-TIE PROOF (register 1509, 2026-11-03) | 2026-11-03 | register ×1 |
+| [`PREREG_o2_ms_tie_proof_2026-11-03.md`](archive/2026-11/PREREG_o2_ms_tie_proof_2026-11-03.md) | PREREG O2 MS-TIE PROOF (register 1509, 2026-11-03) | 2026-11-03 | register ×1, memory ×1 |
 | [`PREREG_o2_ms_tie_heldout_2026-11-03.md`](archive/2026-11/PREREG_o2_ms_tie_heldout_2026-11-03.md) | PREREG O2 MS-TIE HELD-OUT (register 1510, 2026-11-03) | 2026-11-03 | register ×1 |
-| [`PREREG_o2_contested_census_2026-11-03.md`](archive/2026-11/PREREG_o2_contested_census_2026-11-03.md) | PREREG O2 CONTESTED CENSUS (register 1508, 2026-11-03) | 2026-11-03 | register ×1 |
+| [`PREREG_o2_contested_census_2026-11-03.md`](archive/2026-11/PREREG_o2_contested_census_2026-11-03.md) | PREREG O2 CONTESTED CENSUS (register 1508, 2026-11-03) | 2026-11-03 | register ×1, memory ×1 |
 | [`PREREG_isocon_only_2026-11-03.md`](archive/2026-11/PREREG_isocon_only_2026-11-03.md) | PREREG ISOCON-ONLY TRANSCRIPTS (register 1515, 2026-11-03) | 2026-11-04 | register ×1 |
 | [`PREREG_family_panel_tools_2026-11-03.md`](archive/2026-11/PREREG_family_panel_tools_2026-11-03.md) | PREREG FAMILY PANEL ACROSS TOOLS (register 1521, 2026-11-03; descriptive, predictions stated) | 2026-11-04 | register ×1 |
 | [`PREREG_truth_split_collapsed_2026-11-02.md`](archive/2026-11/PREREG_truth_split_collapsed_2026-11-02.md) | PREREG TRUTH SPLIT COLLAPSED (register 1494, 2026-11-02) | 2026-11-03 | register ×1 |
@@ -126,20 +144,20 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_candidates_parallel_families_2026-11-02.md`](archive/2026-11/PREREG_candidates_parallel_families_2026-11-02.md) | PREREG CANDIDATES PARALLEL FAMILIES (register 1506, 2026-11-02) | 2026-11-03 | register ×1 |
 | [`PREREG_assign_window_sweep_2026-11-02.md`](archive/2026-11/PREREG_assign_window_sweep_2026-11-02.md) | PREREG ASSIGN WINDOW SWEEP (register 1507, 2026-11-02) | 2026-11-03 | register ×1 |
 | [`PREREG_assign_window_fetch_2026-11-02.md`](archive/2026-11/PREREG_assign_window_fetch_2026-11-02.md) | PREREG ASSIGN WINDOW FETCH (register 1505, 2026-11-02) | 2026-11-03 | register ×1 |
-| [`ANNOT_CAT_VS_REFSEQ_2026-11-02.md`](archive/2026-11/ANNOT_CAT_VS_REFSEQ_2026-11-02.md) | CHM13 CAT/Liftoff vs NCBI RefSeq (native CHM13): why they differ (2026-11-02, descriptive, no decision rule) | 2026-11-03 | — |
+| [`ANNOT_CAT_VS_REFSEQ_2026-11-02.md`](archive/2026-11/ANNOT_CAT_VS_REFSEQ_2026-11-02.md) | CHM13 CAT/Liftoff vs NCBI RefSeq (native CHM13): why they differ (2026-11-02, descriptive, no decision rule) | 2026-11-03 | memory ×1 |
 | [`seeded_family_definition.md`](archive/2026-11/seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-01 | — |
 | [`o1_ledger.md`](archive/2026-11/o1_ledger.md) | O1 LEDGER — what has and has not worked | 2026-11-01 | — |
 | [`copy_assignment_definition.md`](archive/2026-11/copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-01 | — |
 | [`THESIS_OBJECTIVES.md`](archive/2026-11/THESIS_OBJECTIVES.md) | Thesis objectives — the current three | 2026-11-01 | — |
 | [`REFERENCE.md`](archive/2026-11/REFERENCE.md) | REFERENCE — glossary, data locations, and a worked example | 2026-11-01 | — |
 | [`PREREG_sqanti_single_copy_2026-11-01.md`](archive/2026-11/PREREG_sqanti_single_copy_2026-11-01.md) | Pre-registration: SQANTI3 on single-copy genes, our plain assembly vs StringTie, FLAIR and IsoCon (A119b chr20, 2026-11- | 2026-11-03 | — |
-| [`PREREG_assembly_ends_2026-11-01.md`](archive/2026-11/PREREG_assembly_ends_2026-11-01.md) | PREREG ASSEMBLY ENDS (2026-11-01, register 1485 / 1486) | 2026-11-03 | register ×3 |
+| [`PREREG_assembly_ends_2026-11-01.md`](archive/2026-11/PREREG_assembly_ends_2026-11-01.md) | PREREG ASSEMBLY ENDS (2026-11-01, register 1485 / 1486) | 2026-11-03 | register ×3, memory ×1 |
 | [`O3_STATUS.md`](archive/2026-11/O3_STATUS.md) | O3 — reference-absent copies: the evidence, and what it does and does not support | 2026-11-01 | — |
 | [`NEGATIVE_RESULTS_REGISTER.md`](archive/2026-11/NEGATIVE_RESULTS_REGISTER.md) | REGISTER OF NEGATIVE RESULTS | 2026-11-01 | register ×1720 |
 | [`MEMORY_DIGEST.md`](archive/2026-11/MEMORY_DIGEST.md) | Memory digest — the long form of the memory index | 2026-11-01 | — |
 | [`LEDGER_O3.md`](archive/2026-11/LEDGER_O3.md) | Ledger: O3 (copies the reference lacks) | 2026-11-01 | — |
-| [`LEDGER_O2.md`](archive/2026-11/LEDGER_O2.md) | Ledger: O2 (copy assignment of tied reads) | 2026-11-01 | — |
-| [`LEDGER_O1.md`](archive/2026-11/LEDGER_O1.md) | Ledger: O1 (family definition, assembler, locus units) | 2026-11-01 | — |
+| [`LEDGER_O2.md`](archive/2026-11/LEDGER_O2.md) | Ledger: O2 (copy assignment of tied reads) | 2026-11-01 | memory ×1 |
+| [`LEDGER_O1.md`](archive/2026-11/LEDGER_O1.md) | Ledger: O1 (family definition, assembler, locus units) | 2026-11-01 | memory ×2 |
 | [`LEDGER_GENERAL.md`](archive/2026-11/LEDGER_GENERAL.md) | Ledger: general (handoffs, pending lists, register drafts, overviews) | 2026-11-01 | — |
 | [`CHAPTER_O1_O2_COMPOSITION_DRAFT.md`](archive/2026-11/CHAPTER_O1_O2_COMPOSITION_DRAFT.md) | O1 → O2 by composition: families of transcribed loci, and assignment among exactly those loci (draft, 2026-09-05) | 2026-11-01 | — |
 | [`ADVISOR_QUESTIONS.md`](archive/2026-11/ADVISOR_QUESTIONS.md) | The advisor's standing questions — and what the codebase can answer | 2026-11-01 | — |

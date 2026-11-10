@@ -64,6 +64,8 @@ duplicates); Roaring bitmaps and smarter comparisons in assemble (register 983: 
 caches in copy_assign (our own code is ~5 s of a ~1,450 s family; the rest is minimap2); mm2-fast (slower than minimap2 2.30's
 default chaining heuristic on our read-star job, see the table).
 
+Assign router (r1600, 2026-11-09): reading the BAM once and scheduling from exact counts was slower and bigger than the default (583 s vs 553 s; 58.5 vs 36.4 GB), tables identical. Dropped.
+
 ## Open levers, by expected gain
 
 1. Done: auto family threads (the hotspot runs alone at the tail and fans out); region threads + read budget + family 4 x star 16 (r1543, 2.9x genome-wide; remaining gap is chr13 starting late: budget held only at minute 29, then 3,957 s of detect; largest-first dispatch (gw8) did not help, 7,071 s: the threads race for the budget; a budget turnstile (gw9) serialised the big regions; scheduling is closed, 104 cores (gw10, star 24) 5,507 s identical; the next lever is a per-family read pilot with early exit: chr13's eight hotspot families align ~200k reads for ~120 assignments).

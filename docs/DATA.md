@@ -240,3 +240,14 @@ CHM13's is linked at `~/data/chm13/chm13v2.0.fa.sedef.bed`), or
 | CHM13 v2.0 (UCSC) | `sedef_dl/chm13v2.sedef.bed` (83,516 rows; identity col 24, partner cols 10-12) | UCSC hub bigBedToBed; NOT the same call set as above (the native file is the one used) |
 | gorilla mGorGor1 v2.0 (GCF_029281585.2, KB3781) | `sedef_dl/gorilla/final.bed` (253,029 pairs, md5 991ed343...) | user-supplied, SEDEF v1.1 on GGO.fasta; contigs match `~/work/jfim/rustle_data/genomes/GGO.fa` |
 | HG002 paternal (`~/data/hg002/hg002.pat.fa`) | `sedef_build/hg002pat/final.bed` | built here 2026-11-08: SEDEF 1.1 (github vpc-ccg/sedef tag 1.1) rebuilt per node in `$TMPDIR`, `sedef_build/sedef_notime.sh` (= `sedef.sh` with `/usr/bin/time`, `--bar` and the awk command generation removed, and `grep -r`/`find` instead of globs over 264,714 seed logs); seeding 56 min on 72 cores; 41 align buckets OOM-killed at 72-way and rerun 8-way (`job_retry_killed.sh`, `job_resume.sh`). HG002 is soft-masked less than CHM13 (50 Mb slice 37% vs 59% lowercase). This build's rows carry one extra field and no header line: identity (`fracMatch`) is column **22**, CIGAR 34 (pair coordinates still 1-6). 714,007 pairs; 4 chr9-satellite candidates > 1-5 Mb dropped (row 1580 amendments 2-3) |
+
+## Repeat and protein annotation for tie groups (2026-11-10; register 1607, 1611)
+Under `/anvme/workspace/v138da13-rustle/annot/`:
+
+| file | source | used by |
+|---|---|---|
+| `dl_rmsk/chm13v2.0_RepeatMasker_4.1.2p1.2022Apr14.bed` | T2T CHM13 RepeatMasker | `tie_groups.py build ... RMSK_BED:0.5` (human) |
+| `dl_rmsk_ggo/GGO.repeatMasker.bed` | UCSC GenArk `GCF_029281585.2.repeatMasker.out.gz`, converted (NCBI ships no `rm.out` for this assembly) | same, gorilla |
+| `dl_gencode/gencode.v47.pc_translations.fa.gz` | GENCODE v47 protein translations | `bench/famcmp/protein_truth.py` -> `r1611/ens_map.tsv` (`DENOVO_GGO_ENS_MAP`) |
+
+Run directories: `r1603/` (A119b arms, `recs.bam` 26.6 GB, `recs.slim.tsv`), `r1610/`, `r1611/` (gorilla OR6737). SEDEF files: see the section above.
