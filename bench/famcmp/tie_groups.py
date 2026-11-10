@@ -2,7 +2,7 @@
 """PREREG r1603 (docs/PREREG_tie_groups_2026-11-10.md): tie groups from the reads' own tie sets, and their score.
 
   tie_groups.py names GENES_TSV CAT_TSV BAM > names.txt
-  samtools view -N names.txt BAM | tie_groups.py build PREFIX [exact|as98|asms98] [LINK_FRACTION] [LOCUS_FLOOR]
+  samtools view -N names.txt BAM | tie_groups.py build PREFIX [exact|as98|asms98] [LINK_FRACTION] [LOCUS_FLOOR] [RMSK_BED[:MIN_FRACTION]]
   tie_groups.py score PREFIX GENES_TSV CAT_TSV SIGNAL_TSV [full]   (full = r1605 scorer; needs the DENOVO_* truth variables)
 """
 import sys, re, collections, statistics
@@ -61,6 +61,38 @@ elif mode == 'build':
         loci.append([r]); key = r[:2]; seed = (r[2], r[3])
     floor = int(sys.argv[5]) if len(sys.argv) > 5 else 1  # r1606: a locus needs >= floor tied molecules to exist
     loci = [L for L in loci if len({r[5] for r in L}) >= floor]
+    def model(L):  # the most common intron chain of the locus; ends = medians over the records with it
+        ch = lambda r: tuple((r[4][x][1], r[4][x + 1][0]) for x in range(len(r[4]) - 1))
+        chain = collections.Counter(ch(r) for r in L).most_common(1)[0][0]; same = [r for r in L if ch(r) == chain]
+        s = int(statistics.median(r[2] for r in same)); e = int(statistics.median(r[3] for r in same))
+        ex = [(s, chain[0][0])] + [(chain[x][1], chain[x + 1][0]) for x in range(len(chain) - 1)] + [(chain[-1][1], e)] if chain else [(s, e)]
+        if any(a >= b for a, b in ex): ex = [(s, e)] if not chain else [(min(s, chain[0][0] - 1), chain[0][0])] + ex[1:-1] + [(chain[-1][1], max(e, chain[-1][1] + 1))]
+        return ex
+    models = [model(L) for L in loci]
+    if len(sys.argv) > 6:  # r1607: RMSK_BED[:MIN_FRACTION], a locus mostly made of interspersed repeat is written to PREFIX.repeat.tsv and takes no part
+        import bisect
+        path, _, thr = sys.argv[6].partition(':'); thr = float(thr or 0.5); rm = collections.defaultdict(list)
+        for l in open(path):
+            f = l.split('\t', 8)
+            if f[6] in ('LINE', 'SINE', 'LTR', 'DNA', 'Retroposon', 'RC'): rm[f[0]].append((int(f[1]), int(f[2])))
+        starts = {}
+        for c, v in rm.items():
+            v.sort(); m = [list(v[0])]
+            for x, y in v[1:]:
+                if x <= m[-1][1]: m[-1][1] = max(m[-1][1], y)
+                else: m.append([x, y])
+            rm[c] = m; starts[c] = [x for x, _ in m]
+        def rep_frac(c, ex):
+            cov = 0; m = rm.get(c, [])
+            for a, b in ex:
+                i = max(bisect.bisect_right(starts.get(c, []), a) - 1, 0)
+                while i < len(m) and m[i][0] < b: cov += max(0, min(b, m[i][1]) - max(a, m[i][0])); i += 1
+            return cov / max(sum(b - a for a, b in ex), 1)
+        fr = [rep_frac(L[0][0], ex) for L, ex in zip(loci, models)]
+        with open(pre + '.repeat.tsv', 'w') as w:
+            for L, ex, x in zip(loci, models, fr):
+                if x >= thr: w.write(f'{L[0][0]}\t{ex[0][0]}\t{ex[-1][1]}\t{L[0][1]}\t{len({r[5] for r in L})}\t{x:.3f}\n')
+        keep = [i for i, x in enumerate(fr) if x < thr]; loci = [loci[i] for i in keep]; models = [models[i] for i in keep]
     of = collections.defaultdict(set)
     for i, L in enumerate(loci):
         for r in L: of[r[5]].add(i)
@@ -83,11 +115,7 @@ elif mode == 'build':
         for k, (_, ids) in enumerate(sorted(groups.items())):
             mols = {r[5] for i in ids for r in loci[i]}; names = []
             for i in ids:
-                L = loci[i]; chain = collections.Counter(tuple((r[4][x][1], r[4][x + 1][0]) for x in range(len(r[4]) - 1)) for r in L).most_common(1)[0][0]
-                same = [r for r in L if tuple((r[4][x][1], r[4][x + 1][0]) for x in range(len(r[4]) - 1)) == chain]
-                s = int(statistics.median(r[2] for r in same)); e = int(statistics.median(r[3] for r in same))
-                ex = [(s, chain[0][0])] + [(chain[x][1], chain[x + 1][0]) for x in range(len(chain) - 1)] + [(chain[-1][1], e)] if chain else [(s, e)]
-                if any(a >= b for a, b in ex): ex = [(s, e)] if not chain else [(min(s, chain[0][0] - 1), chain[0][0])] + ex[1:-1] + [(chain[-1][1], max(e, chain[-1][1] + 1))]
+                L = loci[i]; ex = models[i]
                 c, st = L[0][0], L[0][1]; a = f'gene_id "TG{k}"; transcript_id "TG{k}.L{i}"; group "TG{k}"; locus_molecules "{len({r[5] for r in L})}"; group_molecules "{len(mols)}"; group_loci "{len(ids)}";'
                 g.write(f'{c}\ttie_groups\ttranscript\t{ex[0][0] + 1}\t{ex[-1][1]}\t.\t{st}\t.\t{a}\n')
                 for x, y in ex: g.write(f'{c}\ttie_groups\texon\t{x + 1}\t{y}\t.\t{st}\t.\t{a}\n')
@@ -151,13 +179,30 @@ elif mode == 'score':
             if full.get(x) == top: return True
             q = pre_(GG[x]['name']) if x in GG and 'pseudogene' in GG[x]['biotype'] else ''
             return bool(q) and (q in stems[top] or (q.endswith('P') and q[:-1] in stems[top]))
-        j2 = p2 = 0
+        sd = collections.defaultdict(list)  # r1607: (chrom, 100 kb bin) -> (start, end, partner chrom, start, end), both directions
+        if os.environ.get('RUSTLE_SEDEF_BED'):
+            for l in open(os.environ['RUSTLE_SEDEF_BED']):
+                f = l.split('\t', 7)
+                if l[0] == '#' or len(f) < 6 or not f[1].isdigit(): continue
+                for c1, a1, b1, c2, a2, b2 in ((f[0], int(f[1]), int(f[2]), f[3], int(f[4]), int(f[5])), (f[3], int(f[4]), int(f[5]), f[0], int(f[1]), int(f[2]))):
+                    for bn in range(a1 // 100000, b1 // 100000 + 1): sd[(c1, bn)].append((a1, b1, c2, a2, b2))
+        span = lambda t: (M[t][0], M[t][3][0][0], M[t][3][-1][1])
+        def codup(t, famloci):  # t and a family locus of the group lie in one SEDEF pair (the same side or the two sides)
+            c, a, b = span(t)
+            for a1, b1, c2, a2, b2 in {x for bn in range(a // 100000, b // 100000 + 1) for x in sd.get((c, bn), [])}:
+                if a < b1 and a1 < b and any((fc == c and fa < b1 and a1 < fb) or (fc == c2 and fa < b2 and a2 < fb) for fc, fa, fb in famloci): return True
+            return False
+        j2 = p2 = pd = 0
         for g, ts in grp.items():
             if not any(x in fam for t in ts for x in hits[t]): continue
             c = collections.Counter(full[x] for t in ts for x in hits[t] if x in full)
             if not c: continue
             top = c.most_common(1)[0][0]; j2 += 1
-            p2 += not any(hits[t] and not any(in_family(x, top) for x in hits[t]) for t in ts)
+            foreign = [t for t in ts if hits[t] and not any(in_family(x, top) for x in hits[t])]
+            p2 += not foreign
+            famloci = [span(t) for t in ts if any(in_family(x, top) for x in hits[t])]
+            pd += bool(foreign) and all(codup(t, famloci) for t in foreign)
+        print(f"B2s purity counting co-duplicated loci as family {p2 + pd} of {j2} = {(p2 + pd) / max(j2, 1):.3f} (bar 0.90); co-duplicated-only groups {pd}")
         big = {g for g, ts in grp.items() if len(ts) >= 2}; gr = lambda r: any(M[t][2] in big for t in M if r['gene'] in hits[t])
         print(f"B2f purity (full truth + same-family pseudogenes) {p2} of {j2} = {p2 / max(j2, 1):.3f} (bar 0.90)")
         print(f"B1g grouped reach {sum(gr(r) for r in ind)} of {len(ind)} (bar 58); TAF11L grouped {sum(gr(r) for r in taf)} of {len(taf)}")
