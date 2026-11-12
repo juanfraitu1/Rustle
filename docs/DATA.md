@@ -251,3 +251,20 @@ Under `/anvme/workspace/v138da13-rustle/annot/`:
 | `dl_gencode/gencode.v47.pc_translations.fa.gz` | GENCODE v47 protein translations | `bench/famcmp/protein_truth.py` -> `r1611/ens_map.tsv` (`DENOVO_GGO_ENS_MAP`) |
 
 Run directories: `r1603/` (A119b arms, `recs.bam` 26.6 GB, `recs.slim.tsv`), `r1610/`, `r1611/` (gorilla OR6737). SEDEF files: see the section above.
+
+## Placement rows 1642-1650: truth sets, references, tools (2026-11-12)
+- **HG002 read-level haplotype truth** (new): workspace `r1644_hg002_unspliced/`: `mat.fa` (HG002.mat.cur.20211005,
+  GCA_021951015.1, NCBI datasets download 2026-11-12; pat = `~/data/hg002/hg002.pat.fa`), `mat.mmi` / `pat.mmi`
+  (`minimap2 -x splice:hq`), `hg.molecules.tsv` (extended `as_table` of `hg002.pat.bam`), `ms10.*` (37-family
+  `copy_assign --tie-ms 10` panel), `truth/hits.tsv`, `dump.tsv` (slack-0 verdicts incl. OUTSIDE rows), `job.sbatch`
+  (the whole recipe, 56 min on one node). About 31 GB.
+- **KB3781 set as molecules**: `r1642_exonplace/{pof_panel,pof_heldout}.dump.tsv` (r1514 dumps + OUTSIDE rows; the
+  decidable part is byte-identical to `o2mstie/pof_*.strict3_dump.tsv`), `reads.fa` (2,989 reads).
+- **References**: `r1643_multiiso/ref.fa` (per copy: catalog model, assembled transcripts on that locus, unspliced
+  span); `r1647_kallisto/{kb,hg}.ref.fa` (the same + all other assembly transcripts named OTHER) with `{kb,hg}.idx`
+  (kallisto k 63).
+- **Tools**: kallisto 0.52.0 = `~/.pixi/detached-envs/rustle-7434162673922408322/envs/sqanti3/bin/kallisto` (accepts
+  `-k 63`, has `bus --long`; no bustools: `kallisto_place.py` parses `output.bus` + `matrix.ec`); oarfish 0.11.0 added to
+  the workspace `alnenv` pixi env; GraphAligner 1.0.20, seqwish, vg in the `graph` env (GraphAligner has no splice mode).
+- Outputs per row: workspace `r1642_exonplace/`, `r1643_multiiso/`, `r1644_hg002_unspliced/`, `r1647_kallisto/`,
+  `r1648_oarfish/`, `r1649_graph/`, `r1650_kallisto_or/`.

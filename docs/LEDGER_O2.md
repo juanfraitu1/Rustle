@@ -323,3 +323,82 @@ Pre-registrations in `archive/2026-11/`: `PREREG_o2_contested_census_2026-11-03.
 - r1509 PROOF (panel 40 families): identity PASS; MS10 contested 40,524 vs BASE 24,095 molecules, assigned 1,265 vs 78; registered truth (NM + 2 slack) FAIL (35 decidable, 2 wrong = primary); slack 0 post hoc: 284 right / 2 wrong of 286 vs primary 280 / 6; 648 unverifiable.
 - r1510 HELD-OUT: FAIL (see current state); 131 of 161 wrong in MCL13 where both O2 and the primary sit on copy 0 and the reads come from an uncatalogued parent (NC_073230.2:52.6 Mb, MAPQ 60).
 - r1511 REPORT bound = ms ratio 0.5; r1512 FAIL (graph); r1514 guard (see current state). Dumps: `o2mstie/*.strict_dump.tsv`, `~/o2contested/r1510_strict.txt`, `r1514_strict.txt`.
+
+## Placement without the aligner's primary: exon space, k-mers, graph (2026-11-12, register 1642-1650)
+User question: is there a method other than minimap2's spliced genome alignment that places multi-mapping long reads
+better? Set = the ms near-tie molecules of r1514 (KB3781) and, new, the same on HG002; truth = the individual's own two
+haplotypes at slack 0, per molecule. Pre-registrations in `docs/`: `PREREG_exon_space_placement_2026-11-12.md` (1642),
+`PREREG_exon_space_multi_isoform_2026-11-12.md` (1643), `PREREG_exon_space_unspliced_hg002_2026-11-12.md` (1644),
+`PREREG_kallisto_long_placement_2026-11-12.md` (1647), `PREREG_oarfish_placement_2026-11-12.md` (1648),
+`STEP0_graph_placement_2026-11-12.md` (1649), `PREREG_kallisto_placement_or6737_2026-11-12.md` (1650).
+Tools: `bench/o2_contested/{exon_place,multi_iso_ref,kallisto_place,oarfish_place,graph_place,place_checks}.py`;
+`strict_truth.py` `STRICT_DUMP_OUTSIDE=1` writes the outside-catalog rows (negative set).
+- r1642 FAIL: unspliced `map-hifi` of the reads to one spliced sequence per copy: tool right / primary wrong 15, reverse
+  44; assigns 0.456 of outside-catalog molecules.
+- r1643 FAIL: several sequences per copy (catalog model, assembled transcripts, unspliced span): equals the primary (31 vs
+  36), negatives 0.587.
+- r1644 FAIL: the post hoc unspliced-primary split of r1643 on HG002: 11 vs 43 (4 vs 214 before the scoring fix).
+  Exon-space re-alignment WITH minimap2 is closed, both references, both classes.
+- r1647 INVALID as registered (validity gate 0.80 on pseudoaligned reads; got 0.41 / 0.70), OPEN: kallisto long mode
+  (`-k 63`, `bus --long --threshold 0.8`), reference = per-copy sequences + every other assembly transcript as OTHER,
+  assign iff the compatibility class is one locus. On its molecules 919 right / 18 wrong (KB3781) and 678 / 6 (HG002);
+  tool right / primary wrong vs reverse 15 vs 2 and 59 vs 2 (after the primary-overlap correction); where O2 abstains it
+  assigns 672 / 6 and 332 / 6; reach 0.60 / 0.28, four-fold lower on HG002 reads of the non-reference haplotype.
+  minimap2 on the same reference stays level with the primary: the gain is the exact-k-mer rule, not the reference.
+- r1649 STOP at step 0: reads aligned to a per-family seqwish graph (GraphAligner), assigned by path compatibility: 637
+  assigned vs kallisto 638 on 1,026 molecules, the 613 shared all on the same locus, 18 graph-only (bar 30).
+- r1648 FAIL: oarfish 0.11.0 (own mapper + abundance EM, all region reads), locus posterior >= 0.99: equals the primary
+  (24 vs 29, 36 vs 35) at a 9-11% wrong rate; where abundance alone decides it is 4 right / 16 wrong (KB3781) and
+  95 / 13 (HG002). Closed.
+- r1650 PASS (reach and agreement only, no read truth): kallisto rule on OR6737 assigns 2,259 of 5,971 contested
+  molecules (0.378; KB3781 like-for-like 0.252), 3 of 212 disagree with O2; 13.5% of picks leave the primary's locus
+  (KB3781 3.4%), unjudgeable without truth.
+Scoring lessons (apply to every placement row): (1) a pick whose span overlaps the truth copy is right
+(`EXON_PLACE_RIGHT=locus`); HG002 has copies of different families on one span; (2) `strict_truth.py` judges the primary
+by its leftmost position: recheck with the record's overlap (`EXON_PLACE_PRIMARY`) before quoting primary-wrong counts;
+(3) a catalog-only reference force-places outside-catalog reads; (4) validity gates check mechanics, reach is a bar.
+- r1651 FAIL: the k-mer rule on HG002 reads against CHM13 (A119b catalog, HG002 haplotype truth): reach 0.043, 166 right /
+  15 wrong (8.3%) vs the primary 163 / 18, 175 of 181 picks on the primary's locus. Reference-individual only.
+  **O2 across individuals, registered as an O2 error (user decision 2026-11-12):** `--tie-ms 10` on that set is 170
+  right / 175 wrong. Moves off the primary's locus 2 right / 121 wrong; kept on it 168 / 54. Three families hold 171
+  of the wrong rows (MCL189, MCL601, MCL223); the other nine are 138 / 4. Next O2 rows: a guard on cross-individual
+  moves, a per-family fit check, the same breakdown on same-individual samples. (Not excluded: the truth placing a
+  CHM13 copy on its paralog's HG002 locus.)
+- r1652 (no new run): O2's moves off the primary's locus on same-individual samples: KB3781 2 right / 2 wrong (4 of 570
+  assignments, underpowered), HG002-on-pat 1 / 22 (23 of 525, 20 in MCL338); pooled with CHM13 5 right / 145 wrong.
+  By the rule the guard is for every sample. O2's contribution is assign-vs-abstain on the primary, not relocation.
+  Next row: never-off-the-primary guard (identity, held-out, rows removed on A119b).
+- r1653 FAIL: that guard on held-out families (60 each): removed rows 103 wrong / 39 right (bar 4 to 1); wrong rate
+  6.1% -> 4.0% (HG002 own haplotype) and 12.3% -> 5.8% (CHM13); correct lost 1.6% and 2.3%. On the A119b default gate it
+  would delete 83% of assignments (exact ties: the primary is arbitrary). Not adopted, not a general guard. Moved
+  near-tie rows are wrong 59-78% vs kept 4-6%; a few families carry the wrong moves (MCL1256, MCL338, MCL586, MCL189).
+- r1656 PASS (no new run, held-out sets of r1653): the families carrying O2's wrong near-tie assignments are those with
+  SOLE-CANDIDATE rows (contested molecule, one candidate copy, no deciding site; register 787's class). Held out: 19
+  right / 15 wrong and 13 / 71, against 953 / 48 and 997 / 70 for other rows; dropping them takes the wrong rate 6.1% ->
+  4.8% and 12.3% -> 6.6%. They are 13% of the A119b default-gate assignments. Existing flag `--no-sole-candidate`.
+  OPEN FOR THE USER: 787 ruled such reads are never assigned, the shipped default still assigns them.
+- r1656 follow-up: KB3781 held-out sole rows 8 right / 0 wrong (clean and rare on the reference individual). 787 was
+  shipped only as `tie_outside_catalog` (partner on no family's unit); a partner on ANOTHER family's unit still leaves a
+  sole candidate, and that is 46 of 71 and 12 of 15 of the wrong sole rows. Lever: cross-family tied placements as
+  candidates (787's rule in full), or `--no-sole-candidate`.
+- r1657 cross-family candidates: step 0 STOP for a demote-only guard (a tied placement on another family's unit is on
+  112 of 118 sole rows, right and wrong alike = `--no-sole-candidate`). `--union-certificate` under `--tie-ms 10`, fresh
+  120-family draws: own haplotype 170 / 14 vs flag 140 / 16 (better), CHM13 108 / 105 vs 81 / 66 (FAIL, MCL720 adds
+  17 / 31). FAIL as registered; flag stays the recommendation. The third CHM13 draw is 45% wrong WITHOUT sole rows
+  (MCL598, MCL1339): cross-individual error in thin families is a wider class than sole candidates.
+- r1659 truth audit (post hoc): across individuals `strict_truth`'s near-perfect gate on catalog copies drops a copy
+  > 0.3% from the HG002 haplotype and a sibling inherits its locus. Artifacts: 81 of r1651's 175 wrong rows, 27 of 141
+  and 35 of 75 on the CHM13 draws. Corrected r1651: 251 / 94 (wrong 0.27). r1656 PASS and r1657 FAIL both stand.
+  Real residual example MCL1339: HG002 allele 3-4 edits from both CHM13 copies, sole-candidate pick goes to the wrong one.
+Standing: no default changes. Every alternative to the primary is now closed or reference-individual only: exon-space
+minimap2 (1642-1644), abundance EM (1648), graph path compatibility (1649), exact k-mers (1647 self only, 1651).
+- Two measurements behind user questions the same day (2026-11-12, no register row, descriptive):
+  - **Alignment length is not the placement problem.** KB3781, the 1,570 decidable contested molecules: the primary
+    aligns a median 99.9% of the read whether it is on the right copy (1,379) or the wrong one (191); under 90% aligned
+    on 1.1% vs 6.8% (about 13 of the 191). An aligner that returns longer alignments has nothing to add here. BLAST's
+    longer hits (edge-rule step 0, 2026-11-07) were gene vs gene at ~85% identity, a different regime.
+  - **Secondary and supplementary records.** OR6737 `GGO_mm.bam`: 10,710,883 records = 4.41 M primary, 6,266,238
+    secondary (58%), 34,699 supplementary (0.3%). Supplementary records are skipped by `as_table`, `candidate_copies`,
+    `semisec` and the assembler's loaders; dropping them saves nothing. Secondaries are set by `-N 50 -p 0.1`; r1511
+    stands (useful share 71% at ms ratio >= 0.99, under 7% below 0.8; `-p 0.8` loses 23% of the useful ones). Decision:
+    keep the alignment line, thin by ms ratio AFTER alignment when a smaller BAM is wanted; never re-align stricter.

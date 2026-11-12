@@ -53,7 +53,10 @@ def main(prefix, truth_dir, catalog, molecules=None):
             if best[4] > max(2, 0.003 * best[5]): c[st]["no_near"] += 1; continue
             near = [h for h in hs if h[4] <= best[4] + g]
             T = sorted({k for k, ls in loci.items() if any(lh == h[0] and lc == h[1] and ls0 < h[3] and h[2] < le for lh, lc, ls0, le in ls for h in near)})
-            if not T: c[st]["outside"] += 1; continue
+            if not T:
+                c[st]["outside"] += 1
+                if g == 0 and dump and os.environ.get("STRICT_DUMP_OUTSIDE"): dump.write(f"{r['read_name']}\t{r['family_id']}\t{st}\tNA\tNA\t{r['catalog_copy_idx']}\tOUTSIDE\n")  # r1642 negative set
+                continue
             if not one_locus(T): c[st]["ambiguous"] += 1; continue
             c[st]["decidable"] += 1
             v = "NA"
