@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """PREREG row 1742: CAGE support of the 5' ends of chains the `trunc5` stage drops vs keeps.
 
-  trunc5_cage.py PREFIX.gtf PREFIX.trunc5.gtf CAGE_BED6 REF_GTF   |   trunc5_cage.py --selftest
-Multi-exon transcripts only. Background = the position 100 bp downstream in the transcript."""
+  trunc5_cage.py PREFIX.gtf PREFIX.trunc5.gtf CAGE_BED6 REF_GTF [flank]   |   trunc5_cage.py --selftest
+Multi-exon transcripts only. Background = the position 100 bp downstream in the transcript (row 1742, INVALID: still in
+the promoter), or with `flank` the genomic positions 1 kb either side of the 5' end, same strand (row 1743)."""
 import sys, re, collections
 from sq_nested import tss_and_shift, Peaks
 
@@ -17,14 +18,15 @@ def load(path):
 
 def chain(c, s, e): return (c, s, tuple((e[i][1], e[i + 1][0]) for i in range(len(e) - 1)))
 
-def score(models, kept_ids, peaks, ref_chains):
+def score(models, kept_ids, peaks, ref_chains, flank=False):
     T = collections.Counter()
     for t, (c, s, e) in models.items():
         if len(e) < 2: continue
         tss, sh = tss_and_shift(s, e); d = peaks.dist(c, s, tss)
         for g in (('kept' if t in kept_ids else 'dropped', 'all'), ('kept' if t in kept_ids else 'dropped', 'refseq' if chain(c, s, e) in ref_chains else 'not_refseq')):
             T[g, 'n'] += 1; T[g, 'in'] += d == 0; T[g, 'w50'] += d <= 50
-            if sh is not None: T[g, 'bn'] += 1; T[g, 'bin'] += peaks.dist(c, s, sh) == 0
+            for b in ((tss - 1000, tss + 1000) if flank else (sh,)):
+                if b is not None and b >= 0: T[g, 'bn'] += 1; T[g, 'bin'] += peaks.dist(c, s, b) == 0
     return T
 
 def selftest():
@@ -34,13 +36,15 @@ def selftest():
     T = score(m, {'a'}, Peaks(bed), {('c', '+', ((300, 400),))})
     assert T[('kept', 'all'), 'n'] == 1 and T[('kept', 'all'), 'in'] == 1 and T[('dropped', 'all'), 'in'] == 0
     assert T[('dropped', 'all'), 'bin'] == 1 and T[('kept', 'refseq'), 'n'] == 1   # b's shifted position 105 is in the peak
+    F = score({'f': ('c', '+', [(1105, 1300), (1400, 1500)])}, set(), Peaks(bed), set(), flank=True)
+    assert F[('dropped', 'all'), 'bn'] == 2 and F[('dropped', 'all'), 'bin'] == 1 and F[('dropped', 'all'), 'in'] == 0
     print('selftest ok')
 
 if __name__ == '__main__':
     if sys.argv[1] == '--selftest': selftest(); sys.exit()
     gtf, tr, bed, ref = sys.argv[1:5]
     models = load(gtf); kept = set(load(tr)); refc = {chain(*v) for v in load(ref).values() if len(v[2]) > 1}
-    T = score(models, kept, Peaks(bed), refc)
+    T = score(models, kept, Peaks(bed), refc, flank=len(sys.argv) > 5 and sys.argv[5] == 'flank')
     print('group\tsplit\tchains\tin peak\twithin 50 bp\tbackground in peak\tratio')
     for g in ('dropped', 'kept'):
         for sp in ('all', 'refseq', 'not_refseq'):
