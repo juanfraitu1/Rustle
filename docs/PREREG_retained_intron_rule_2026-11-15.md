@@ -66,3 +66,5 @@ R10 reproduces the base runs (OR6737 25,794 correct at 0.352; A119b 38,715 at 0.
 The chains the filter removes are 2-5% RefSeq-correct, so it is doing its job on the bulk; the annotated ones it also
 removes are 11 / 48 / 31 pairs here. Not known: how many of the unannotated retained-intron chains are real isoforms
 and how many precursor RNA (RefSeq cannot say).
+
+**User ruling (2026-11-15):** the filter stays at 10. `RUSTLE_POLISH_RETAINED_RATIO` remains the opt-in.
