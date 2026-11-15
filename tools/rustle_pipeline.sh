@@ -61,6 +61,36 @@
 #        [--seed-pool primary|good|all [--seed-as-ratio R]] [--as-table FILE] [--contig NAME[,NAME...]] [--no-seed-secondaries]
 #        [--no-cache] [--inspect] [--piecewise [--max-pieces N] [--budget-s S] [--piece-records R] [--piece LABEL]]
 #        [--candidates | --no-candidates] [--delta D] [--cand-max-reads N] [--legacy-catalog]
+#        [--guide ANNOT.gtf]   assemble / all also write PREFIX.guided.gtf (stage `guided` alone rewrites it from PREFIX.gtf;
+#                              the de novo PREFIX.gtf and every later stage are unchanged; register 1622)
+#   tools/rustle_pipeline.sh siblings --bam B --fasta G --out PREFIX   OPT-IN (register 1628): PREFIX.sibling.gtf = PREFIX.gtf +
+#                              one-read chains a family sibling's model confirms; after assemble and families
+#   tools/rustle_pipeline.sh flairlike --bam B --fasta G --out PREFIX [--threads N]   OPT-IN (register 1640): PREFIX.flairlike.gtf =
+#                              FLAIR collapse's chain set (second minimap2 pass; lower precision than PREFIX.gtf)
+#   tools/rustle_pipeline.sh famreps --bam B --fasta G --out PREFIX   the second half of `families` alone (register 1662):
+#       genes that have no locus of their own join PREFIX.fam.copies.* as extra representatives of their locus;
+#       PREFIX.fam.base.copies.* keeps the table of the first run. RUSTLE_FAMREPS=0 turns it off inside `families`.
+#   tools/rustle_pipeline.sh altends --bam B --fasta G --out PREFIX   OPT-IN: PREFIX.altends.gtf = PREFIX.gtf + alt_tes attributes
+#                              (the commonest read 3' end when it is not the emitted one; polyA-signal and A-rich flags)
+#   tools/rustle_pipeline.sh repeatloci --bam B --fasta G --out PREFIX   OPT-IN (registers 1698 / 1702): PREFIX.repeat_loci.tsv marks
+#     assembly loci that are soft-masked repeats or rDNA (a table; nothing is dropped). Needs python3 + pysam + minimap2.
+#   tools/rustle_pipeline.sh exonmap --bam B --fasta G --out PREFIX [--threads N]   OPT-IN (register 1595): PREFIX.fam.exonmap.columns.tsv =
+#     the exon columns of each family, each core (every member), accessory (some) or private (one); PREFIX.fam.exonmap.gfa/ = a graph
+#     view per family (segments tagged with the class, one path per member, Bandage colours). Reads the families output only.
+#   tools/rustle_pipeline.sh relatives --bam B --fasta G --out PREFIX   OPT-IN (register 1676 / 1737): PREFIX.fam.relatives.tsv = locus pairs
+#     the family edge rule refused that the row-1676 score calls related. Links, NOT family members; the families are unchanged.
+#     Set RUSTLE_EXCLUDE_BED (the satellite BED assign uses): without it 3 of 4 links on A119b are satellite loci.
+#     Needs a SEDEF BED (RUSTLE_SEDEF_BED or FASTA.sedef.bed). Measured only on protein-coding gene pairs: precision 0.830 on
+#     two gorilla samples (its own bar 0.85 not passed), ~1/6 of the picks young duplicates; other locus pairs are unscored.
+#   tools/rustle_pipeline.sh trunc5 --bam B --fasta G --out PREFIX [--threads N]   OPT-IN (register 1677): PREFIX.trunc5.gtf = PREFIX.gtf without
+#                              multi-exon chains that at least as many primary reads run through and continue 5' of as end with
+#   tools/rustle_pipeline.sh capstarts --bam B --fasta G --out PREFIX [--threads N]   (register 1717 / 1720; also a last step of `all`, RUSTLE_CAPSTARTS=0 = off; writes nothing on a library without cap G): PREFIX.capstarts.gtf = PREFIX.gtf plus
+#                              nested starts backed by >= 3 capped reads (non-templated 5' G); refuses libraries without a usable cap G
+#   tools/rustle_pipeline.sh shiftdrop --bam B --fasta G --out PREFIX [--threads N]   OPT-IN (register 1728-1730 / 1732 / 1734 / 1738 / 1739): PREFIX.shiftdrop.gtf = PREFIX.gtf without
+#                              weaker copies of a stronger chain with one internal exon end moved whose reads carry an indel beside the moved
+#                              intron (>= half of them); 0.3-0.9% of chains, 2-4% of them annotated; no other stage reads this file
+#   tools/rustle_pipeline.sh earlyends --bam B --fasta G --out PREFIX [--threads N]   (register 1721 / 1722; also the last step of `all`, RUSTLE_EARLYENDS=0 = off): PREFIX.earlyends.gtf = PREFIX.gtf plus
+#                              nested early ends whose reads end at one position with a polyA signal and no A-rich run
 #   tools/rustle_pipeline.sh cache-ls --out PREFIX      list what PREFIX.cache holds (cache-clear: delete it)
 #   tools/rustle_pipeline.sh sd --fasta G --out PREFIX [--threads N] [--bin DIR] [--no-cache]   the genome's SDs, cached (stage sd)
 # --piecewise (catalog only; needs the cache): the catalog's representatives (both BAM passes + the span-overlap
@@ -118,6 +148,10 @@
 #   changes nothing but that environment: the arguments of copy_assign are the same for every pool. Use a different
 #   --out PREFIX per pool (bench/seed_pool/run.sh does, and prints the comparison). --as-table FILE reads (or builds, when absent
 #   or made from another BAM) the best-AS table there instead of PREFIX.molecules.tsv, so many pools and widths share one pass over
+#   --guide ANNOTATION.gtf[.gz] (assemble; opt-in, register 1622): also write PREFIX.guided.gtf = the de novo assembly with the
+#   guide's transcripts that have a full-chain primary alignment added, and without de novo chains that are fragments or
+#   intron-retaining versions of guide chains, have a new intron beside guide introns and < 10 reads, or lie outside the guide
+#   with < 3 reads (`utilities guide`, src/guide.rs). PREFIX.gtf and every later stage stay de novo.
 #   the BAM. --contig NAME[,NAME...] (assemble) assembles those contigs only, copy_assign --region NAME:0-LEN (--regions FILE for
 #   several) with LEN from FASTA.fai, in place of --genome-wide: the products equal the genome-wide run's on that contig (docs/archive/2026-09/CONTAINER_HEADROOM_2026-09-30.md) and it
 #   makes a pool comparison on one contig a matter of minutes; the families, assign and flag stages read whatever assembly is there.
@@ -129,6 +163,19 @@
 #   RUSTLE_POLISH_TES_EXTEND=on adds `--polish-tes-extend` to `assemble` (default unset = off; register 1488);
 #   RUSTLE_MONO_MODEL=cluster adds `--mono-model` to `assemble` (default unset = off; register 1489);
 #   RUSTLE_FINAL_SUBCHAIN=drop|off: the sub-chain drop as a fourth final.gtf layer (default drop, register 1498);
+#   RUSTLE_PYTHON=python3: the interpreter for families' extra representatives (RUSTLE_FAMREPS, default on) and assign's skip lists
+#     (RUSTLE_EXCLUDE_BED / RUSTLE_EXCLUDE_SOFTMASK / RUSTLE_EXCLUDE_FASTA / RUSTLE_ANNOTATED_ONLY); not needed otherwise.
+#   RUSTLE_EXCLUDE_SOFTMASK=0.9 (opt-in, register 1690): assign skips families whose copies are mostly soft-masked (>= that
+#     share of exon bases lowercase in --fasta): satellite and transposon-class families, on any masked genome, no BED needed.
+#     Does not catch rRNA reliably. May be set together with RUSTLE_EXCLUDE_BED (the lists are joined).
+#   RUSTLE_SOLE_CANDIDATE=1 (opt-in): assign reports a contested molecule with one candidate copy as `assigned`
+#     (sole_candidate = 1), the default before 2026-11-13. Default now: such a molecule is `tied` (user ruling, registers
+#     787 / 1656 / 1695); on A119b that is about 40% of the earlier assigned rows.
+#   RUSTLE_EXCLUDE_FASTA=REF.fa (opt-in, register 1691): assign skips families whose copies are mostly covered (>= 50% of the
+#     copy sequence) by minimap2 asm20 alignments to REF.fa. For rRNA / rDNA families, which the soft mask does not reach:
+#     tools/data/rdna_human.fa (one human 45S unit with its spacer + one 5S unit; finds human and gorilla rDNA families) or
+#     tools/data/rdna_human.masked.fa (the unit's own repeats masked: lists no other family, misses Alu-rich spacer transcripts).
+#     The lists of the three RUSTLE_EXCLUDE_* switches are joined.
 #   RUSTLE_ASSEMBLY_LAYERS=on|off: `assemble` also writes PREFIX.final.gtf, the assembly with the three end layers, from a second
 #   parallel run (default on; PREFIX.gtf / PREFIX.families.gtf unchanged by construction; registers 1487-1491);
 #   RUSTLE_POLISH_TES=tag|pas-end adds `--polish-tes` to `assemble` (default unset = off);
@@ -190,7 +237,7 @@ case "$STAGE" in
        fi
      done;;
 esac
-BAM=""; FASTA=""; OUT=""; INDEX=""; GFF=""; THREADS=4; THREADS_SET=0; BIN="$RP_DRIVER_DIR/../target/release"; CONFIRM=(); FOREIGN=(); SEED_POOL=${RUSTLE_SEED_POOL:-good}; SEED_RATIO=${RUSTLE_SEED_AS_RATIO:-0.98}; SEED_RATIO_FLAG=0; AS_TABLE=""; CONTIG=""; CONTIG_FLAG=0; CACHE=1; INSPECT=0
+BAM=""; FASTA=""; OUT=""; INDEX=""; GFF=""; GUIDE=""; THREADS=4; THREADS_SET=0; BIN="$RP_DRIVER_DIR/../target/release"; CONFIRM=(); FOREIGN=(); SEED_POOL=${RUSTLE_SEED_POOL:-good}; SEED_RATIO=${RUSTLE_SEED_AS_RATIO:-0.98}; SEED_RATIO_FLAG=0; AS_TABLE=""; CONTIG=""; CONTIG_FLAG=0; CACHE=1; INSPECT=0
 PIECEWISE=0; MAX_PIECES=0; BUDGET_S=0; PIECE_RECORDS=0; PIECE=""
 LEGACY_CATALOG=0; CANDIDATES=0; DELTA=0.00958; CAND_MAX=1000
 # `all --to STAGE` stops after STAGE (the escape hatch: `--to families` = the loci and their copy table before any read is
@@ -200,6 +247,7 @@ INDEX_GB=8; LOW_MEM=0; NO_FLAG=0; RESUME=1; MAX_WINDOW_RECORDS=${RUSTLE_MAX_WIND
 while [ $# -gt 0 ]; do
   case "$1" in
     --bam) BAM=$2; shift 2;; --fasta) FASTA=$2; shift 2;; --out) OUT=$2; shift 2;; --index) INDEX=$2; shift 2;;
+    --guide) GUIDE=$2; shift 2;;
     --gff) GFF=$2; shift 2;; --threads) THREADS=$2; THREADS_SET=1; shift 2;; --bin) BIN=$2; shift 2;;
     --confirm) CONFIRM+=(--confirm "$2"); shift 2;; --foreign) FOREIGN+=(--foreign "$2"); shift 2;;
     --seed-pool) SEED_POOL=$2; shift 2;; --seed-as-ratio) SEED_RATIO=$2; SEED_RATIO_FLAG=1; shift 2;; --as-table) AS_TABLE=$2; shift 2;;
@@ -328,11 +376,11 @@ MM_THREADS=$JOB_THREADS; [ "$LOW_MEM" = 1 ] && [ "$MM_THREADS" -gt 16 ] && MM_TH
 # skip lists that `merged` and the --candidates assign do not apply: refused here, before assemble and families run (round-23 audit);
 # the stage functions refuse them again. Same `case "$STAGE"` form as the checks above.
 case "$STAGE" in
-  *) if [ "$MAX_WINDOW_RECORDS" -gt 0 ] || [ -n "${RUSTLE_ANNOTATED_ONLY:-}" ] || [ -n "${RUSTLE_EXCLUDE_BED:-}" ]; then
+  *) if [ "$MAX_WINDOW_RECORDS" -gt 0 ] || [ -n "${RUSTLE_ANNOTATED_ONLY:-}" ] || [ -n "${RUSTLE_EXCLUDE_BED:-}${RUSTLE_EXCLUDE_SOFTMASK:-}${RUSTLE_EXCLUDE_FASTA:-}" ]; then
        if [ "$STAGE" = merged ]; then
-         echo "[rustle_pipeline] merged applies no --max-window-records / --low-mem / RUSTLE_ANNOTATED_ONLY / RUSTLE_EXCLUDE_BED: use \`all\` for them" >&2; exit 2
+         echo "[rustle_pipeline] merged applies no --max-window-records / --low-mem / RUSTLE_ANNOTATED_ONLY / RUSTLE_EXCLUDE_BED / RUSTLE_EXCLUDE_SOFTMASK / RUSTLE_EXCLUDE_FASTA: use \`all\` for them" >&2; exit 2
        elif [ "$CANDIDATES" = 1 ] && { [ "$STAGE" = all ] || [ "$STAGE" = assign ]; }; then
-         echo "[rustle_pipeline] --candidates does not apply --max-window-records / --low-mem / RUSTLE_ANNOTATED_ONLY / RUSTLE_EXCLUDE_BED: drop one of them" >&2; exit 2
+         echo "[rustle_pipeline] --candidates does not apply --max-window-records / --low-mem / RUSTLE_ANNOTATED_ONLY / RUSTLE_EXCLUDE_BED / RUSTLE_EXCLUDE_SOFTMASK / RUSTLE_EXCLUDE_FASTA: drop one of them" >&2; exit 2
        fi
      fi;;
 esac
@@ -343,11 +391,35 @@ INSPECT_CAT=(); INSPECT_ASSIGN=()
 # (byte-identical families / assignments / abundance; ~85% of the wall time on dense families; only the diagnostic
 # .fallback.tsv and its log counts are lost) and runs RUSTLE_REGION_THREADS regions at once (byte-identical). Defaults since
 # r1543 (docs/PREREG_pipeline_speed_2026-11-05.md gw7, A119b genome-wide: 6,589 s vs 19,358 s, peak 199 GB on a 250 GB node):
-# 8 regions, 4 family threads x 16 star threads, 4M-record read budget. LOW_MEM=1 keeps regions sequential.
+# 8 regions, 4 family threads x 16 star threads, 4M-record read budget (24 regions / 16M on a large node with the satellite
+# exclusion: assign_parallel_defaults below). LOW_MEM=1 keeps regions sequential.
 # RUSTLE_POA_DIAGNOSTIC=1 restores the diagnostic pass.
+# Round 54 audit: assign's regions at once and read budget, "REGIONS BUDGET". 24 / 16M on the configuration measured on A119b
+# (>= 48 cores, >= 128 GB, RUSTLE_EXCLUDE_BED set: 286 s against 484 s, tables identical, peak RSS 40 GB against 34 GB; 36 / 32M
+# gains nothing more). Elsewhere r1543's 8 / 4M: without the exclusion those peaked at 199 GB on the satellite families.
+assign_parallel_defaults() {
+  # CORES MEM_KB EXCLUDE_BED LOW_MEM
+  if [ "$1" -ge 48 ] && [ "$2" -ge 134217728 ] && [ -n "$3" ] && [ "$4" != 1 ]; then echo "24 16000000"; else echo "8 4000000"; fi
+}
+# Round 58 audit: the same for assemble's sweep, "CONTIGS BUDGET": 24 / 80M on a large node (A119b 291 s at 8 / 20M, 237 s at
+# 16 / 40M, 212 s at 25 / 80M; the three GTFs identical; 9 / 11 / 13 GB per process, two processes), else 8 / 20M.
+assemble_parallel_defaults() {
+  # CORES MEM_KB LOW_MEM
+  if [ "$1" -ge 48 ] && [ "$2" -ge 134217728 ] && [ "$3" != 1 ]; then echo "24 80000000"; else echo "8 20000000"; fi
+}
+# Round 60: the binaries size a reader's inflate workers from the machine's cores (bam::bgzf_workers); under a smaller
+# --threads / Slurm allocation the job's threads are the measure. Same rule: a quarter, at least min(4, threads), at most 16.
+if [ -z "${RUSTLE_BAM_THREADS:-}" ]; then
+  bw=$(( JOB_THREADS / 4 )); [ "$bw" -le 16 ] || bw=16; [ "$bw" -ge 4 ] || bw=$(( JOB_THREADS < 4 ? JOB_THREADS : 4 ))
+  export RUSTLE_BAM_THREADS=$bw
+fi
+read -r ASM_REGIONS ASM_BUDGET < <(assemble_parallel_defaults "$JOB_THREADS" "$(awk '/MemTotal/{print $2}' /proc/meminfo 2>/dev/null || echo 0)" "$LOW_MEM")
 case "${RUSTLE_REGION_THREADS:-8}" in ''|*[!0-9]*|0) echo "[rustle_pipeline] RUSTLE_REGION_THREADS must be a positive integer (got '${RUSTLE_REGION_THREADS:-}')" >&2; exit 2;; esac
-ASSIGN_FAST=(--region-threads "${RUSTLE_REGION_THREADS:-8}")
-export RUSTLE_FAMILY_THREADS="${RUSTLE_FAMILY_THREADS:-4}" RUSTLE_STAR_THREADS="${RUSTLE_STAR_THREADS:-16}" RUSTLE_REGION_READ_BUDGET="${RUSTLE_REGION_READ_BUDGET:-4000000}"
+# RUSTLE_SOLE_CANDIDATE=1: assign with copy_assign --sole-candidate (the default before 2026-11-13)
+SOLE=(); [ "${RUSTLE_SOLE_CANDIDATE:-0}" = 1 ] && SOLE=(--sole-candidate)
+read -r ASSIGN_REGIONS ASSIGN_BUDGET < <(assign_parallel_defaults "$JOB_THREADS" "$(awk '/MemTotal/{print $2}' /proc/meminfo 2>/dev/null || echo 0)" "${RUSTLE_EXCLUDE_BED:-}${RUSTLE_EXCLUDE_SOFTMASK:-}" "$LOW_MEM")
+ASSIGN_FAST=(--region-threads "${RUSTLE_REGION_THREADS:-$ASSIGN_REGIONS}")
+export RUSTLE_FAMILY_THREADS="${RUSTLE_FAMILY_THREADS:-4}" RUSTLE_STAR_THREADS="${RUSTLE_STAR_THREADS:-16}" RUSTLE_REGION_READ_BUDGET="${RUSTLE_REGION_READ_BUDGET:-$ASSIGN_BUDGET}"
 [ "${RUSTLE_POA_DIAGNOSTIC:-0}" = 1 ] || ASSIGN_FAST+=(--skip-poa-diagnostic)
 if [ "$INSPECT" = 1 ]; then
   mkdir -p "$OUT.cache/inspect"
@@ -362,6 +434,13 @@ case "${RUSTLE_POLISH_SUBCHAIN:-}" in
   "") ;;
   off|tag|drop) POLISH="$POLISH --polish-subchain $RUSTLE_POLISH_SUBCHAIN" ;;
   *) echo "[rustle_pipeline] RUSTLE_POLISH_SUBCHAIN must be off, tag or drop (got '$RUSTLE_POLISH_SUBCHAIN')" >&2; exit 2 ;;
+esac
+# RUSTLE_POLISH_NASCENT=tag|drop (opt-in, register 1635; unset = off, the same command): copy_assign --polish-nascent, StringTie's
+# nascent link (a transcript that follows a better-supported one's first introns, then runs into its next intron)
+case "${RUSTLE_POLISH_NASCENT:-}" in
+  "") ;;
+  off|tag|drop) POLISH="$POLISH --polish-nascent $RUSTLE_POLISH_NASCENT" ;;
+  *) echo "[rustle_pipeline] RUSTLE_POLISH_NASCENT must be off, tag or drop (got '$RUSTLE_POLISH_NASCENT')" >&2; exit 2 ;;
 esac
 # RUSTLE_POLISH_TSS=off|tag|rescue|split: copy_assign --polish-tss, the read-proven TSS (tag: `tss_clusters` only; rescue:
 # also keeps proven short-TSS forms the polish dropped; split: also emits a chain once per proven TSS cluster). Unset = rescue,
@@ -555,6 +634,8 @@ fam_gtf_guard() {
 
 stage_assemble() {
   say "assemble: $BAM -> $OUT.gtf"
+  # Pre-flight (warnings only, never fatal): untrimmed polyA tails or unoriented reads in the first 100,000 primary reads.
+  "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/check_reads.py" "$BAM" "$FASTA" >&2 || say "assemble: read pre-flight check did not run (needs python3 + pysam); continuing"
   # --contig NAME[,NAME...]: these contigs only (copy_assign --region NAME:0-LEN, or --regions FILE for several, LEN from the FASTA
   # index), in place of --genome-wide; the products equal the genome-wide run's on those contigs (docs/archive/2026-09/CONTAINER_HEADROOM_2026-09-30.md gates)
   local scope=(--genome-wide)
@@ -668,31 +749,30 @@ stage_assemble() {
     layers=("${kept[@]}")
   fi
   # r1564 PASS (2026-11-07): contigs swept in parallel (--region-threads; low-mem mode sets 1 = serial), A119b assemble
-  # 2,588 -> 1,685 s, six products byte-identical, RSS 16 GB. The read budget is 20M records here, not assign's 4M:
+  # 2,588 -> 1,685 s, six products byte-identical, RSS 16 GB. The read budget is 20M records here (80M on a large node, round 58), not assign's 4M:
   # at 4M chr1/chr2/chr13 (5-6M records each) run alone and the sweep stays near serial.
   local fin_pid=""
-  rm -f "$OUT.final.gtf" "$OUT".final_run.*
+  rm -f "$OUT.final.gtf" "$OUT.final.pid" "$OUT".final_run.*
   if [ "${#layers[@]}" -gt 0 ]; then
-    env "${seed_env[@]}" RUSTLE_REGION_READ_BUDGET=20000000 "$BIN/copy_assign" --assemble-only --region-threads "${RUSTLE_REGION_THREADS:-8}" "${scope[@]}" --assembly-junctions strict $POLISH "${layers[@]}" --gtf-tpm \
-      --bam "$BAM" --fasta "$FASTA" --out "$OUT.final_run" > "$OUT.final.log" 2>&1 &
+    # one subshell = the run, then its product under its final name (a rename, so PREFIX.final.gtf is whole or absent)
+    ( env "${seed_env[@]}" RUSTLE_REGION_READ_BUDGET="$ASM_BUDGET" "$BIN/copy_assign" --assemble-only --region-threads "${RUSTLE_REGION_THREADS:-$ASM_REGIONS}" "${scope[@]}" --assembly-junctions strict $POLISH "${layers[@]}" --gtf-tpm \
+      --bam "$BAM" --fasta "$FASTA" --out "$OUT.final_run" > "$OUT.final.log" 2>&1 \
+        && [ -s "$OUT.final_run.gtf" ] && mv -f "$OUT.final_run.gtf" "$OUT.final.gtf"; rm -f "$OUT".final_run.* ) &
     fin_pid=$!
   fi
   # set -e ends the stage when the base run fails: the background layered run must not outlive it holding memory and threads
   local rc=0
-  env "${seed_env[@]}" RUSTLE_REGION_READ_BUDGET=20000000 "$BIN/copy_assign" --assemble-only --region-threads "${RUSTLE_REGION_THREADS:-8}" "${scope[@]}" --assembly-junctions strict $POLISH --gtf-tpm \
+  env "${seed_env[@]}" RUSTLE_REGION_READ_BUDGET="$ASM_BUDGET" "$BIN/copy_assign" --assemble-only --region-threads "${RUSTLE_REGION_THREADS:-$ASM_REGIONS}" "${scope[@]}" --assembly-junctions strict $POLISH --gtf-tpm \
     --bam "$BAM" --fasta "$FASTA" --out "$OUT" > "$OUT.assemble.log" 2>&1 || rc=$?
   if [ "$rc" != 0 ]; then
-    if [ -n "$fin_pid" ]; then kill "$fin_pid" 2>/dev/null || true; wait "$fin_pid" 2>/dev/null || true; rm -f "$OUT".final_run.*; fi
+    if [ -n "$fin_pid" ]; then pkill -P "$fin_pid" 2>/dev/null || true; kill "$fin_pid" 2>/dev/null || true; wait "$fin_pid" 2>/dev/null || true; rm -f "$OUT".final_run.*; fi
     echo "[rustle_pipeline] assemble failed (exit $rc, see $OUT.assemble.log)" >&2; exit "$rc"
   fi
-  if [ -n "$fin_pid" ]; then
-    if wait "$fin_pid" && [ -s "$OUT.final_run.gtf" ]; then
-      mv -f "$OUT.final_run.gtf" "$OUT.final.gtf"
-      say "assemble: $(awk -F'\t' '$3=="transcript"' "$OUT.final.gtf" | wc -l) transcripts in the layered assembly $OUT.final.gtf (log $OUT.final.log)"
-    else
-      say "assemble: WARNING the layered assembly failed (see $OUT.final.log); $OUT.gtf and the families input are unaffected"
-    fi
-    rm -f "$OUT".final_run.*
+  if [ -n "$fin_pid" ] && [ "${RP_LAYERS_BG:-0}" = 1 ]; then
+    # round 66: under `all` the layered run (about 25 s longer on A119b) ends under families; `all` waits for this pid
+    echo "$fin_pid" > "$OUT.final.pid"; say "assemble: the layered assembly $OUT.final.gtf is finishing in the background"
+  elif [ -n "$fin_pid" ]; then
+    wait "$fin_pid" || true; layered_report
   fi
   # the good pool is only the good pool if the binary used the table: an empty table is ignored and the region-local rule applies, a table
   # from another BAM keeps every secondary it does not know; either way the run is wider than --seed-pool good says
@@ -709,6 +789,169 @@ stage_assemble() {
     say "assemble: $(grep -c 'fusion_of "' "$OUT.gtf") bridge transcripts kept as fusion_of relations; families input $FAM_GTF"
   fi
 }
+layered_report() {
+  if [ -s "$OUT.final.gtf" ]; then
+    say "assemble: $(awk -F'\t' '$3=="transcript"' "$OUT.final.gtf" | wc -l) transcripts in the layered assembly $OUT.final.gtf (log $OUT.final.log)"
+  else
+    say "assemble: WARNING the layered assembly failed (see $OUT.final.log); $OUT.gtf and the families input are unaffected"
+  fi
+}
+# guided: --guide GTF (register 1622, rule G1d; opt-in), a second product beside the de novo assembly. $OUT.gtf and every later
+# stage stay de novo; $OUT.guided.gtf = de novo models the guide does not explain away + guide transcripts with a full-chain
+# read. Its own stage (audit round 46): `all` calls it whenever the product is missing or older than its inputs, so a resumed
+# run that skips assemble still writes it.
+# siblings: OPT-IN, named only (register 1628; never part of `all`). $OUT.sibling.gtf = $OUT.gtf + the chains a family sibling's
+# model projects onto a member that exactly one primary alignment carries, from a read with no rival placement (AS table).
+# Quality bar passed on three samples (correct share above the 2-read chains), yield bar failed (12-20 correct chains a
+# sample): the user ported it as opt-in 2026-11-11. $OUT.gtf and every other product are untouched. Needs python3 + pysam.
+stage_siblings() {
+  local f; for f in gtf fam.copies.tsv molecules.tsv; do
+    [ -s "$OUT.$f" ] || { echo "[rustle_pipeline] siblings needs $OUT.$f (run assemble and families first)" >&2; exit 2; }
+  done
+  local py=${RUSTLE_PYTHON:-python3} b="$RP_DRIVER_DIR/../bench"
+  { $py "$b/project/project_models.py" "$OUT.gtf" "$OUT.fam.copies.tsv" "$FASTA" "$BAM" "$OUT.sibling.d" --threads "$THREADS" --as-table "$OUT.molecules.tsv" \
+      && $py "$b/famcmp/sibling_chains.py" emit "$OUT.gtf" "$OUT.sibling.d" "$OUT.sibling.gtf.tmp"; } > "$OUT.sibling.log" 2>&1 \
+    || { echo "[rustle_pipeline] siblings failed (see $OUT.sibling.log); $OUT.gtf is unaffected" >&2; rm -f "$OUT.sibling.gtf.tmp"; exit 1; }
+  mv -f "$OUT.sibling.gtf.tmp" "$OUT.sibling.gtf"
+  say "siblings: $(tail -1 "$OUT.sibling.log") -> $OUT.sibling.gtf"
+}
+# flairlike: OPT-IN, named only (register 1640 E5; never part of `all`). $OUT.flairlike.gtf = the chain set FLAIR collapse
+# reports (Jaccard 0.87 with FLAIR's spliced chains on gorilla and A119b): every primary alignment's chain as a candidate,
+# FLAIR's end choice and subset filter, reads realigned to the candidate sequences, 3-read floor. Costs a second minimap2
+# pass (0.5-2.8 h) and precision (half the default's on gorilla, a third on A119b); $OUT.gtf and every other product are untouched.
+# Needs python3 + pysam, samtools, minimap2.
+stage_flairlike() {
+  [ -s "$BAM" ] && [ -s "$FASTA" ] || { echo "[rustle_pipeline] flairlike needs --bam and --fasta" >&2; exit 2; }
+  local py=${RUSTLE_PYTHON:-python3} s="$RP_DRIVER_DIR/../bench/famcmp/flair_like.py" d="$OUT.flairlike.d"
+  mkdir -p "$d"
+  { FLAIR_ENDS=2 $py "$s" firstpass "$BAM" "$FASTA" "$d/fp" "${MM_THREADS:-$THREADS}" \
+      && samtools fastq -F 0x900 -@ 4 "$BAM" | minimap2 -a -t "${MM_THREADS:-$THREADS}" -N 4 "$d/fp.fa" - | $py "$s" gtf "$d/fp.tsv" "$OUT.flairlike.gtf.tmp"; } > "$OUT.flairlike.log" 2>&1 \
+    || { echo "[rustle_pipeline] flairlike failed (see $OUT.flairlike.log); $OUT.gtf is unaffected" >&2; rm -f "$OUT.flairlike.gtf.tmp"; exit 1; }
+  mv -f "$OUT.flairlike.gtf.tmp" "$OUT.flairlike.gtf"
+  say "flairlike: $(tail -1 "$OUT.flairlike.log") -> $OUT.flairlike.gtf"
+}
+# famreps: part of `families` by default since 2026-11-13 (user decision; RUSTLE_FAMREPS=0 = off, the table as before;
+# register 1662, rows 1575/1577/1654). Genes with no locus of their own
+# (fused or nested in a neighbour's locus) get no family node. Here every exon-disjoint transcript group of a locus with
+# >= 2 reads becomes its own representative (locus_reps.py --disjoint), the families stage runs again on that input with
+# the same flags (into $OUT.famreps.fam.*), and the extra representatives are attached to the UNCHANGED families, only
+# when they cluster beside an unsplit family member (piece_attach.py --keep-all --direct).
+# A119b 0.918 / 0.782 -> 0.907 / 0.809 (+58 true, +27 false pairs, 5 of them with no shared exon sequence); HG002
+# 0.703 / 0.355 -> 0.727 / 0.444. It FAILS row 1654's A119b bar (precision >= baseline) as scored; default by the user's
+# decision. Cost: a second all-vs-all (about the wall of `families`). The first run's table is kept as
+# $OUT.fam.base.copies.{tsv,fa,regions}; $OUT.fam.copies.* (what assign reads) holds the extra representatives.
+# the extra representatives are built by Python helpers: refuse before the all-vs-all, not after it
+famreps_py_guard() {
+  [ "${RUSTLE_FAMREPS:-1}" = 0 ] || command -v "${RUSTLE_PYTHON:-python3}" > /dev/null \
+    || { echo "[rustle_pipeline] no ${RUSTLE_PYTHON:-python3} on PATH (families adds extra locus representatives with it); set RUSTLE_PYTHON or PATH, or RUSTLE_FAMREPS=0 for the one-representative table" >&2; exit 2; }
+}
+stage_famreps() {
+  famreps_py_guard
+  # the table the first families run wrote: PREFIX.fam.base.copies.* once this stage has installed its own as PREFIX.fam.copies.*
+  local A="$OUT.fam.copies"; [ -s "$OUT.fam.base.copies.tsv" ] && A="$OUT.fam.base.copies"
+  [ -s "$A.tsv" ] && [ -s "$A.fa" ] || { echo "[rustle_pipeline] famreps needs $OUT.fam.copies.tsv/.fa (run families first)" >&2; exit 2; }
+  local py=${RUSTLE_PYTHON:-python3} d="$RP_DRIVER_DIR" r="$OUT.famreps" e   # the four helpers sit beside the driver, like annotated_families.py
+  $py "$d/locus_reps.py" "$FAM_GTF" "$r.families.gtf" --disjoint > "$OUT.famreps.log" 2>&1 \
+    || { echo "[rustle_pipeline] famreps failed (see $OUT.famreps.log); $A.tsv is unaffected" >&2; exit 1; }
+  ( RUSTLE_FAMREPS=0; FAM_GTF=$r.families.gtf; OUT=$r; stage_families ) || exit 1
+  { $py "$d/piece_merge.py" "$r" "$r.merged.copies.tsv" \
+      && $py "$d/piece_attach.py" "$A.tsv" "$r" "$r.merged.copies.tsv" "$r.attached.tsv" --keep-all --direct \
+      && $py "$d/reps_table.py" "$A" "$r.fam.copies" "$r.merged.copies.tsv" "$r.attached.tsv" "$r.table"; } >> "$OUT.famreps.log" 2>&1 \
+    || { echo "[rustle_pipeline] famreps failed (see $OUT.famreps.log); $A.tsv is unaffected" >&2; exit 1; }
+  if [ "$A" = "$OUT.fam.copies" ]; then for e in tsv fa regions; do mv -f "$OUT.fam.copies.$e" "$OUT.fam.base.copies.$e"; done; fi
+  for e in tsv fa regions; do mv -f "$r.table.$e" "$OUT.fam.copies.$e"; done
+  say "famreps: $(awk 'NR>1' "$OUT.fam.base.copies.tsv" | wc -l) -> $(awk 'NR>1' "$OUT.fam.copies.tsv" | wc -l) copies ($OUT.fam.copies.tsv; the first run's table is $OUT.fam.base.copies.tsv)"
+}
+# trunc5: OPT-IN, named only (register 1677, never part of `all`). $OUT.trunc5.gtf = $OUT.gtf minus 5' truncation chains;
+# $OUT.gtf is not touched. Failed its held-out bar on KB3781 (+0.013 over the read-count curve), so it is not a default.
+stage_trunc5() {
+  [ -s "$OUT.gtf" ] && [ -s "$BAM" ] || { echo "[rustle_pipeline] trunc5 needs $OUT.gtf (run assemble first) and --bam" >&2; exit 2; }
+  ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/../bench/famcmp/trunc5.py" "$OUT.gtf" "$BAM" "$OUT.trunc5.gtf.tmp" "$THREADS" > "$OUT.trunc5.log" 2>&1 \
+    || { echo "[rustle_pipeline] trunc5 failed (see $OUT.trunc5.log); $OUT.gtf is unaffected" >&2; rm -f "$OUT.trunc5.gtf.tmp"; exit 1; }
+  mv -f "$OUT.trunc5.gtf.tmp" "$OUT.trunc5.gtf"
+  say "trunc5: $(tail -1 "$OUT.trunc5.log") -> $OUT.trunc5.gtf"
+}
+# capstarts: register 1717 / 1720; `all` writes it last as a side product since 2026-11-14 (user; RUSTLE_CAPSTARTS=0 = off). $OUT.capstarts.gtf = $OUT.gtf plus nested starts
+# (>= 5 reads, 3'-terminal sub-run of an emitted chain) with >= 3 capped reads (non-templated 5' G) at one position.
+# Refuses libraries without a usable cap G (self-check in the log). $OUT.gtf is never changed.
+stage_capstarts() {
+  [ -s "$OUT.gtf" ] && [ -s "$BAM" ] && [ -s "$FASTA" ] || { echo "[rustle_pipeline] capstarts needs $OUT.gtf (run assemble first), --bam and --fasta" >&2; exit 2; }
+  ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/../bench/famcmp/capg.py" stage "$OUT.gtf" "$BAM" "$FASTA" "$OUT.capstarts.gtf.tmp" "$THREADS" > "$OUT.capstarts.log" 2>&1 \
+    || { echo "[rustle_pipeline] capstarts wrote nothing: $(tail -1 "$OUT.capstarts.log"); $OUT.gtf is unaffected" >&2; rm -f "$OUT.capstarts.gtf.tmp"; exit 1; }
+  mv -f "$OUT.capstarts.gtf.tmp" "$OUT.capstarts.gtf"
+  say "capstarts: $(tail -1 "$OUT.capstarts.log") -> $OUT.capstarts.gtf"
+}
+# shiftdrop: OPT-IN, named only (register 1728-1730 / 1732 / 1734 / 1738 / 1739, never part of `all`). $OUT.shiftdrop.gtf = $OUT.gtf minus
+# weaker shifted-site chains with indels beside the moved intron (bench/famcmp/shiftdrop.py). $OUT.gtf is never changed.
+stage_shiftdrop() {
+  [ -s "$OUT.gtf" ] && [ -s "$BAM" ] || { echo "[rustle_pipeline] shiftdrop needs $OUT.gtf (run assemble first) and --bam" >&2; exit 2; }
+  ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/../bench/famcmp/shiftdrop.py" "$OUT.gtf" "$BAM" "$OUT.shiftdrop.gtf.tmp" "$THREADS" > "$OUT.shiftdrop.log" 2>&1 \
+    || { echo "[rustle_pipeline] shiftdrop failed (see $OUT.shiftdrop.log); $OUT.gtf is unaffected" >&2; rm -f "$OUT.shiftdrop.gtf.tmp"; exit 1; }
+  mv -f "$OUT.shiftdrop.gtf.tmp" "$OUT.shiftdrop.gtf"
+  say "shiftdrop: $(tail -1 "$OUT.shiftdrop.log") -> $OUT.shiftdrop.gtf"
+}
+# earlyends: register 1721 / 1722; `all` writes it last as a side product since 2026-11-14 (RUSTLE_EARLYENDS=0 = off). $OUT.earlyends.gtf = $OUT.gtf plus nested early ends
+# (>= 5 reads, 5'-terminal sub-run of an emitted chain) whose reads end at one position with a polyA signal and no A-rich run.
+stage_earlyends() {
+  [ -s "$OUT.gtf" ] && [ -s "$BAM" ] && [ -s "$FASTA" ] || { echo "[rustle_pipeline] earlyends needs $OUT.gtf (run assemble first), --bam and --fasta" >&2; exit 2; }
+  ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/../bench/famcmp/capg.py" stage "$OUT.gtf" "$BAM" "$FASTA" "$OUT.earlyends.gtf.tmp" "$THREADS" --ends > "$OUT.earlyends.log" 2>&1 \
+    || { echo "[rustle_pipeline] earlyends failed (see $OUT.earlyends.log); $OUT.gtf is unaffected" >&2; rm -f "$OUT.earlyends.gtf.tmp"; exit 1; }
+  mv -f "$OUT.earlyends.gtf.tmp" "$OUT.earlyends.gtf"
+  say "earlyends: $(tail -1 "$OUT.earlyends.log") -> $OUT.earlyends.gtf"
+}
+# relatives: OPT-IN, named only (register 1676 / 1737, never part of `all`). Reads the families stage output; changes none of it.
+stage_relatives() {
+  local f s="$RP_DRIVER_DIR/../bench/denovo_eval/relative_links.py" bed=${RUSTLE_SEDEF_BED:-$FASTA.sedef.bed}
+  for f in loci.gff3 loci.gated.paf copies.tsv; do
+    [ -s "$OUT.fam.$f" ] || { echo "[rustle_pipeline] relatives needs $OUT.fam.$f (run families first)" >&2; exit 2; }
+  done
+  [ -s "$bed" ] || { echo "[rustle_pipeline] relatives needs a SEDEF BED of this genome (RUSTLE_SEDEF_BED or $FASTA.sedef.bed): SD links are part of the score" >&2; exit 2; }
+  ${RUSTLE_PYTHON:-python3} "$s" --sedef "$bed" ${RUSTLE_EXCLUDE_BED:+--exclude-bed "$RUSTLE_EXCLUDE_BED"} "$OUT.fam" "$OUT.fam.relatives.tsv" > "$OUT.fam.relatives.log" 2>&1 \
+    || { echo "[rustle_pipeline] relatives failed (see $OUT.fam.relatives.log); the families output is unaffected" >&2; exit 1; }
+  say "relatives: $(tail -1 "$OUT.fam.relatives.log") (table $OUT.fam.relatives.tsv; links, not members)"
+}
+# exonmap: OPT-IN, named only (register 1595, never part of `all`). A view of the families stage output; changes none of it.
+stage_exonmap() {
+  local f s="$RP_DRIVER_DIR/../bench/denovo_eval/exonmap.py"
+  for f in clusters.tsv loci.gff3 loci.gated.paf; do
+    [ -s "$OUT.fam.$f" ] || { echo "[rustle_pipeline] exonmap needs $OUT.fam.$f (run families first)" >&2; exit 2; }
+  done
+  rm -rf "$OUT.fam.exonmap.gfa"
+  { ${RUSTLE_PYTHON:-python3} "$s" --threads "$THREADS" "$OUT.fam" "$OUT.fam.exonmap" \
+      && ${RUSTLE_PYTHON:-python3} "$s" gfa "$OUT.fam" "$OUT.fam.exonmap.columns.tsv" "$OUT.fam.exonmap.gfa"; } > "$OUT.fam.exonmap.log" 2>&1 \
+    || { echo "[rustle_pipeline] exonmap failed (see $OUT.fam.exonmap.log); the families output is unaffected" >&2; exit 1; }
+  say "exonmap: $(tail -1 "$OUT.fam.exonmap.log") (table $OUT.fam.exonmap.columns.tsv)"
+}
+# repeatloci: OPT-IN, named only (registers 1698 / 1702, never part of `all`). $OUT.repeat_loci.tsv = one row per assembly
+# locus with the soft-masked share of its exons, the share covered by the rDNA unit (RUSTLE_REPEAT_FASTA, default
+# tools/data/rdna_human.fa) and repeat = 1 when the first is >= 0.9 or the second >= 0.5. A table only: nothing is dropped.
+stage_repeatloci() {
+  local ref="${RUSTLE_REPEAT_FASTA:-$RP_DRIVER_DIR/data/rdna_human.fa}"
+  [ -s "$OUT.gtf" ] && [ -s "$FASTA" ] && [ -s "$ref" ] || { echo "[rustle_pipeline] repeatloci needs $OUT.gtf (run assemble first), --fasta and $ref" >&2; exit 2; }
+  RUSTLE_SEQFAM_THREADS="$THREADS" ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/../bench/famcmp/repeat_loci.py" "$OUT.gtf" "$FASTA" - "$ref" "$OUT.repeat_loci.tmp" > "$OUT.repeat_loci.log" 2>&1 \
+    || { echo "[rustle_pipeline] repeatloci failed (see $OUT.repeat_loci.log); $OUT.gtf is unaffected" >&2; rm -f "$OUT.repeat_loci.tmp.tsv" "$OUT.repeat_loci.tmp.fa"; exit 1; }
+  mv -f "$OUT.repeat_loci.tmp.tsv" "$OUT.repeat_loci.tsv"; rm -f "$OUT.repeat_loci.tmp.fa"
+  say "repeatloci: $(tail -1 "$OUT.repeat_loci.log") -> $OUT.repeat_loci.tsv"
+}
+# altends: OPT-IN, named only (never part of `all`). $OUT.altends.gtf = $OUT.gtf with attributes on multi-exon transcript lines
+# whose commonest full-chain read 3' end is not the emitted (most extended) one: alt_tes, alt_tes_reads, alt_tes_polya_signal,
+# alt_tes_a_rich. No coordinate changes; $OUT.gtf is untouched. Why: about a quarter of A119b's correct chains mostly use a
+# polyA site upstream of the annotated one (docs/STEP0_tool_match_2026-11-11.md §11). Needs python3 + pysam.
+stage_altends() {
+  [ -s "$OUT.gtf" ] && [ -s "$BAM" ] && [ -s "$FASTA" ] || { echo "[rustle_pipeline] altends needs $OUT.gtf (run assemble first), --bam and --fasta" >&2; exit 2; }
+  ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/../bench/famcmp/alt_ends.py" "$OUT.gtf" "$BAM" "$FASTA" "$OUT.altends.gtf.tmp" "$THREADS" > "$OUT.altends.log" 2>&1 \
+    || { echo "[rustle_pipeline] altends failed (see $OUT.altends.log); $OUT.gtf is unaffected" >&2; rm -f "$OUT.altends.gtf.tmp"; exit 1; }
+  mv -f "$OUT.altends.gtf.tmp" "$OUT.altends.gtf"
+  say "altends: $(tail -1 "$OUT.altends.log") -> $OUT.altends.gtf"
+}
+stage_guided() {
+  [ -n "$GUIDE" ] || { echo "[rustle_pipeline] guided needs --guide GTF" >&2; exit 2; }
+  [ -s "$OUT.gtf" ] || { echo "[rustle_pipeline] guided needs $OUT.gtf (run assemble first)" >&2; exit 2; }
+  "$BIN/utilities" guide --gtf "$OUT.gtf" --guide "$GUIDE" --bam "$BAM" --threads "$THREADS" --out "$OUT.guided.gtf.tmp" 2> "$OUT.guided.log" \
+    || { echo "[rustle_pipeline] --guide failed (see $OUT.guided.log); $OUT.gtf is unaffected" >&2; rm -f "$OUT.guided.gtf.tmp"; exit 1; }
+  mv -f "$OUT.guided.gtf.tmp" "$OUT.guided.gtf"
+  say "guided: $(awk -F'\t' '$3=="transcript"' "$OUT.guided.gtf" | wc -l) transcripts in the guided assembly $OUT.guided.gtf ($(tail -1 "$OUT.guided.log" | cut -c1-300))"
+}
 # families: the de novo families AND their copy table (--emit-units with --from-gtf: PREFIX.fam.copies.tsv/.fa/.regions,
 # the gw_family_catalog copies contract, one copy per member locus = its representative transcript and its spliced exon
 # sum). clusters.tsv / loci.* are byte-identical to a run without it (cmp-checked 2026-09-25,
@@ -716,6 +959,7 @@ stage_assemble() {
 # (its --help does not name <out>.copies.tsv) still writes the families, with a warning and no copy table.
 stage_families() {
   fam_gtf_guard families
+  famreps_py_guard
   say "families: gene families on the de novo loci of $FAM_GTF"
   local copies=() help
   help=$("$BIN/mcl_families" --help 2>&1 || true)
@@ -779,7 +1023,7 @@ stage_families() {
     say "families: SD damping ${RUSTLE_SD_DAMP:-0.25} with $RUSTLE_SEDEF_BED"
   fi
   # an earlier run's copy table must not survive a run that writes none (a binary older than the copy table): assign would read it
-  rm -f "$OUT".fam.copies.{tsv,fa,regions,merged.tsv}
+  rm -f "$OUT".fam.copies.{tsv,fa,regions,merged.tsv} "$OUT".fam.base.copies.{tsv,fa,regions}
   # threads: JOB_THREADS (the all-vs-all is ~98% of this stage; A119b 72 threads 410 s, the same families as 12 threads, 2026-11-09)
   local fth=$MM_THREADS
   say "families: $fth threads"
@@ -799,6 +1043,8 @@ stage_families() {
   if [ ${#FAM_EXTRA[@]} -gt 0 ]; then
     say "families: container $(awk -F'\t' '$1=="blocks"{b=$2} $1=="accessory_blocks"{a=$2} $1=="family_relations_directed"{r=$2} END{print b" blocks, "a" accessory, "r" directed family relations"}' "$OUT.fam.container_summary.tsv") ($OUT.fam.container.tsv)"
   fi
+  # extra representatives for genes with no locus of their own (stage_famreps; default since 2026-11-13, RUSTLE_FAMREPS=0 = off)
+  if [ "${RUSTLE_FAMREPS:-1}" != 0 ] && [ -s "$OUT.fam.copies.tsv" ] && [ -s "$OUT.fam.copies.fa" ]; then stage_famreps; fi
 }
 # catalog: LEGACY (2026-09-25). gw_family_catalog's copy catalog (primaries only, span-aware POA collapse, exon-sum k11
 # edges, gamma-quasi-clique) was the O2 roster before the families stage wrote its own copy table; kept runnable for
@@ -927,13 +1173,13 @@ stage_assign() {
     n_rest=$(awk -F'\t' 'FILENAME == ARGV[1] { c[$1] = 1; next } FNR > 1 && !($1 in c) { print $1 }' "$OUT.aug.families.txt" "$OUT.fam.copies.tsv" | sort -u | wc -l)
     say "assign: $n_cand candidate families on $OUT.aug.*, the other $n_rest on $OUT.fam.copies.tsv"
     rm -f "$OUT".assign.*.tsv "$OUT".assign_cand.*.tsv "$OUT".assign_rest.*.tsv
-    "$BIN/copy_assign" --bam "$OUT.aug.bam" --fasta "$OUT.aug.fa" --regions "$OUT.aug.regions.txt" --families "$OUT.aug.copies.tsv" \
+    "$BIN/copy_assign" "${SOLE[@]}" --bam "$OUT.aug.bam" --fasta "$OUT.aug.fa" --regions "$OUT.aug.regions.txt" --families "$OUT.aug.copies.tsv" \
       --copies-fa "$OUT.aug.copies.fa" --only-families "$OUT.aug.families.txt" "${ASSIGN_FAST[@]}" "${INSPECT_ASSIGN[@]}" --out "$OUT.assign_cand" > "$OUT.assign_cand.log" 2>&1 \
       || { local rc=$?; say "assign: copy_assign failed on the candidate families (exit $rc), see $OUT.assign_cand.log; the likely cause: a real copy whose reads all realigned to its candidate, so it has no read in $OUT.aug.bam (copy_assign requires one on every real copy)"; exit "$rc"; }
     local runs=("$OUT.assign_cand")
     if [ "$n_rest" -gt 0 ]; then
       fam_regions skip "$OUT.aug.families.txt" > "$OUT.regions.txt"
-      "$BIN/copy_assign" --bam "$BAM" --fasta "$FASTA" --regions "$OUT.regions.txt" --families "$OUT.fam.copies.tsv" \
+      "$BIN/copy_assign" "${SOLE[@]}" --bam "$BAM" --fasta "$FASTA" --regions "$OUT.regions.txt" --families "$OUT.fam.copies.tsv" \
         --copies-fa "$OUT.fam.copies.fa" --skip-families "$OUT.aug.families.txt" "${ASSIGN_FAST[@]}" "${INSPECT_ASSIGN[@]}" --out "$OUT.assign_rest" > "$OUT.assign_rest.log" 2>&1 \
         || { local rc=$?; say "assign: copy_assign failed on the other families (exit $rc), see $OUT.assign_rest.log"; exit "$rc"; }
       runs+=("$OUT.assign_rest")
@@ -964,7 +1210,7 @@ stage_assign() {
   if [ "$LEGACY_CATALOG" = 1 ]; then
     say "assign: per-read copy assignment on $OUT.cat"
     samtools view -H "$BAM" | awk '$1=="@SQ"{sub("SN:","",$2); sub("LN:","",$3); print $2":0-"$3}' > "$OUT.regions.txt"
-    "$BIN/copy_assign" --bam "$BAM" --fasta "$FASTA" --regions "$OUT.regions.txt" \
+    "$BIN/copy_assign" "${SOLE[@]}" --bam "$BAM" --fasta "$FASTA" --regions "$OUT.regions.txt" \
       --families "$OUT.cat.copies.tsv" --copies-fa "$OUT.cat.copies.fa" "${ASSIGN_FAST[@]}" "${INSPECT_ASSIGN[@]}" --out "$OUT.assign" > "$OUT.assign.log" 2>&1
     say "assign: $(awk -F'\t' 'NR>1 && $4=="assigned"' "$OUT.assign.assignments.tsv" | wc -l) assigned rows of $(awk 'NR>1' "$OUT.assign.assignments.tsv" | wc -l) (one row per read x family)"
     return 0
@@ -981,8 +1227,8 @@ stage_assign() {
   fi
   if cand_ready && [ -s "$OUT.aug.families.txt" ]; then
     # the candidates path applies none of the skip lists below: refused rather than silently ignored (round-10 audit)
-    if [ "$MAX_WINDOW_RECORDS" -gt 0 ] || [ -n "${RUSTLE_ANNOTATED_ONLY:-}" ] || [ -n "${RUSTLE_EXCLUDE_BED:-}" ]; then
-      echo "[rustle_pipeline] --candidates does not apply --max-window-records / --low-mem / RUSTLE_ANNOTATED_ONLY / RUSTLE_EXCLUDE_BED: drop one of them" >&2; exit 2
+    if [ "$MAX_WINDOW_RECORDS" -gt 0 ] || [ -n "${RUSTLE_ANNOTATED_ONLY:-}" ] || [ -n "${RUSTLE_EXCLUDE_BED:-}${RUSTLE_EXCLUDE_SOFTMASK:-}${RUSTLE_EXCLUDE_FASTA:-}" ]; then
+      echo "[rustle_pipeline] --candidates does not apply --max-window-records / --low-mem / RUSTLE_ANNOTATED_ONLY / RUSTLE_EXCLUDE_BED / RUSTLE_EXCLUDE_SOFTMASK / RUSTLE_EXCLUDE_FASTA: drop one of them" >&2; exit 2
     fi
     assign_with_candidates; return 0
   fi
@@ -1013,18 +1259,38 @@ stage_assign() {
   # (A119b: 212 of 1,565, among them every chr13 hotspot family that sets the assign wall). Output-changing: not a default.
   rm -f "$OUT.assign.unannotated.txt"
   if [ -n "${RUSTLE_ANNOTATED_ONLY:-}" ]; then
-    python3 "$RP_DRIVER_DIR/annotated_families.py" "$OUT.fam.copies.tsv" "$RUSTLE_ANNOTATED_ONLY" > "$OUT.assign.unannotated.txt" 2>> "$OUT.assign.depth.log" || exit 2
+    "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/annotated_families.py" "$OUT.fam.copies.tsv" "$RUSTLE_ANNOTATED_ONLY" > "$OUT.assign.unannotated.txt" 2>> "$OUT.assign.depth.log" || { echo "[rustle_pipeline] assign: the skip list could not be built (see $OUT.assign.depth.log)" >&2; exit 2; }
     say "assign: annotated-only: $(wc -l < "$OUT.assign.unannotated.txt") famil(ies) with no copy on a gene of $RUSTLE_ANNOTATED_ONLY are not assigned ($OUT.assign.unannotated.txt)"
   fi
   # RUSTLE_EXCLUDE_BED=BED (opt-in, row 1559): families whose copies mostly lie in a confounding element (T2T censat
   # satellites: the chr13 HSat1A array is 618 of A119b's 1,565 families and the assign wall) join the skip list.
   rm -f "$OUT.assign.excluded.txt"
   if [ -n "${RUSTLE_EXCLUDE_BED:-}" ]; then
-    python3 "$RP_DRIVER_DIR/annotated_families.py" "$OUT.fam.copies.tsv" "$RUSTLE_EXCLUDE_BED" --majority-in > "$OUT.assign.excluded.txt" 2>> "$OUT.assign.depth.log" || exit 2
+    # judged on the first run's copies when famreps added representatives: a family must not fall under the rule because of
+    # them (row 1662: MCL215, 8 -> 26 copies, lost its 129 assigned rows that way)
+    local excl_tbl="$OUT.fam.copies.tsv"; [ -s "$OUT.fam.base.copies.tsv" ] && excl_tbl="$OUT.fam.base.copies.tsv"
+    "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/annotated_families.py" "$excl_tbl" "$RUSTLE_EXCLUDE_BED" --majority-in > "$OUT.assign.excluded.txt" 2>> "$OUT.assign.depth.log" || { echo "[rustle_pipeline] assign: the skip list could not be built (see $OUT.assign.depth.log)" >&2; exit 2; }
     say "assign: exclude-bed: $(wc -l < "$OUT.assign.excluded.txt") famil(ies) mostly inside $RUSTLE_EXCLUDE_BED are not assigned ($OUT.assign.excluded.txt)"
   fi
+  # RUSTLE_EXCLUDE_SOFTMASK=FRAC (opt-in, row 1690): the same hatch from the FASTA's soft mask instead of a BED: families
+  # with most copies at >= FRAC lowercase exon bases. Judged on the first run's copies, as the BED rule is.
+  rm -f "$OUT.assign.softmask.txt"
+  if [ -n "${RUSTLE_EXCLUDE_SOFTMASK:-}" ]; then
+    local sm_tbl="$OUT.fam.copies.tsv"; [ -s "$OUT.fam.base.copies.tsv" ] && sm_tbl="$OUT.fam.base.copies.tsv"
+    "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/softmask_families.py" "$sm_tbl" "$FASTA" "$RUSTLE_EXCLUDE_SOFTMASK" > "$OUT.assign.softmask.txt" 2>> "$OUT.assign.depth.log" || { echo "[rustle_pipeline] assign: the soft-mask skip list could not be built (see $OUT.assign.depth.log)" >&2; exit 2; }
+    say "assign: exclude-softmask: $(wc -l < "$OUT.assign.softmask.txt") famil(ies) with most copies >= $RUSTLE_EXCLUDE_SOFTMASK soft-masked are not assigned ($OUT.assign.softmask.txt)"
+  fi
+  # RUSTLE_EXCLUDE_FASTA=REF (opt-in, row 1691): the same hatch by sequence: families with most copies >= 50% covered by
+  # alignments to REF (an rDNA unit). Judged on the first run's copy sequences, as the other two rules are.
+  rm -f "$OUT.assign.seqexcl.txt"
+  if [ -n "${RUSTLE_EXCLUDE_FASTA:-}" ]; then
+    [ -s "$RUSTLE_EXCLUDE_FASTA" ] || { echo "[rustle_pipeline] assign: RUSTLE_EXCLUDE_FASTA=$RUSTLE_EXCLUDE_FASTA is missing or empty" >&2; exit 2; }
+    local sq_fa="$OUT.fam.copies.fa"; [ -s "$OUT.fam.base.copies.fa" ] && sq_fa="$OUT.fam.base.copies.fa"
+    RUSTLE_SEQFAM_THREADS="$THREADS" "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/sequence_families.py" "$sq_fa" "$RUSTLE_EXCLUDE_FASTA" > "$OUT.assign.seqexcl.txt" 2>> "$OUT.assign.depth.log" || { echo "[rustle_pipeline] assign: the sequence skip list could not be built (see $OUT.assign.depth.log)" >&2; exit 2; }
+    say "assign: exclude-fasta: $(wc -l < "$OUT.assign.seqexcl.txt") famil(ies) with most copies covered by $RUSTLE_EXCLUDE_FASTA are not assigned ($OUT.assign.seqexcl.txt)"
+  fi
   # the regions are rebuilt without the skipped families: a region left with no family would be read whole
-  { for f in "$OUT.assign.depth_skipped.txt" "$OUT.assign.unannotated.txt" "$OUT.assign.excluded.txt"; do [ -s "$f" ] && cat "$f"; done; true; } | sort -u > "$OUT.assign.skipped.txt"
+  { for f in "$OUT.assign.depth_skipped.txt" "$OUT.assign.unannotated.txt" "$OUT.assign.excluded.txt" "$OUT.assign.softmask.txt" "$OUT.assign.seqexcl.txt"; do [ -s "$f" ] && cat "$f"; done; true; } | sort -u > "$OUT.assign.skipped.txt"
   if [ -s "$OUT.assign.skipped.txt" ]; then
     mem+=(--skip-families "$OUT.assign.skipped.txt")
     fam_regions skip "$OUT.assign.skipped.txt" > "$OUT.regions.txt"
@@ -1034,7 +1300,7 @@ stage_assign() {
   if [ ! -s "$OUT.regions.txt" ]; then
     say "assign: every family is on a skip list ($OUT.assign.skipped.txt): nothing to assign"; return 0
   fi
-  "$BIN/copy_assign" --bam "$BAM" --fasta "$FASTA" --regions "$OUT.regions.txt" --families "$OUT.fam.copies.tsv" \
+  "$BIN/copy_assign" "${SOLE[@]}" --bam "$BAM" --fasta "$FASTA" --regions "$OUT.regions.txt" --families "$OUT.fam.copies.tsv" \
     --copies-fa "$OUT.fam.copies.fa" "${ASSIGN_FAST[@]}" "${mem[@]}" "${INSPECT_ASSIGN[@]}" --out "$OUT.assign" > "$OUT.assign.log" 2>&1 \
     || { local rc=$?; say "assign: copy_assign failed (exit $rc), see $OUT.assign.log"; exit "$rc"; }
   say "assign: $(awk -F'\t' 'NR>1 && $4=="assigned"' "$OUT.assign.assignments.tsv" | wc -l) assigned rows of $(awk 'NR>1' "$OUT.assign.assignments.tsv" | wc -l) (one row per read x family)"
@@ -1045,14 +1311,14 @@ stage_assign() {
 # are ON here by default instead of opt-in. Products: PREFIX.assign_fam.* (the catalog assign keeps PREFIX.assign.*).
 stage_assign_fam() {
   # this phase reads every family: the skip lists of the `assign` stage are not applied, so they are refused (round-10 audit)
-  if [ "$MAX_WINDOW_RECORDS" -gt 0 ] || [ -n "${RUSTLE_ANNOTATED_ONLY:-}" ] || [ -n "${RUSTLE_EXCLUDE_BED:-}" ]; then
-    echo "[rustle_pipeline] merged applies no --max-window-records / --low-mem / RUSTLE_ANNOTATED_ONLY / RUSTLE_EXCLUDE_BED: use \`all\` for them" >&2; exit 2
+  if [ "$MAX_WINDOW_RECORDS" -gt 0 ] || [ -n "${RUSTLE_ANNOTATED_ONLY:-}" ] || [ -n "${RUSTLE_EXCLUDE_BED:-}${RUSTLE_EXCLUDE_SOFTMASK:-}${RUSTLE_EXCLUDE_FASTA:-}" ]; then
+    echo "[rustle_pipeline] merged applies no --max-window-records / --low-mem / RUSTLE_ANNOTATED_ONLY / RUSTLE_EXCLUDE_BED / RUSTLE_EXCLUDE_SOFTMASK / RUSTLE_EXCLUDE_FASTA: use \`all\` for them" >&2; exit 2
   fi
   say "assign: per-read copy assignment on $OUT.fam.copies (families table; --skip-poa-diagnostic --region-threads $THREADS)"
   samtools view -H "$BAM" | awk '$1=="@SQ"{sub("SN:","",$2); sub("LN:","",$3); print $2":0-"$3}' > "$OUT.regions.txt"
   # RUSTLE_READTHROUGH_JUNCTIONS is assemble-only (copy_assign refuses it here): dropped for this call alone, so the
   # merged.env record written after this phase still names it and a rerun resumes (round-24 audit)
-  env -u RUSTLE_READTHROUGH_JUNCTIONS "$BIN/copy_assign" --bam "$BAM" --fasta "$FASTA" --regions "$OUT.regions.txt" \
+  env -u RUSTLE_READTHROUGH_JUNCTIONS "$BIN/copy_assign" "${SOLE[@]}" --bam "$BAM" --fasta "$FASTA" --regions "$OUT.regions.txt" \
     --families "$OUT.fam.copies.tsv" --copies-fa "$OUT.fam.copies.fa" \
     --skip-poa-diagnostic --region-threads "$THREADS" "${INSPECT_ASSIGN[@]}" --out "$OUT.assign_fam" > "$OUT.assign_fam.log" 2>&1
   say "assign: $(awk -F'\t' 'NR>1 && $4=="assigned"' "$OUT.assign_fam.assignments.tsv" | wc -l) assigned rows of $(awk 'NR>1' "$OUT.assign_fam.assignments.tsv" | wc -l) (one row per read x family)"
@@ -1186,8 +1452,18 @@ stage_all() {
   elif [ "$CANDIDATES" = 1 ]; then plan+=(candidates:"$OUT.cand.candidates.tsv"); fi
   plan+=(assign:"$OUT.assign.assignments.tsv")
   local env_now ran=0 st prod args=("${ORIG_ARGS[@]}")
+  export RP_ALL=1   # the stage calls below are part of `all`: assemble leaves the guided assembly to this loop
   # families, assign, index and flag all run minimap2: a missing one fails at start, not after the assembly (round-13 audit)
   command -v "${RUSTLE_MINIMAP2:-minimap2}" > /dev/null || { echo "[rustle_pipeline] no ${RUSTLE_MINIMAP2:-minimap2} on PATH (families, assign and flag run it); set RUSTLE_MINIMAP2 or PATH" >&2; exit 2; }
+  # round 52: so do assign's skip lists need python3 (tools/annotated_families.py); without one, assemble and families ran first
+  # row 1662: so do families' extra representatives (inline, as stage_all is also run on its own by the dispatch tests)
+  [ "${RUSTLE_FAMREPS:-1}" = 0 ] || command -v "${RUSTLE_PYTHON:-python3}" > /dev/null \
+    || { echo "[rustle_pipeline] no ${RUSTLE_PYTHON:-python3} on PATH (families adds extra locus representatives with it); set RUSTLE_PYTHON or PATH, or RUSTLE_FAMREPS=0" >&2; exit 2; }
+  local v; for v in RUSTLE_EXCLUDE_BED RUSTLE_EXCLUDE_SOFTMASK RUSTLE_EXCLUDE_FASTA RUSTLE_ANNOTATED_ONLY; do
+    if [ -n "${!v:-}" ] && ! command -v "${RUSTLE_PYTHON:-python3}" > /dev/null; then
+      echo "[rustle_pipeline] no ${RUSTLE_PYTHON:-python3} on PATH ($v needs it for assign's skip list); set RUSTLE_PYTHON or PATH, or unset $v" >&2; exit 2
+    fi
+  done
   if [ "$NO_FLAG" = 0 ]; then
     # no --index: the default profile builds the shared FASTA.splice.I<GB>G.mmi (index stage); --low-mem aligns against the FASTA itself,
     # indexed on the fly in INDEX_GB-Gbp parts (no index file on disk)
@@ -1198,7 +1474,7 @@ stage_all() {
   local started=1; [ -n "$FROM_STAGE" ] && started=0
   # round-38 audit: the index depends on the FASTA alone, so a missing or stale one is built in the background from the start
   # (under assemble, which is BAM-bound) instead of after assign: ~130 s off a new genome's first run. Its step below waits.
-  local idx_pid="" scan_pid=""
+  local idx_pid="" scan_pid="" flag_bg=0
   if [[ " ${plan[*]} " == *" index:"* ]] && [ -z "$FROM_STAGE$TO_STAGE" ] \
      && ! { [ -s "$INDEX" ] && [ "$(cat "$INDEX.key" 2>/dev/null)" = "$(index_key)" ]; }; then
     (
@@ -1208,21 +1484,73 @@ stage_all() {
     idx_pid=$!
     say "all: index building in the background ($INDEX)"
   fi
+  # round 46: the guided assembly is a side product of assemble, written once assemble is behind us (run or skipped) and
+  # outside the plan, so writing it never makes a later stage rerun
+  local guided_due=0; [ -n "${GUIDE:-}" ] && guided_due=1
+  # round 60: a process and everything below it, children first found then killed (flag's align has a minimap2 child that
+  # `pkill -P` on the background driver did not reach)
+  kill_tree() { local c; for c in $(pgrep -P "$1" 2>/dev/null); do kill_tree "$c"; done; kill "$1" 2>/dev/null || true; }
+  # round 66: the layered assembly finishing in the background (PREFIX.final.pid, not a child of this shell)
+  [ "$LOW_MEM" = 1 ] || export RP_LAYERS_BG=1
+  all_layers_wait() {
+    [ -s "$OUT.final.pid" ] || return 0
+    local p; p=$(cat "$OUT.final.pid"); while kill -0 "$p" 2>/dev/null; do sleep 0.2; done
+    rm -f "$OUT.final.pid"; layered_report
+  }
+  all_bg_stop() {
+    if [ -n "$scan_pid" ]; then kill_tree "$scan_pid"; fi
+    if [ -s "$OUT.final.pid" ]; then kill_tree "$(cat "$OUT.final.pid")"; rm -f "$OUT.final.pid" "$OUT".final_run.*; fi
+  }
+  all_guided() {
+    guided_due=0
+    if [ ! -s "$OUT.guided.gtf" ] || [ "$OUT.guided.gtf" -ot "$OUT.gtf" ] || [ "$OUT.guided.gtf" -ot "$GUIDE" ]; then
+      say "all: guided"; bash "$0" guided "${args[@]}" || { all_bg_stop; say "all: guided FAILED; see $OUT.guided.log"; exit 1; }
+    fi
+  }
+  # rows 1721 / 1722, default since 2026-11-14 (user): PREFIX.earlyends.gtf is a side product of assemble like the guided
+  # assembly, outside the plan (nothing reads it, so it never makes a stage rerun) and written last so no other product waits
+  # for its BAM pass. RUSTLE_EARLYENDS=0 turns it off. A failure is reported and leaves every other product complete.
+  # shortcut: runs after the last stage (A119b +168 s at 72 threads); move it beside families if that wall matters
+  all_earlyends() {
+    [ "${RUSTLE_EARLYENDS:-1}" != 0 ] && [ -s "$OUT.gtf" ] || return 0
+    if [ ! -s "$OUT.earlyends.gtf" ] || [ "$OUT.earlyends.gtf" -ot "$OUT.gtf" ]; then
+      say "all: earlyends"
+      bash "$0" earlyends "${args[@]}" || say "all: earlyends FAILED (see $OUT.earlyends.log); $OUT.earlyends.gtf is not written, every other product is complete"
+    fi
+  }
+  # rows 1717 / 1720, default since 2026-11-14 (user): PREFIX.capstarts.gtf, a side product like earlyends. Human-tested only;
+  # the stage's self-check refuses a library without usable cap G (both gorilla libraries), which is reported and not a failure.
+  # A refusal newer than PREFIX.gtf is not retried, so a rerun of `all` does not repeat the BAM pass.
+  all_capstarts() {
+    [ "${RUSTLE_CAPSTARTS:-1}" != 0 ] && [ -s "$OUT.gtf" ] || return 0
+    if [ -s "$OUT.capstarts.gtf" ] && [ ! "$OUT.capstarts.gtf" -ot "$OUT.gtf" ]; then return 0; fi
+    if [ ! "$OUT.capstarts.log" -ot "$OUT.gtf" ] && grep -q '^capstarts refused' "$OUT.capstarts.log" 2>/dev/null; then return 0; fi
+    say "all: capstarts"
+    bash "$0" capstarts "${args[@]}" || say "all: capstarts wrote no $OUT.capstarts.gtf (see $OUT.capstarts.log); every other product is complete"
+  }
   for item in "${plan[@]}"; do
     st=${item%%:*}; prod=${item#*:}; env_now=$(stage_all_env "$st")
+    if [ "$guided_due" = 1 ] && [ "$st" != assemble ]; then all_guided; fi
     if [ "$st" = index ] && [ -n "$idx_pid" ]; then
       ran=1; rm -f "$OUT.$st.env"; say "all: index (waiting for the background build)"
       local rc=0; wait "$idx_pid" || rc=$?; cat "$OUT.index.bg.err" >&2; rm -f "$OUT.index.bg.err"
       { cat "$OUT.$st.time.tmp" 2>/dev/null | grep -E '^(wall_s|peak_rss_kb)'; printf 'exit\t%s\n' "$rc"; } > "$OUT.$st.time"; rm -f "$OUT.$st.time.tmp"
       if [ "$rc" != 0 ]; then
-        if [ -n "$scan_pid" ]; then pkill -P "$scan_pid" 2>/dev/null || true; kill "$scan_pid" 2>/dev/null || true; fi   # round 41
+        all_bg_stop   # round 41
         say "all: $st FAILED (exit $rc); see $OUT.$st.time and $OUT.index.log"; exit "$rc"
       fi
       printf '%s\n' "$env_now" > "$OUT.$st.env"; continue
     fi
     if [ "$st" = flag ] && [ -n "$scan_pid" ]; then
       local src=0; wait "$scan_pid" || src=$?; cat "$OUT.flag_scan.bg.err" >&2; rm -f "$OUT.flag_scan.bg.err"
-      [ "$src" = 0 ] || { say "all: flag scan FAILED in the background (exit $src); see $OUT.flag_scan.log"; exit "$src"; }
+      if [ "$flag_bg" = 1 ]; then
+        # round 55: the background job was the whole stage (scan, align, verdict); its wall is the align + verdict part
+        ran=1; rm -f "$OUT.$st.env"
+        { cat "$OUT.$st.time.tmp" 2>/dev/null | grep -E '^(wall_s|peak_rss_kb)' || true; printf 'exit\t%s\n' "$src"; } > "$OUT.$st.time"; rm -f "$OUT.$st.time.tmp"
+        [ "$src" = 0 ] || { all_bg_stop; say "all: flag FAILED in the background (exit $src); see $OUT.flag_scan.log and $OUT.flag.log"; exit "$src"; }
+        say "all: flag ran in the background"; printf '%s\n' "$env_now" > "$OUT.$st.env"; continue
+      fi
+      [ "$src" = 0 ] || { all_bg_stop; say "all: flag scan FAILED in the background (exit $src); see $OUT.flag_scan.log"; exit "$src"; }
       export RP_FLAG_SCAN_DONE=1
     fi
     if [ "$started" = 0 ]; then
@@ -1246,18 +1574,29 @@ stage_all() {
     if [ "$rc" != 0 ]; then
       # round-41 audit: a background scan must not outlive the run (it writes PREFIX.flag_scan.* in place; a rerun's own scan
       # would race it). A background index build is left to finish: it writes a temporary name and renames.
-      if [ -n "$scan_pid" ]; then pkill -P "$scan_pid" 2>/dev/null || true; kill "$scan_pid" 2>/dev/null || true; fi
+      all_bg_stop
       say "all: $st FAILED (exit $rc); see $OUT.$st.time and the stage's log"; exit "$rc"
     fi
     printf '%s\n' "$env_now" > "$OUT.$st.env"
     # round-39 audit: assemble just ran, so flag will run: its scan starts now, under families and assign. Not under --low-mem
     # (round 40): that profile bounds memory, and the scan (A119b 16.6 GB) would sit beside families' all-vs-all.
     if [ "$st" = assemble ] && [ "$LOW_MEM" = 0 ] && [[ " ${plan[*]} " == *" flag:"* ]] && [ -z "$FROM_STAGE$TO_STAGE" ]; then
-      bash "$0" flag_scan "${args[@]}" 2> "$OUT.flag_scan.bg.err" & scan_pid=$!
-      say "all: flag scan running in the background"
+      # round 55: align + verdict read the scan, the loci and the index, nothing of families or assign, so the whole stage
+      # runs there (A119b: 42 s no longer after assign) unless the verdict waits for something: the candidates table
+      # (--candidates) or an index still being built in the background (a genome's first run)
+      if [ "$CANDIDATES" = 0 ] && [ -z "$idx_pid" ]; then
+        flag_bg=1; bash "$0" flag_bg "${args[@]}" 2> "$OUT.flag_scan.bg.err" & scan_pid=$!
+        say "all: flag (scan, align, verdict) running in the background"
+      else
+        bash "$0" flag_scan "${args[@]}" 2> "$OUT.flag_scan.bg.err" & scan_pid=$!
+        say "all: flag scan running in the background"
+      fi
     fi
-    if [ -n "$TO_STAGE" ] && [ "$st" = "$TO_STAGE" ]; then say "all: stopped after $st (--to $TO_STAGE); product $prod"; return 0; fi
+    if [ -n "$TO_STAGE" ] && [ "$st" = "$TO_STAGE" ]; then [ "$guided_due" = 0 ] || all_guided; all_layers_wait; all_earlyends; all_capstarts; say "all: stopped after $st (--to $TO_STAGE); product $prod"; return 0; fi
   done
+  all_layers_wait
+  all_earlyends
+  all_capstarts
   say "all: done. stage, wall, peak memory:"
   for item in "${plan[@]}"; do
     st=${item%%:*}
@@ -1266,8 +1605,10 @@ stage_all() {
 }
 case "$STAGE" in
   merged) stage_merged;;
-  assemble) stage_assemble;; families) stage_families;; candidates) stage_candidates;; catalog) stage_catalog;;
+  assemble) stage_assemble; if [ -n "${GUIDE:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_guided; fi;; guided) stage_guided;; siblings) stage_siblings;; flairlike) stage_flairlike;; altends) stage_altends;; trunc5) stage_trunc5;; shiftdrop) stage_shiftdrop;; capstarts) stage_capstarts;; earlyends) stage_earlyends;; repeatloci) stage_repeatloci;; exonmap) stage_exonmap;; relatives) stage_relatives;; famreps) stage_famreps;; families) stage_families;; candidates) stage_candidates;; catalog) stage_catalog;;
   assign) stage_assign;; flag) stage_flag;; flag_scan) stage_flag_scan;; index) stage_index;;
+  # `all`'s background flag stage: the scan, then align + verdict, whose wall goes to PREFIX.flag.time
+  flag_bg) stage_flag_scan; export RP_FLAG_SCAN_DONE=1; fb0=$SECONDS; stage_flag; printf 'wall_s\t%s\n' "$(( SECONDS - fb0 ))" > "$OUT.flag.time.tmp";;
   # --legacy-catalog: `assign` reads the legacy catalog, so `all` builds it; --candidates: `all` runs the (opt-in) candidates stage
   all) stage_all;;
   *) echo "unknown stage $STAGE" >&2; exit 2;;

@@ -330,10 +330,19 @@ def op_intron_resize(model, spec, rng):
     return _rec(model, op="intron_resize", intron=k, old=e - s, new=L)
 
 
+def op_retro(model, spec, rng):
+    """Processed copy: every intron removed, one exon left (a retrocopy of the spliced parent)."""
+    removed = len(model.seq) - len(model.chain_seq())
+    model.seq = "".join(model.seq[e.start:e.end] for e in model.exons)
+    model.exons = [Exon(0, len(model.seq), model.exons[0].label)]
+    model.check()
+    return _rec(model, op="retro", removed_bp=removed)
+
+
 OPS = {
     "snp": op_snp, "indel": op_indel, "exon_delete": op_exon_delete, "splice_kill": op_splice_kill,
     "exon_insert": op_exon_insert, "exon_shuffle": op_exon_shuffle, "invert": op_invert, "truncate": op_truncate,
-    "convert": op_convert, "intron_resize": op_intron_resize,
+    "convert": op_convert, "intron_resize": op_intron_resize, "retro": op_retro,
 }
 
 

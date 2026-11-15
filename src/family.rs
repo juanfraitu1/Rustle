@@ -24,7 +24,9 @@ pub mod arms {
         use crate::genome::GenomeIndex;
         use crate::genome_projection::project_families_batch;
         use anyhow::Result;
-        use std::collections::{HashMap, HashSet};
+        use std::collections::HashMap;
+        #[cfg(test)]
+        use std::collections::HashSet;
 
         /// Parameters for the DNA-mode SD detector. `min_identity` is the LOCUS-DISCOVERY floor ("is this segment
         /// duplicated enough to be a candidate locus"); it is distinct from the family-GROUPING identity floor
@@ -3786,7 +3788,7 @@ pub mod arms {
                 // L-lines = union of consecutive adjacencies across reference + all copy walks
                 use std::collections::BTreeSet;
                 let mut links: BTreeSet<(usize, usize)> = BTreeSet::new();
-                let mut add_walk = |walk: &[usize], set: &mut BTreeSet<(usize, usize)>| {
+                let add_walk = |walk: &[usize], set: &mut BTreeSet<(usize, usize)>| {
                     for w in walk.windows(2) {
                         set.insert((w[0], w[1]));
                     }
@@ -18268,7 +18270,7 @@ pub mod copy_assign {
     //! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
     use crate::copy_split::{allele_at, AlignedRead};
-    use crate::types::{DetHashMap, DetHashSet};
+    
 
     /// Per-copy feature profile over the family's PSV columns + intron-boundary set.
     #[derive(Clone, Debug)]
@@ -19911,7 +19913,7 @@ pub mod copy_assign {
         //! Task 1's `ReadEvidence.logl` arrives in Task 3.
         //!
         //! **STATUS:** OPT-IN — `--em` (src/copy_assign.rs:310-311, `#[arg(long, default_value_t = false)]`) OR `--vg-realign` (src/copy_assign.rs:340-341, default false)  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
-        use crate::types::{DetHashMap, DetHashSet};
+        
 
         /// log-sum-exp over a slice, ignoring `-inf` terms so no NaN is produced when
         /// some copies have zero prior mass (`ln 0 = -inf`).
@@ -21723,6 +21725,12 @@ pub mod copy_assign {
             // ⛔ Not the lever: `-G 100k` (byte-identical but SLOWER, 52.9 s vs 49.2 s — minimap2 derives chaining
             // parameters from G) and query dedup (only 5.5% of the 6,576 molecules are exact duplicates).
             let t_arg = std::env::var("RUSTLE_STAR_THREADS").unwrap_or_else(|_| "8".to_string());
+            // round 66: under slot scheduling (the pool exists only then) a large alignment also runs on the idle slots' threads
+            let borrowed = crate::family::STAR_SLOTS.get().map(|p| crate::family::borrow_free_slots(p, read_seqs.len(), nc)).unwrap_or_default();
+            let t_arg = match t_arg.parse::<usize>() {
+                Ok(t) if !borrowed.is_empty() => (t * (1 + borrowed.len())).to_string(),
+                _ => t_arg,
+            };
             let mut child = match std::process::Command::new(&mm2)
                 .args([
                     "-c",
@@ -24326,8 +24334,12 @@ pub mod copy_assign {
             // the editing pre-pass. Since 2026-09-05 the `copy_assign` binary sets RUSTLE_PSV_READFILTER=0 unless the user
             // passes `--psv-read-filter` or sets the variable (§6eu, register 689: the filter deletes every column of an
             // unexpressed paralogue). Library callers that leave the variable unset still get the filter ON.
-            let mut all_obs: Vec<Vec<Option<u8>>> = Vec::with_capacity(reads.len());
-            for (ri, read) in reads.iter().enumerate() {
+            let read_filter = std::env::var("RUSTLE_PSV_READFILTER").ok().as_deref() != Some("0");
+            // audit round 66: the per-record observations feed the read filter and the record-level path's editing columns;
+            // with pooled molecule observations and the filter off (the binary's default) nothing reads them
+            let need_obs = read_filter || !(p.molecule_pool && mol_names.is_some());
+            let mut all_obs: Vec<Vec<Option<u8>>> = Vec::with_capacity(if need_obs { reads.len() } else { 0 });
+            for (ri, read) in reads.iter().enumerate().filter(|_| need_obs) {
                 if let Some(mc) = best_overlap_copy_on(read, copies, chrom_of(ri)) {
                     let mut psv_obs = vec![None; fp0.n_cols];
                     let mut psv_qual = vec![None; fp0.n_cols];
@@ -24341,7 +24353,6 @@ pub mod copy_assign {
                     all_obs.push(psv_obs);
                 }
             }
-            let read_filter = std::env::var("RUSTLE_PSV_READFILTER").ok().as_deref() != Some("0");
             let keep: Vec<bool> = if read_filter {
                 read_supported_columns(
                     &all_obs,
@@ -24382,7 +24393,7 @@ pub mod copy_assign {
             let mparams = MosaicParams::from_env();
             // RNA-editing filter (Clair3-RNA): a pre-pass flags A↔G columns with within-copy heterogeneity so the
             // significance certificate downweights them. Reuses the per-read PSV observations built above.
-            let editing_cols: Vec<bool> = if p.rna_editing_filter {
+            let editing_cols: Vec<bool> = if p.rna_editing_filter && need_obs {
                 detect_editing_columns(&all_obs, &fp.profiles)
             } else {
                 Vec::new()
@@ -24658,24 +24669,6 @@ pub mod copy_assign {
                 let read = &reads[ri];
                 let mc = best_overlap_copy_on(read, copies, chrom_of(ri)).expect("rep overlaps a copy");
                 let (cand, obs, profiles) = (cand.clone(), obs.clone(), profiles.clone());
-                // the molecule's best GENOME placement (fewest edits per aligned base over all its records;
-                // needs `=`/`X` CIGARs, else None and the certificate below is skipped)
-                let genome_rate: Option<f64> = groups[names[ri].as_str()]
-                    .iter()
-                    .filter_map(|&i| {
-                        let (mut eq, mut ed) = (0u64, 0u64);
-                        let mut has_eqx = false;
-                        for &(op, n) in &reads[i].cigar {
-                            match op {
-                                '=' => { eq += n; has_eqx = true; }
-                                'X' => { ed += n; has_eqx = true; }
-                                'I' | 'D' => ed += n,
-                                _ => {}
-                            }
-                        }
-                        (has_eqx && eq + ed > 0).then(|| ed as f64 / (eq + ed) as f64)
-                    })
-                    .fold(None, |m: Option<f64>, r| Some(m.map_or(r, |x| x.min(r))));
                 // a single candidate has no competitor to certify against: `assign_read` returns Tied for it
                 // (margin ∞, nothing rejected), so the molecule stays in the output as a tie, never as a claim.
                 let partner_k: DetHashSet<usize> = (0..cand.len()).filter(|&k| is_partner(&copies[cand[k]].tid)).collect();
@@ -24935,7 +24928,8 @@ pub mod copy_assign {
                         k0 = true;
                     }
                     min_p = min_p.min(pk);
-                    if pk > p_read {
+                    // `is_none`: a p-value of exactly 0 against every competitor still names one (audit round 66)
+                    if nearest_sibling_k.is_none() || pk > p_read {
                         p_read = pk;
                         nearest_sibling_k = Some(k);
                         n_cols_vs_nearest_sibling = pk_n_cols;
@@ -25020,7 +25014,6 @@ pub mod copy_assign {
                 // content, or its origin is a copy the catalog does not hold (NPIP: anchor reads hit their own
                 // copy's unit not at all and a paralogue's at 0.54; reads placed at MAPQ 60 with NM 333) ⟹ Ambiguous.
                 // The read's genome placement is NOT the null: a placement at NM 333/4,615 is no origin either.
-                let _ = genome_rate;
                 if let Some(&Some((n_x, n_aligned, nm_all, blk_all, n_i, n_d, unaligned))) = unit_edits.get(a.best_copy) {
                     // genomic form: the locus must explain the WHOLE read — X + I + D + the read bases the hit
                     // leaves unaligned, over the read length (introns never count; a locus that leaves a third of
@@ -25112,7 +25105,9 @@ pub mod copy_assign {
                         let mut one = vec![0.0f64; copies.len()];
                         one[cand[bk]] = 1.0; // the best candidate (cand[0] may be a partner, which carries no mass)
                         a.posterior = one;
-                    } else if p.sole_candidate {
+                    } else if p.sole_candidate || a.origin_rejected {
+                        // (2026-11-13: also with the promotion off, the default: a rejected candidate keeps its verdict
+                        // and does not become `tied`; only the molecules the promotion would have assigned do)
                         // the certificate rejected the only candidate: its verdict stands (Ambiguous, origin_rejected);
                         // R24: under --psv-fixed-only the fixed-only Tied stands (portability rests on population-FIXED
                         // PSVs; a sole candidate rests on none)
@@ -29540,8 +29535,10 @@ pub mod denovo_pipeline {
         SharedAcrossFamilies,
     }
 
-    /// Every pair of catalog copies that wrongly shares genomic sequence, classified. Copies are
-    /// `(family_id, chrom, start, end)`. Sorted sweep, so it is linear in the output size, not quadratic in
+    /// Every pair of catalog copies whose genomic spans overlap, classified. Copies are
+    /// `(family_id, chrom, start, end)`: spans only, no strand and no exons, so a pair listed here is a candidate
+    /// defect, not a proven one. Audit round 62 on A119b: of 645 cross-family pairs 285 were on opposite strands and
+    /// 141 same-strand pairs shared no exon base; 74 shared exons over half of the shorter copy. Sorted sweep, so it is linear in the output size, not quadratic in
     /// the catalog. Structural: needs no annotation and no reference truth.
     pub fn catalog_overlaps(
         copies: &[(String, String, u64, u64)],
@@ -31353,9 +31350,18 @@ pub mod denovo_pipeline {
     }
 
     /// `families.tsv` counters derived purely from `combined` per row, recomputed after the pass moved statuses
-    /// (`assigned_j`, `resolvable_j`; on the read-star path `psv` IS `combined`, so those two follow). `uniq`/
-    /// `uniq_agree` need each row's `mapped_copy`, which `FamilyAssignment` does not keep -- left as computed.
+    /// (`assigned_j`, `resolvable_j`; on the read-star path `psv` IS `combined`, so those two follow). A row that is
+    /// no longer `Assigned` gives back its `uniq` / `uniq_agree` contribution (`uniq_contrib`); a row the pass newly
+    /// assigns adds none (its `mapped_copy` is not kept).
     fn recount_after_union(fa: &mut FamilyAssignment, psv_is_combined: bool) {
+        for (k, (_, a)) in fa.assignments.iter().enumerate() {
+            if a.status != AssignStatus::Assigned {
+                if let Some(agreed) = fa.uniq_contrib.get_mut(k).and_then(|c| c.take()) {
+                    fa.uniq -= 1;
+                    fa.uniq_agree -= agreed as usize;
+                }
+            }
+        }
         fa.assigned_j = fa
             .assignments
             .iter()
@@ -31390,18 +31396,12 @@ pub mod denovo_pipeline {
         for fa in fams.iter_mut() {
             let n_copies = fa.n_copies;
             let mut moved = false;
-            for (k, (ri, a)) in fa.assignments.iter_mut().enumerate() {
+            for (ri, a) in fa.assignments.iter_mut() {
                 if a.status == AssignStatus::Assigned && read_names.get(*ri).is_some_and(|r| is_outside(r)) {
                     // the worker's gate sizes the uniform posterior by the row's own posterior vector (its copies)
                     let width = if a.posterior.is_empty() { n_copies } else { a.posterior.len() };
                     tie_row(a, width);
-                    // a demoted row is no longer an `Assigned` unique mapper: take its `uniq` contribution back out
-                    if let Some(c) = fa.uniq_contrib.get_mut(k) {
-                        if let Some(agreed) = c.take() {
-                            fa.uniq -= 1;
-                            fa.uniq_agree -= agreed as usize;
-                        }
-                    }
+                    // its `uniq` contribution is taken back out by `recount_after_union` below
                     moved = true;
                     n += 1;
                 }
@@ -45105,6 +45105,12 @@ pub mod denovo_pipeline {
                 ..FamilyAssignment::empty()
             };
             untouched.assigned_j = 7; // deliberately inconsistent: a family with no demoted row must not be recounted
+            // audit round 70: the union pass ties rows too and recounts with the same function; `uniq` followed
+            // only in the gate above, so `uniq` could exceed `assigned_j` after a union verdict
+            let mut u = fa.clone();
+            tie_row(&mut u.assignments[1].1, 2);
+            recount_after_union(&mut u, true);
+            assert_eq!((u.assigned_j, u.uniq, u.uniq_agree), (1, 1, 1));
             let mut fams = vec![fa, untouched];
             let n = apply_tie_outside_gate(&mut fams, &names, |r: &str| r.starts_with("out_"), true, true);
             assert_eq!(n, 1);
@@ -47698,7 +47704,7 @@ pub mod denovo_pipeline {
                 runs.push((st * BIN, (pv + 1) * BIN));
                 // runs closer than max_gap belong to one locus
                 let mut group: Vec<(u64, u64)> = Vec::new();
-                let mut flush = |g: &mut Vec<(u64, u64)>, out: &mut Vec<Skeleton>| {
+                let flush = |g: &mut Vec<(u64, u64)>, out: &mut Vec<Skeleton>| {
                     if g.is_empty() {
                         return;
                     }
@@ -50317,19 +50323,10 @@ pub mod denovo_pipeline {
             // time — so the default `Builder::build_from_path` reader was replaced here. **The win is the 1 MB
             // BufReader, NOT the worker threads**: measured on A119b chr16, reads_in_region falls 58.9s -> 46.8s
             // (total 116.1s -> 101.5s, GTF byte-identical), but 1, 2, 4 and 8 workers all land at 45-47s and CPU
-            // stays at 99%. BGZF inflation is therefore NOT the bottleneck on this path; the remaining ~45s is
-            // per-record `RecordBuf` decode and allocation (1.78M reads ≈ 25 µs/read). `MultithreadedReader` is
-            // kept because it costs nothing and helps on slower storage, but do not credit it for the speedup.
-            // `RUSTLE_BAM_THREADS` overrides; default is min(4, available_parallelism).
-            let bam_threads = std::env::var("RUSTLE_BAM_THREADS")
-                .ok()
-                .and_then(|v| v.parse::<usize>().ok())
-                .unwrap_or_else(|| {
-                    std::thread::available_parallelism()
-                        .map(|n| n.get().min(4))
-                        .unwrap_or(1)
-                })
-                .max(1);
+            // stays at 99%: with every record converted to `RecordBuf` the consumer is the bound (1.78M reads ≈ 25 µs/read).
+            // Audit rounds 50-51: on the lazy-record paths (assemble's sweep, and this function without a home table)
+            // inflation IS the bound, so the worker count now scales with the machine (`bam::bgzf_workers`).
+            let bam_threads = crate::bam::bgzf_workers();
             let file = std::fs::File::open(bam_path)?;
             let buf = std::io::BufReader::with_capacity(1 << 20, file);
             let worker =
@@ -50356,6 +50353,18 @@ pub mod denovo_pipeline {
             let mut hc = HomeCounts::default();
             if ratio <= 0.0 {
                 let allow_secondary = gtf_secondary_enabled();
+                // audit round 51: with no home table (the default) both read lists are built from the LAZY record
+                // (`lazy_reads`); the `RecordBuf` path below stays for the home table, whose rule reads the buffer.
+                if home.is_none() {
+                    let (skip_seq, mut ops) = (skip_read_sequence(), Vec::with_capacity(64));
+                    for result in query {
+                        let (p, b) = lazy_reads(&result?, chrom, allow_secondary, ReadMode::Full, false, skip_seq, &mut ops)?;
+                        primary.extend(p);
+                        bam_reads.extend(b);
+                    }
+                    home_report(chrom, lo, hi, &hc);
+                    return Ok((primary, bam_reads));
+                }
                 for result in query {
                     let record = result?;
                     let rb = RecordBuf::try_from_alignment_record(&header, &record)?;
@@ -50514,15 +50523,7 @@ pub mod denovo_pipeline {
             use std::hash::{Hash, Hasher};
             let bai_path = format!("{bam_path}.bai");
             anyhow::ensure!(std::path::Path::new(&bai_path).exists(), "no .bai index");
-            let bam_threads = std::env::var("RUSTLE_BAM_THREADS")
-                .ok()
-                .and_then(|v| v.parse::<usize>().ok())
-                .unwrap_or_else(|| {
-                    std::thread::available_parallelism()
-                        .map(|n| n.get().min(4))
-                        .unwrap_or(1)
-                })
-                .max(1);
+            let bam_threads = crate::bam::bgzf_workers();
             let file = std::fs::File::open(bam_path)?;
             let buf = std::io::BufReader::with_capacity(1 << 20, file);
             let worker =
@@ -50874,6 +50875,80 @@ pub mod denovo_pipeline {
             Ok(deep)
         }
 
+        /// One BAM record as the region readers' two products, read from the LAZY record: the primary-pool read
+        /// (`alignment_read_from_record`'s rule) and the assignment read (`aligned_read_from_record` +
+        /// `BamIndexCache::bam_read_for`'s `mode`), field for field what the `RecordBuf` path builds. Audit round 51:
+        /// `RecordBuf::try_from_alignment_record` parses every data field and decodes the sequence through a boxed
+        /// per-base iterator even when `mode` then drops it (`Light`); on A119b chr20 that was 2.6 s of single-thread work
+        /// per 297k records against 1.2 s here for full records. `with_ms`: the cached readers fill `ms`, the plain one
+        /// leaves 0. `ops` is scratch. A malformed CIGAR, start or AS/de/ts field is an error, as it is for `RecordBuf`.
+        fn lazy_reads(
+            record: &noodles_bam::Record,
+            chrom: &str,
+            allow_secondary: bool,
+            mode: ReadMode<'_>,
+            with_ms: bool,
+            skip_seq: bool,
+            ops: &mut Vec<noodles_sam::alignment::record::cigar::Op>,
+        ) -> Result<(Option<PrimaryRead>, Option<BamRead>)> {
+            let flags = record.flags();
+            let (as_score, de, ts) = crate::bam::record_as_de_ts(record)?;
+            ops.clear();
+            for op in record.cigar().iter() {
+                ops.push(op?);
+            }
+            let start = record.alignment_start().transpose()?;
+            let Some(start) = start.filter(|_| !flags.is_unmapped()) else { return Ok((None, None)) };
+            let ref_start = (usize::from(start) as u64).saturating_sub(1);
+            let mut primary = None;
+            if !flags.is_supplementary() && (allow_secondary || !flags.is_secondary()) {
+                let cigar = noodles_sam::alignment::record_buf::Cigar::from(ops.clone());
+                if let Some(exons) = crate::bam::exons_from_cigar(ref_start, &cigar).ok().filter(|e| !e.is_empty()) {
+                    primary = Some(PrimaryRead {
+                        chrom: chrom.to_string(),
+                        ref_start,
+                        ref_end: exons.last().map(|e| e.1).unwrap_or(ref_start),
+                        introns: exons.windows(2).map(|w| (w[0].1, w[1].0)).collect(),
+                        reverse: flags.is_reverse_complemented(),
+                    });
+                }
+            }
+            let name = record.name().map(|n| n.to_string()).unwrap_or_default();
+            if let ReadMode::Only(names) = mode {
+                // `bam_read_for`: a record with no name, or one not asked for, gives no assignment read
+                if record.name().is_none() || !names.contains(&name) {
+                    return Ok((primary, None));
+                }
+            }
+            let mut cigar: Vec<(char, u64)> = ops.iter().map(|op| (cigar_kind_to_char(op.kind()), op.len() as u64)).collect();
+            let light = matches!(mode, ReadMode::Light);
+            if light {
+                let sum = |keep: fn(char) -> bool| cigar.iter().filter(|(o, _)| keep(*o)).map(|(_, n)| *n).sum::<u64>();
+                let aligned = sum(|o| matches!(o, 'M' | '=' | 'X'));
+                let rest = sum(|o| matches!(o, 'M' | 'D' | 'N' | '=' | 'X')) - aligned;
+                cigar = if rest > 0 { vec![('M', aligned), ('N', rest)] } else { vec![('M', aligned)] };
+            }
+            let no_seq = light || skip_seq;
+            Ok((primary, Some(BamRead {
+                chrom: chrom.to_string(),
+                read: AlignedRead {
+                    ref_start,
+                    cigar,
+                    seq: if no_seq { Vec::new() } else { record.sequence().iter().collect() },
+                    qual: if no_seq { Vec::new() } else { record.quality_scores().as_ref().to_vec() },
+                },
+                mapq: record.mapping_quality().map(|q| q.get()).unwrap_or(0),
+                name,
+                as_score: as_score.unwrap_or(0),
+                ms: if with_ms { crate::bam::record_ms(record).unwrap_or(0) } else { 0 },
+                de: de.unwrap_or(0.0),
+                is_supplementary: flags.is_supplementary(),
+                is_secondary: flags.is_secondary(),
+                reverse: flags.is_reverse_complemented(),
+                ts,
+            })))
+        }
+
         /// What [`BamIndexCache::reads_in_region_mode`] keeps of each record (the primary pool is the same in every mode).
         /// `Full`: everything (= `reads_in_region`). `Light`: name, flags, scores, start, and a two-op CIGAR (`M` = the aligned
         /// length, `N` = the rest of the reference span), no sequence or qualities: enough for the AS-tied gate's decision and the
@@ -51034,10 +51109,7 @@ pub mod denovo_pipeline {
                 if hi.saturating_sub(lo) >= WINDOW_MT_BP {
                     let file = std::fs::File::open(bam_path)
                         .map_err(|e| anyhow::anyhow!("opening {bam_path}: {e}"))?;
-                        let workers = std::thread::available_parallelism()
-                            .map(|n| n.get().min(4))
-                            .unwrap_or(1)
-                            .max(1);
+                    let workers = crate::bam::bgzf_workers();
                     let mut reader = noodles_bam::io::Reader::from(noodles_bgzf::MultithreadedReader::with_worker_count(
                         std::num::NonZeroUsize::new(workers).unwrap_or(std::num::NonZeroUsize::MIN),
                         std::io::BufReader::with_capacity(1 << 20, file),
@@ -51062,13 +51134,46 @@ pub mod denovo_pipeline {
             where
                 R: noodles_bgzf::io::BufRead + noodles_bgzf::io::Seek,
             {
+                // the closed loop's pass-2 filter, as in `reads_in_region_indexed`
+                self.reads_in_region_from_with(reader, chrom, lo, hi, mode, read_home_table())
+            }
+
+            /// [`BamIndexCache::reads_in_region_from`] under an explicit read-home table (`None` = the lazy-record path).
+            fn reads_in_region_from_with<R>(
+                &self,
+                reader: &mut noodles_bam::io::Reader<R>,
+                chrom: &str,
+                lo: u64,
+                hi: u64,
+                mode: ReadMode<'_>,
+                home: Option<&ReadHomeTable>,
+            ) -> Result<(Vec<PrimaryRead>, Vec<BamRead>)>
+            where
+                R: noodles_bgzf::io::BufRead + noodles_bgzf::io::Seek,
+            {
                 let region: noodles_core::Region = format!("{chrom}:{}-{}", lo + 1, hi).parse()?;
                 let query = reader.query(&self.header, &self.index, &region)?;
                 let mut primary = Vec::new();
                 let mut bam_reads = Vec::new();
                 let ratio = gtf_secondary_as_ratio();
-                let home = read_home_table(); // the closed loop's pass-2 filter, as in `reads_in_region_indexed`
                 let mut hc = HomeCounts::default();
+                if ratio <= 0.0 && home.is_none() {
+                    // audit round 51: the default path builds both lists from the lazy record (`lazy_reads`); `Light`
+                    // no longer decodes the sequence it drops, and `Only` still skips the unnamed records first (r1505)
+                    let (allow_secondary, skip_seq, mut ops) = (gtf_secondary_enabled(), skip_read_sequence(), Vec::with_capacity(64));
+                    for result in query {
+                        let record = result?;
+                        if let ReadMode::Only(names) = mode {
+                            if !record.name().map(|n| names.contains(std::str::from_utf8(n.as_ref()).unwrap_or(""))).unwrap_or(false) {
+                                continue;
+                            }
+                        }
+                        let (p, b) = lazy_reads(&record, chrom, allow_secondary, mode, true, skip_seq, &mut ops)?;
+                        primary.extend(p);
+                        bam_reads.extend(b);
+                    }
+                    return Ok((primary, bam_reads));
+                }
                 if ratio <= 0.0 {
                     for result in query {
                         let record = result?;
@@ -51147,108 +51252,6 @@ pub mod denovo_pipeline {
                 home_report(chrom, lo, hi, &hc);
                 Ok((primary, bam_reads))
             }
-
-            /// r1507 (2026-11-02, `docs/PREREG_assign_window_sweep_2026-11-02.md`): ONE indexed query over the hull of
-            /// `windows` on `chrom`, with the multithreaded reader, each record collected into every window it overlaps
-            /// — noodles' own query rule (1-based alignment interval intersects the window's `lo+1..=hi`) — in file
-            /// order. So `out[i]` holds exactly what `reads_in_region_mode(chrom, lo_i, hi_i, mode_i)` returns, in the
-            /// same order, without decoding the shared BGZF blocks once per window. `windows[i] = (lo, hi, mode)`.
-            /// The caller guarantees [`sweep_supported`] (no read-home table, no secondary AS ratio): those paths keep
-            /// per-record state per window and stay on the per-window query.
-            pub fn sweep_windows(
-                &self,
-                bam_path: &str,
-                chrom: &str,
-                windows: &[(u64, u64, ReadMode<'_>)],
-            ) -> Result<Vec<(Vec<PrimaryRead>, Vec<BamRead>)>> {
-                let mut out: Vec<(Vec<PrimaryRead>, Vec<BamRead>)> =
-                    (0..windows.len()).map(|_| (Vec::new(), Vec::new())).collect();
-                if windows.is_empty() {
-                    return Ok(out);
-                }
-                anyhow::ensure!(sweep_supported(), "sweep_windows: unsupported read settings");
-                // windows by `lo`, with the running maximum of `hi`: the windows overlapping a record are a suffix walk
-                // of the prefix `lo < end`, cut where no earlier window reaches `start` any more.
-                let mut order: Vec<usize> = (0..windows.len()).collect();
-                order.sort_by_key(|&i| (windows[i].0, windows[i].1, i));
-                let mut max_hi: Vec<u64> = Vec::with_capacity(order.len());
-                let mut m = 0u64;
-                for &i in &order {
-                    m = m.max(windows[i].1);
-                    max_hi.push(m);
-                }
-                let span_lo = windows.iter().map(|w| w.0).min().unwrap_or(0);
-                let span_hi = windows.iter().map(|w| w.1).max().unwrap_or(0);
-                let ivals: Vec<noodles_core::region::Interval> = windows
-                    .iter()
-                    .map(|w| {
-                        format!("{chrom}:{}-{}", w.0 + 1, w.1)
-                            .parse::<noodles_core::Region>()
-                            .map(|r| r.interval())
-                    })
-                    .collect::<std::result::Result<_, _>>()?;
-                let workers = std::thread::available_parallelism()
-                    .map(|n| n.get().min(4))
-                    .unwrap_or(1)
-                    .max(1);
-                let file = std::fs::File::open(bam_path)
-                    .map_err(|e| anyhow::anyhow!("opening {bam_path}: {e}"))?;
-                let mut reader = noodles_bam::io::Reader::from(noodles_bgzf::MultithreadedReader::with_worker_count(
-                    std::num::NonZeroUsize::new(workers).unwrap_or(std::num::NonZeroUsize::MIN),
-                    std::io::BufReader::with_capacity(1 << 20, file),
-                ));
-                let region: noodles_core::Region = format!("{chrom}:{}-{}", span_lo + 1, span_hi).parse()?;
-                let query = reader.query(&self.header, &self.index, &region)?;
-                use noodles_sam::alignment::Record as _;
-                for result in query {
-                    let record = result?;
-                    let (start, end) = match (record.alignment_start().transpose()?, record.alignment_end().transpose()?) {
-                        (Some(s), Some(e)) => (s, e),
-                        _ => continue,
-                    };
-                    let (s1, e1) = (start.get() as u64, end.get() as u64);
-                    let (a, b) = (s1.min(e1), s1.max(e1));
-                    let aln: noodles_core::region::Interval = (start..=end).into();
-                    // windows with lo + 1 <= b, walked back while some earlier window's hi >= a
-                    let bound = order.partition_point(|&i| windows[i].0 + 1 <= b);
-                    let mut rb: Option<RecordBuf> = None;
-                    let mut k = bound;
-                    while k > 0 && max_hi[k - 1] >= a {
-                        k -= 1;
-                        let i = order[k];
-                        if windows[i].1 < a || !ivals[i].intersects(aln) {
-                            continue;
-                        }
-                        let mode = windows[i].2;
-                        if let ReadMode::Only(names) = mode {
-                            if !record
-                                .name()
-                                .map(|n| names.contains(std::str::from_utf8(n.as_ref()).unwrap_or("")))
-                                .unwrap_or(false)
-                            {
-                                continue;
-                            }
-                        }
-                        if rb.is_none() {
-                            rb = Some(RecordBuf::try_from_alignment_record(&self.header, &record)?);
-                        }
-                        let rb = rb.as_ref().expect("set above");
-                        if let Some(pr) = alignment_read_from_record(rb, chrom, gtf_secondary_enabled()) {
-                            out[i].0.push(pr);
-                        }
-                        if let Some(br) = self.bam_read_for(rb, chrom, mode) {
-                            out[i].1.push(br);
-                        }
-                    }
-                }
-                Ok(out)
-            }
-        }
-
-        /// Whether [`BamIndexCache::sweep_windows`] reproduces the per-window query: no read-home table (its counts and
-        /// report are per window) and no secondary AS ratio (that path buffers a window's records to pick a local best).
-        pub fn sweep_supported() -> bool {
-            read_home_table().is_none() && gtf_secondary_as_ratio() <= 0.0
         }
 
         /// Collect AS-TIED SECONDARY reads overlapping `[lo, hi)` on `chrom`, as `PrimaryRead`s — the starved-copy
@@ -51482,7 +51485,7 @@ pub mod denovo_pipeline {
         ) -> Option<(Vec<u8>, char)> {
             let mut seq = Vec::new();
             let mut cur = start;
-            let mut take = |a: u64, b: u64, seq: &mut Vec<u8>| -> Option<()> {
+            let take = |a: u64, b: u64, seq: &mut Vec<u8>| -> Option<()> {
                 let s = genome.fetch_sequence(chrom, a, b)?;
                 seq.extend(s.iter().map(|x| x.to_ascii_uppercase()));
                 Some(())
@@ -54838,6 +54841,61 @@ pub mod denovo_pipeline {
                 assert_eq!(cluster_unspliced_supported(&primaries, &[], 1, 1), cluster_unspliced(&primaries, 1, 1));
             }
 
+            /// Round 60: the lazy-record path against the `RecordBuf` path on the record kinds real IsoSeq BAMs carry and the
+            /// plain fixture lacks: soft clips, reverse strand, secondary and supplementary, sequence, qualities, AS/ms/de/ts.
+            #[test]
+            fn lazy_and_buffered_readers_agree_on_clipped_reverse_tagged_records() {
+                use noodles_sam::alignment::record::data::field::Tag;
+                use noodles_sam::alignment::record_buf::{data::field::Value, QualityScores, Sequence};
+                let dir = tempfile::tempdir().unwrap();
+                let s = |l| Op::new(Kind::SoftClip, l);
+                let rich = |name: &str, flags: Flags, pos: usize, ops: Vec<Op>, a: i32, ms: i32| {
+                    let qlen: usize = ops.iter().filter(|o| o.kind() != Kind::Skip).map(|o| o.len()).sum();
+                    let data: noodles_sam::alignment::record_buf::Data = [
+                        (Tag::new(b'A', b'S'), Value::from(a)),
+                        (Tag::new(b'm', b's'), Value::from(ms)),
+                        (Tag::new(b'd', b'e'), Value::Float(0.0125)),
+                        (Tag::new(b't', b's'), Value::Character(b'-')),
+                    ]
+                    .into_iter()
+                    .collect();
+                    RecordBuf::builder()
+                        .set_name(name)
+                        .set_flags(flags)
+                        .set_reference_sequence_id(0)
+                        .set_alignment_start(Position::try_from(pos).unwrap())
+                        .set_mapping_quality(MappingQuality::new(0).unwrap())
+                        .set_cigar(ops.into_iter().collect())
+                        .set_sequence(Sequence::from((0..qlen).map(|i| b"ACGT"[i % 4]).collect::<Vec<u8>>()))
+                        .set_quality_scores(QualityScores::from((0..qlen).map(|i| (i % 40) as u8).collect::<Vec<u8>>()))
+                        .set_data(data)
+                        .build()
+                };
+                let n = |l| Op::new(Kind::Skip, l);
+                let recs = vec![
+                    rich("a", Flags::default(), 1_001, vec![s(7), m(50), n(300), m(40), s(3)], 180, 170),
+                    rich("b", Flags::REVERSE_COMPLEMENTED, 1_021, vec![m(90), s(11)], 175, 175),
+                    rich("a", Flags::SECONDARY | Flags::REVERSE_COMPLEMENTED, 20_001, vec![s(7), m(93)], 180, 169),
+                    rich("b", Flags::SUPPLEMENTARY, 30_001, vec![s(60), m(41)], 80, 80),
+                ];
+                let bam = write_indexed_bam(dir.path(), "rich.bam", &recs);
+                let empty = ReadHomeTable::parse("read_name\tchrom\tstart\tend\n").unwrap();
+                let cache = BamIndexCache::open(&bam).unwrap();
+                let names: DetHashSet<String> = ["a".to_string()].into_iter().collect();
+                for (label, mode) in [("full", ReadMode::Full), ("light", ReadMode::Light), ("only", ReadMode::Only(&names))] {
+                    let via = |h: Option<&ReadHomeTable>| {
+                        let mut reader = noodles_bam::io::reader::Builder::default().build_from_path(&bam).unwrap();
+                        cache.reads_in_region_from_with(&mut reader, "c1", 0, 1_000_000, mode, h).unwrap()
+                    };
+                    let (lazy, buffered) = (via(None), via(Some(&empty)));
+                    assert!(lazy.1.len() >= 2, "{label}: {}", lazy.1.len());
+                    assert_eq!(format!("{:?}", lazy.1), format!("{:?}", buffered.1), "{label}");
+                    if label != "only" {
+                        assert_eq!(lazy.0, buffered.0, "{label}");
+                    }
+                }
+            }
+
             #[test]
             fn streaming_and_buffered_readers_apply_the_same_home_rule() {
                 let dir = tempfile::tempdir().unwrap();
@@ -54849,6 +54907,27 @@ pub mod denovo_pipeline {
                 let (empty_buf, _) =
                     reads_in_region_indexed_with(&bam, "c1", 0, 1_000_000, Some(&empty)).unwrap();
                 assert_eq!(base_buf, empty_buf);
+                // round 51: no table = the lazy-record path, an empty table = the `RecordBuf` path; every field of every
+                // assignment read must agree (name, CIGAR, sequence, qualities, MAPQ, AS, de, ts, flags)
+                let all = |h: Option<&ReadHomeTable>| format!("{:?}", reads_in_region_indexed_with(&bam, "c1", 0, 1_000_000, h).unwrap().1);
+                assert!(all(None).contains("seq: [") && all(None).len() > 500);
+                assert_eq!(all(None), all(Some(&empty)));
+                // the cached reader assign uses, in its three modes (Only: its callers discard the primaries)
+                let cache = BamIndexCache::open(&bam).unwrap();
+                let first = reads_in_region_indexed_with(&bam, "c1", 0, 1_000_000, None).unwrap().1[0].name.clone();
+                let names: DetHashSet<String> = [first].into_iter().collect();
+                for (label, mode) in [("full", ReadMode::Full), ("light", ReadMode::Light), ("only", ReadMode::Only(&names))] {
+                    let via = |h: Option<&ReadHomeTable>| {
+                        let mut reader = noodles_bam::io::reader::Builder::default().build_from_path(&bam).unwrap();
+                        cache.reads_in_region_from_with(&mut reader, "c1", 0, 1_000_000, mode, h).unwrap()
+                    };
+                    let (lazy, buffered) = (via(None), via(Some(&empty)));
+                    assert!(!lazy.1.is_empty(), "{label}");
+                    assert_eq!(format!("{:?}", lazy.1), format!("{:?}", buffered.1), "{label}");
+                    if label != "only" {
+                        assert_eq!(lazy.0, buffered.0, "{label}");
+                    }
+                }
                 assert_eq!(
                     spans(&base_buf),
                     vec![
@@ -56725,7 +56804,7 @@ pub mod fam_from_gtf {
     //! `mcl_families` itself re-imports every moved function. ⚠ Every function here is
     //! byte-identity-critical: families-stage products are cmp-checked across builds.
 
-    use crate::annotation_families::{Cluster, CoreRecord, CoreStatus, GeneKey};
+    use crate::annotation_families::{Cluster, GeneKey};
     use crate::denovo_assemble::longest_orf;
     use crate::genome::GenomeIndex;
     use crate::types::DetHashSet;
@@ -57558,7 +57637,9 @@ pub mod fam_from_gtf {
                     reads: attr(r[8], "reads \"").and_then(|v| v.parse().ok()).unwrap_or(0),
                 })
             } else if r[2] == "exon" {
-                Some(Line::Exon { t, chrom: r[0], s: r[3].parse()?, e: r[4].parse()? })
+                let (s, e): (u64, u64) = (r[3].parse()?, r[4].parse()?);
+                anyhow::ensure!(s >= 1 && e >= s, "exon {}:{s}-{e} of transcript {t}: start must be >= 1 and end >= start", r[0]);
+                Some(Line::Exon { t, chrom: r[0], s, e })
             } else {
                 None
             })
@@ -57742,6 +57823,12 @@ pub mod fam_from_gtf {
             })
             .collect();
         Ok(out)
+    }
+
+    /// `(absorbed, into)` rows with `into` replaced by its keeper where the absorber was itself dropped for its span.
+    pub fn absorbed_under_keepers(absorbed: Vec<(String, String)>, dropped: &[(String, String)]) -> Vec<(String, String)> {
+        let keeper: std::collections::HashMap<&str, &str> = dropped.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
+        absorbed.into_iter().map(|(a, b)| { let k = keeper.get(b.as_str()).copied().unwrap_or(b.as_str()).to_string(); (a, k) }).collect()
     }
 
     /// The loci of `--from-gtf` as `--emit-relations` reads them: the graph's own keys and representatives.
@@ -57943,20 +58030,21 @@ pub mod fam_from_gtf {
                 writeln!(fh, "{a}\t{b}")?;
             }
             fh.flush()?;
+            // after the dedupe, so an absorbing gene that was then dropped for its span names its keeper
+            let absorbed_rows = absorbed_under_keepers(absorbed_rows, &dropped);
             if absorb.is_some() {
-                // written after the dedupe so an absorbing gene that was then dropped for its span names its keeper
-                let keeper: std::collections::HashMap<&str, &str> = dropped.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
                 let mut fh = std::io::BufWriter::new(std::fs::File::create(format!("{out}.loci.absorbed.tsv"))?);
                 writeln!(fh, "absorbed_gene_id\tinto_gene_id")?;
                 for (a, b) in &absorbed_rows {
-                    writeln!(fh, "{a}\t{}", keeper.get(b.as_str()).copied().unwrap_or(b.as_str()))?;
+                    writeln!(fh, "{a}\t{b}")?;
                 }
                 fh.flush()?;
             }
             if !dropped.is_empty() {
                 eprintln!("[mcl_families] {} loci share their span with a locus that has more reads: dropped ({out}.loci.collided.tsv)", dropped.len());
             }
-            dropped
+            // an absorbed gene stays resolvable for `--emit-relations` as a dropped one does (`relation_loci`)
+            dropped.into_iter().chain(absorbed_rows).collect::<Vec<_>>()
         };
         let gff3 = format!("{out}.loci.gff3");
         let fa_path = format!("{out}.loci.fa");
@@ -58170,6 +58258,20 @@ pub mod fam_from_gtf {
     }
 
     #[cfg(test)]
+    mod gtf_exon_coord_tests {
+        /// Audit round 66: an exon that ends before it starts (or starts at 0) used to wrap its length in release builds.
+        #[test]
+        fn an_exon_with_impossible_coordinates_is_refused() {
+            let gtf = |s: u64, e: u64| format!(
+                "c\tx\ttranscript\t100\t900\t.\t+\t.\tgene_id \"g\"; transcript_id \"t\"; reads \"3\";\nc\tx\texon\t{s}\t{e}\t.\t+\t.\tgene_id \"g\"; transcript_id \"t\";\n");
+            let run = |s, e| super::gtf_loci_chains_opt(gtf(s, e).as_bytes(), super::Representative::MostReads, 0, false);
+            assert!(run(100, 900).is_ok());
+            assert!(run(900, 100).is_err());
+            assert!(run(0, 900).is_err());
+        }
+    }
+
+    #[cfg(test)]
     mod paf_cache_key_tests {
         use super::*;
         use crate::run_cache as rc;
@@ -58201,6 +58303,11 @@ pub mod fam_from_gtf {
                 [("a".to_string(), "c".to_string()), ("b".into(), "c".into()), ("tie".into(), "c".into())]
             );
             // a dropped gene stays resolvable for the relations step, under its keeper's key
+            // an absorbed gene resolves the same way, under the keeper of its absorber
+            let ab = absorbed_under_keepers(vec![("frag".into(), "b".into()), ("frag2".into(), "other".into())], &dropped);
+            assert_eq!(ab, [("frag".to_string(), "c".to_string()), ("frag2".into(), "other".into())]);
+            let rl2 = relation_loci(&kept, &dropped.iter().cloned().chain(ab).collect::<Vec<_>>());
+            assert_eq!(rl2.iter().find(|l| l.gene_id == "frag").expect("absorbed gene is a relation locus").rep, "c");
             let rl = relation_loci(&kept, &dropped);
             let a = rl.iter().find(|l| l.gene_id == "a").expect("dropped gene a is a relation locus");
             assert_eq!(a.key, ("chr1".to_string(), 10, 110));
@@ -58405,7 +58512,7 @@ pub mod fam_from_gtf {
         //! `key "` occurrence of a GTF attribute, an empty `gene_id` read as the transcript id, the fold table's
         //! last-write-wins value at the first-write position, Python's `int()` on the decimal fields). Only a lone `\r` line
         //! break (which Python's universal newlines would split on) is not reproduced.
-        use crate::types::DetHashSet;
+        
         use anyhow::{bail, Context, Result};
         use std::collections::{HashMap, HashSet};
         use std::io::BufRead;
@@ -62190,6 +62297,10 @@ pub mod fam_from_gtf {
                             };
                             exon_share(&rel(qb, qk.1), &rel(tb, tk.1), cg, qs as i64, qe as i64, ts as i64, f[4] == "-")
                         }
+                        (true, Some(_), Some(_), None) => {
+                            no_cigar = true; // the share cannot be scored: reported, the caller refuses the PAF
+                            0.0
+                        }
                         _ => 0.0,
                     };
                     return if qi <= ti {
@@ -62305,7 +62416,7 @@ pub mod fam_from_gtf {
                 NoExonic,
                 LowShared,
                 LowShare,
-                Below { contained: bool },
+                Below,
                 Edge { w: f64, identity: f64, contained: bool, by_chain: bool },
             }
             let verdicts: Vec<Verdict> = {
@@ -62403,10 +62514,10 @@ pub mod fam_from_gtf {
                             }
                         }
                         if cov_eff < p.min_cov_longer && cov_eff < p.min_cov_shorter {
-                            return Verdict::Below { contained };
+                            return Verdict::Below;
                         }
                         if p.min_cov_shorter <= 0.0 && cov_eff < p.min_cov_longer {
-                            return Verdict::Below { contained };
+                            return Verdict::Below;
                         }
                         let identity = nmatch as f64 / blocklen.max(1) as f64;
                         Verdict::Edge { w: identity * cov_eff, identity, contained, by_chain }
@@ -62435,12 +62546,7 @@ pub mod fam_from_gtf {
                         g.rejected_low_exon_share += 1;
                         continue;
                     }
-                    Verdict::Below { contained } => {
-                        if contained {
-                            g.admitted_by_containment += 1;
-                        }
-                        continue;
-                    }
+                    Verdict::Below => continue,
                     Verdict::Edge { w, identity, contained, by_chain } => {
                         if contained {
                             g.admitted_by_containment += 1;
@@ -62559,6 +62665,10 @@ pub mod fam_from_gtf {
                 ));
                 let m = self.max_len.entry(c.to_string()).or_insert(0);
                 *m = (*m).max(e.saturating_sub(s));
+            }
+            /// Whether any of `contigs` carries a pair: an SD file of another assembly links nothing.
+            pub fn has_any_contig<'a>(&self, mut contigs: impl Iterator<Item = &'a str>) -> bool {
+                contigs.any(|c| self.by_contig.contains_key(c))
             }
             pub fn n_pairs(&self) -> usize {
                 self.by_contig.values().map(|v| v.len()).sum::<usize>() / 2
@@ -62826,7 +62936,8 @@ pub mod fam_from_gtf {
                     .get(c)
                     .map(|v| {
                         v.iter()
-                            .filter(|&&(hs, he, _)| hs <= e && s <= he)
+                            // hull 1-based closed against a 0-based half-open pair side
+                            .filter(|&&(hs, he, _)| hs <= e && s < he)
                             .map(|&(_, _, i)| i)
                             .collect()
                     })
@@ -62834,7 +62945,7 @@ pub mod fam_from_gtf {
             };
             let mut links: BTreeSet<(usize, usize)> = BTreeSet::new();
             for (i, (c, s, e)) in hulls.iter().enumerate() {
-                for &(ps, pe, ref oc, os, oe) in sd.overlapping(c, *s, *e) {
+                for &(ps, pe, ref oc, os, oe) in sd.overlapping(c, s.saturating_sub(1), *e) {
                     let _ = (ps, pe);
                     for j in hulls_over(oc, os, oe) {
                         if i != j {
@@ -63610,6 +63721,16 @@ pub mod fam_from_gtf {
             /// directions), offsets applied to the loci's 1-based starts.
             /// The §6fw guard: `links` is true only when one duplication pair holds BOTH intervals, in either
             /// stored direction; unrelated flanks on the same contig, and pairs to another contig, are not links.
+            /// Audit round 66: an SD file of another assembly (other contig names) links nothing, so damping would weaken
+            /// every edge; the caller refuses when no contig is shared.
+            #[test]
+            fn sd_pairs_report_whether_they_share_a_contig_with_the_loci() {
+                let sd = SdPairs::from_bed_str("chr1\t1000\t2000\tchr2\t5000\t6000\n");
+                assert!(sd.has_any_contig(["chr9", "chr2"].into_iter()));
+                assert!(!sd.has_any_contig(["NC_000001.11", "NC_000002.12"].into_iter()));
+                assert!(!sd.has_any_contig(std::iter::empty()));
+            }
+
             #[test]
             fn damp_non_sd_edges_keeps_only_duplication_backed_edges() {
                 // SD pair: chr1 [1000,2000) <-> chr2 [5000,6000). Node A in copy 1, B in copy 2, C elsewhere on chr2.
@@ -64367,6 +64488,22 @@ pub mod fam_from_gtf {
                 assert_eq!(mk(vec![(9450, 9950), (10950, 11000)]), (0, 1), "exons miss each other: SHARE 0");
             }
 
+            /// Audit round 66: under `min_exon_share` a record without `cg:Z:` cannot be scored; it is counted so the caller
+            /// can refuse the PAF instead of writing zero families.
+            #[test]
+            fn exon_share_counts_records_that_carry_no_cigar() {
+                let paf = paf_line("c:1001-3000", 2000, 0, 2000, "c:9001-11000", 2000, 0, 2000, 1960, 2000);
+                let mut ex = BTreeMap::new();
+                ex.insert(("c".to_string(), 1001, 3000), 1000);
+                ex.insert(("c".to_string(), 9001, 11000), 1000);
+                let mut bl: BTreeMap<GeneKey, Vec<(u64, u64)>> = BTreeMap::new();
+                bl.insert(("c".to_string(), 1001, 3000), vec![(1000, 1500), (2500, 3000)]);
+                bl.insert(("c".to_string(), 9001, 11000), vec![(9000, 9500), (10500, 11000)]);
+                let p = GraphParams { min_bp: 100, min_exonic_bp: 1, exonic_both_sides: true, min_exon_share: 0.5, ..GraphParams::default() };
+                assert_eq!(graph_from_paf(&paf, &ex, &bl, &p).no_cigar_records, 1);
+                assert_eq!(graph_from_paf(&(paf + "\tcg:Z:2000M"), &ex, &bl, &p).no_cigar_records, 0);
+            }
+
             /// PREREG DENOVOFAM arm B: two exon-to-exon records of 500 bp each cover 0.5 of the smaller gene apiece (best
             /// record below 0.60) and 1.0 together.
             #[test]
@@ -64699,6 +64836,19 @@ pub mod fam_from_gtf {
                     ..p_off
                 };
                 assert_eq!(graph_from_paf(&low, &ex, &bl, &p_alone).n_edges(), 0);
+            }
+
+            /// Audit round 70: hulls are 1-based closed, SD pairs 0-based half-open. A pair that starts on the base after
+            /// a hull does not touch it; one that covers only its first base does.
+            #[test]
+            fn sd_blocks_read_hulls_and_pairs_in_their_own_coordinates() {
+                let hulls: Vec<(String, u64, u64)> = vec![("c".into(), 1001, 2000), ("c".into(), 20001, 21000)];
+                let after = SdPairs::from_bed_str("c\t2000\t3000\tc\t20000\t21000\n");
+                assert_eq!(sd_blocks(&hulls, &after).1, vec![], "a pair starting after the hull's last base");
+                let first = SdPairs::from_bed_str("c\t999\t1001\tc\t20000\t21000\n");
+                assert_eq!(sd_blocks(&hulls, &first).1, vec![(0, 1)], "a pair covering the hull's first base");
+                let before = SdPairs::from_bed_str("c\t900\t1000\tc\t20000\t21000\n");
+                assert_eq!(sd_blocks(&hulls, &before).1, vec![], "a pair ending before the hull's first base");
             }
 
             #[test]
@@ -65164,7 +65314,7 @@ pub mod family_detect {
     //!
     //! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
-    use crate::types::{DetHashMap, DetHashSet};
+    use crate::types::DetHashMap;
     use std::collections::{BTreeMap, BTreeSet};
 
     use super::family_detect::family_rescue::window_canon_code;
@@ -65488,7 +65638,7 @@ pub mod family_detect {
         p: &DetectParams,
     ) -> Vec<Vec<usize>> {
         let parent = collapse_parent(transcripts, p);
-        let mut find = |mut x: usize| {
+        let find = |mut x: usize| {
             while parent[x] != x {
                 x = parent[x];
             }
@@ -67690,7 +67840,7 @@ pub mod family_detect {
         //! had no caller in any binary and was removed 2026-09-24; recover it from tag `notebook-2026-09-24`.
         //!
         //! **STATUS:** SHIPPED-DEFAULT  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
-        use crate::types::{DetHashMap, DetHashSet};
+        
 
         use anyhow::Result;
 
@@ -72532,7 +72682,7 @@ pub mod missing_copy {
     //! Nothing here uses read depth to decide — expression is not dosage (RESULTS_DETECTOR.md); the expected
     //! DNA depth ratio is reported as what DNA would have to show.
 
-    use crate::types::{DetHashMap, DetHashSet};
+    use crate::types::DetHashMap;
     use std::collections::BTreeMap;
 
     /// One primary read of a locus pile: `de:f`, 0-based reference start, `--eqx` CIGAR ops, sequence
@@ -76511,7 +76661,7 @@ pub mod candidates {
         //! **STATUS:** OTHER-BINARY — reached only from the `candidate_copies` binary (`src/candidate_copies.rs`; the driver's `candidates` stage runs that binary, an OPT-IN stage since ruling R14: Amendment 12 failed, its re-run A13 passed (docs/archive/2026-10/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md); and Amendment 14 failed, docs/archive/2026-10/O3_CANDIDATES_CONTROL_A14_2026-10-03.md)  (docs/MODULE_STATUS.md; assigned by reachability, not by this header)
 
         use crate::run_cache as rc;
-        use crate::types::{DetHashMap, DetHashSet};
+        use crate::types::DetHashMap;
         use anyhow::Context;
         use std::collections::BTreeMap;
         use std::io::Write;
@@ -83559,6 +83709,32 @@ impl Drop for PermitGuard {
     fn drop(&mut self) {
         *self.pool.free.lock().unwrap() += self.n;
         self.pool.cv.notify_all();
+    }
+}
+/// Audit round 66: the star slots free right now, taken by a LARGE read-star alignment (reads x copies >= 50,000) on top of
+/// its own slot, so it runs on that many more minimap2 threads (output does not depend on `-t`, round 20). A119b: one family
+/// (2,025 molecules x 150 copies) took 126 s on one slot's 16 threads. Never waits; the guards give the slots back on drop.
+/// shortcut: one fixed size threshold, tune it if mid-sized families start to queue behind a borrower.
+pub(crate) fn borrow_free_slots(pool: &'static Permits, n_reads: usize, n_copies: usize) -> Vec<PermitGuard> {
+    if n_reads.saturating_mul(n_copies) < 50_000 {
+        return Vec::new();
+    }
+    std::iter::from_fn(|| pool.try_acquire(1)).collect()
+}
+#[cfg(test)]
+mod star_borrow_tests {
+    /// Audit round 66: a large read-star alignment borrows the star slots nobody holds, and gives them back.
+    #[test]
+    fn a_large_alignment_borrows_the_free_slots_and_returns_them() {
+        let pool: &'static super::Permits = Box::leak(Box::new(super::Permits::new(4)));
+        let own = pool.acquire(1);
+        assert!(super::borrow_free_slots(pool, 10, 100).is_empty(), "a small alignment borrows nothing");
+        let extra = super::borrow_free_slots(pool, 2_000, 150);
+        assert_eq!((extra.len(), *pool.free.lock().unwrap()), (3, 0));
+        drop(extra);
+        assert_eq!(*pool.free.lock().unwrap(), 3);
+        drop(own);
+        assert_eq!(*pool.free.lock().unwrap(), 4);
     }
 }
 pub(crate) static STAR_SLOTS: std::sync::OnceLock<Permits> = std::sync::OnceLock::new();

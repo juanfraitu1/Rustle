@@ -172,6 +172,22 @@ fn baseline(d: &PathBuf) -> Baseline {
     Baseline { out, assignments, sites, assigned_cert }
 }
 
+/// User ruling 2026-11-13: a contested molecule with one candidate copy is `tied` by default; `--sole-candidate` restores
+/// the promotion. The params table records which rule ran.
+#[test]
+fn sole_candidates_are_promoted_only_with_the_flag() {
+    let d = scratch("sole");
+    let (o, def) = run(&d, "def", &[]);
+    assert!(o.status.success(), "default run failed:\n{}", stderr(&o));
+    assert!(rows(&read(&def, "assignments.tsv")).iter().all(|r| r["sole_candidate"] != "1"), "default must promote no sole candidate");
+    assert!(read(&def, "params.tsv").contains("sole_candidate\tfalse"));
+    let (o, on) = run(&d, "on", &["--sole-candidate"]);
+    assert!(o.status.success(), "--sole-candidate run failed:\n{}", stderr(&o));
+    assert!(read(&on, "params.tsv").contains("sole_candidate\ttrue"));
+    let n = rows(&read(&on, "assignments.tsv")).iter().filter(|r| r["sole_candidate"] == "1").count();
+    eprintln!("sole rows with the flag: {n}");
+}
+
 /// 2. Every read-star position FIXED: non-strict changes no call and marks every assigned certificate row PORTABLE;
 /// strict reproduces the baseline's certificate-decided Assigned set, and that set is not empty.
 #[test]

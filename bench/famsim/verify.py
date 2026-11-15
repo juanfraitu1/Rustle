@@ -190,6 +190,8 @@ def run(out_dir, threads=1, allow_background_homology=False, log=print):
                 dlen += sum(len(ev.get("ins", "")) - ev.get("del", 0) for ev in o["events"])
             elif op == "intron_resize":
                 dlen += o["new"] - o["old"]
+            elif op == "retro":
+                n_rna = n_dna = 1; dlen -= o["removed_bp"]
             elif op == "convert" and "bp" in o and "exon" in o:
                 src = byid.get(o["source"])
                 mine = next((x for x in p.model.exons if x.label == o["label"]), None)

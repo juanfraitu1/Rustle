@@ -44,8 +44,10 @@ def tier_target(gn):
         if 'N' not in r.cigarstring: continue
         c = chain_of(r)
         if c not in want: continue
-        e = d.setdefault(c, [0, 0])
-        if not r.is_secondary: e[0] += 1
+        e = d.setdefault(c, [0, 0, 0])
+        if not r.is_secondary:
+            e[0] += 1
+            if r.query_name not in _rival: e[2] += 1  # r1627: a primary record of a molecule with no rival placement
         else:
             b = _best.get(r.query_name)
             if b and r.has_tag('AS') and r.get_tag('AS') >= 0.98 * b: e[1] += 1
@@ -134,11 +136,14 @@ def main():
         if (a.query_name, a.reference_name) not in best or AS > best[(a.query_name, a.reference_name)][0]:
             best[(a.query_name, a.reference_name)] = (AS, a)
     CANON = {('GT', 'AG'), ('GC', 'AG'), ('AT', 'AC')}
-    best_as = {}
+    best_as = {}; rival = set()
     with open(opt['--as-table']) as fh:  # molecules with > 1 record: name -> genome-wide best AS (the good pool's tie set)
         for l in fh:
             f = l.rstrip('\n').split('\t')
-            if len(f) > 3 and f[0][0] != '#' and f[3].isdigit() and int(f[3]) > 1 and f[1].isdigit(): best_as[f[0]] = int(f[1])
+            if len(f) > 3 and f[0][0] != '#' and f[3].isdigit() and int(f[3]) > 1 and f[1].isdigit():
+                best_as[f[0]] = int(f[1])
+                if f[2].lstrip('-').isdigit() and int(f[2]) >= 0.98 * int(f[1]): rival.add(f[0])
+    concordant = set(); informed = set()
     rows = []; cnt = collections.Counter(); motif_n = motif_ok = 0; gained = collections.defaultdict(set); want = {}
     for (tn, gn), (AS, a) in best.items():
         t = tmeta[tn]; g = gmeta[gn]; m = g['m']
@@ -157,7 +162,8 @@ def main():
         if len(exons) < 2: cnt['unspliced_at_target'] += 1; continue
         if exons[0][0] < m['start'] - 5000 or exons[-1][1] > m['end'] + 5000: cnt['outside_locus'] += 1; continue
         introns = tuple((x[1], y[0]) for x, y in zip(exons, exons[1:]))
-        if introns in m['chains']: cnt['already'] += 1; continue
+        informed.add((m['chrom'], m['start'], m['end'], m['strand']))  # r1629: a sibling model projects onto this member
+        if introns in m['chains']: cnt['already'] += 1; concordant.add((m['chrom'], strand, introns)); continue
         ok = 0
         for d, ac in introns:
             dn = fa.fetch(m['chrom'], d, d + 2).upper(); acc = fa.fetch(m['chrom'], ac - 2, ac).upper()
@@ -168,12 +174,17 @@ def main():
         motif_n += len(introns); motif_ok += ok
         want.setdefault(gn, set()).add(introns)
         rows.append([m['chrom'], strand, exons, None, tn, t['tid'], t['copy'], g['fam'], m['idx'], cov, ident, ok, len(introns), 0, 0, gn, introns])
+    with open(f'{out}/concordant.tsv', 'w') as w:
+        for c, st, ints in sorted(concordant): w.write(f"{c}\t{st}\t{','.join(f'{a}-{b}' for a, b in ints)}\n")
+    with open(f'{out}/informed.tsv', 'w') as w:
+        for x in sorted(informed): w.write('\t'.join(map(str, x)) + '\n')
+    if os.environ.get('PROJECT_NO_TIERS'): return
     # tiers: one BAM pass per target copy in worker processes (the chr13 hotspot copies carry ~1M records each), keeping only
     # the projected chains. tied = a SECONDARY record with the exact chain whose AS >= 0.98 x the molecule's genome-wide best
     # (the good pool's tie: the molecule's best placement is a near-identical copy, i.e. another member).
     from multiprocessing import Pool
-    global _bam_path, _want, _gmeta, _glen, _best
-    _bam_path, _want, _gmeta, _glen, _best = bam_path, want, gmeta, glen, best_as
+    global _bam_path, _want, _gmeta, _glen, _best, _rival
+    _bam_path, _want, _gmeta, _glen, _best, _rival = bam_path, want, gmeta, glen, best_as, rival
     with Pool(16) as pool:
         tiers = dict(pool.imap_unordered(tier_target, sorted(gmeta), chunksize=1))
     with open(f'{out}/targets.tsv', 'w') as w:  # every target, with its T (r1522 gate); all targets are visited so the arm-G base control can be cut
@@ -182,17 +193,18 @@ def main():
             m = g['m']; w.write(f"{gn}\t{g['fam']}\t{m['idx']}\t{m['chrom']}\t{m['start']}\t{m['end']}\t{m['reads']}\t{tiers[gn][1]}\t{','.join(m['tx'])}\n")
     tiers = {gn: v[0] for gn, v in tiers.items()}
     for row in rows:
-        gn, introns = row[15], row[16]; n_pri, n_tied = tiers[gn].get(introns, (0, 0))
+        gn, introns = row[15], row[16]; n_pri, n_tied, n_clean = tiers[gn].get(introns, (0, 0, 0))
         tier = 'own' if n_pri else 'tied' if n_tied else 'none'
         row[3], row[13], row[14] = tier, n_pri, n_tied
+        row.insert(15, n_clean)
         cnt[tier] += 1
         if gmeta[gn]['m']['reads'] <= 2: gained[(gmeta[gn]['fam'], gmeta[gn]['m']['idx'])].add(tier)
-    rows = [tuple(r[:15]) for r in rows]
+    rows = [tuple(r[:16]) for r in rows]
     ws = {k: open(f'{out}/tier_{k}.gtf', 'w') for k in ('own', 'tied', 'none')}
     with open(f'{out}/projected.gtf', 'w') as w:
-        for i, (c, s, ex, tier, tn, tid, fc, f, mi, cov, ident, ok, ni, npri, nsec) in enumerate(rows):
+        for i, (c, s, ex, tier, tn, tid, fc, f, mi, cov, ident, ok, ni, npri, nsec, nclean) in enumerate(rows):
             pid = f'PJ{i}_{f}_{mi}'
-            attr = f'gene_id "{f}_{mi}"; transcript_id "{pid}"; tier "{tier}"; template "{tid}"; from_copy "{fc}"; cov "{cov:.3f}"; ident "{ident:.3f}"; motif "{ok}/{ni}"; n_primary "{npri}"; n_tied "{nsec}";'
+            attr = f'gene_id "{f}_{mi}"; transcript_id "{pid}"; tier "{tier}"; template "{tid}"; from_copy "{fc}"; cov "{cov:.3f}"; ident "{ident:.3f}"; motif "{ok}/{ni}"; n_primary "{npri}"; n_tied "{nsec}"; n_clean "{nclean}";'
             lines = [f'{c}\tproject\ttranscript\t{ex[0][0] + 1}\t{ex[-1][1]}\t.\t{s}\t.\t{attr}\n'] + [f'{c}\tproject\texon\t{x + 1}\t{y}\t.\t{s}\t.\tgene_id "{f}_{mi}"; transcript_id "{pid}";\n' for x, y in ex]
             w.writelines(lines); ws[tier].writelines(lines)
     for h in ws.values(): h.close()

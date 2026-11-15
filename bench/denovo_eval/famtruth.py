@@ -196,8 +196,8 @@ def load_ggo(human, path=None):
     genes = {g: d for g, d in genes.items() if d['exons']}
     if _os.environ.get('DENOVO_GGO_ENS_MAP'):  # r1611: gene id -> human Ensembl gene (best protein hit) for genes with no symbol-inherited id
         for line in open(_os.environ['DENOVO_GGO_ENS_MAP']):
-            g, e = line.split()[:2]
-            if g in genes and not genes[g]['ens']:
+            g, e = (line.split() + ['', ''])[:2]
+            if e and g in genes and not genes[g]['ens']:
                 genes[g]['ens'] = {e}
     GENES.clear()
     GENES.update(genes)

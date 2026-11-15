@@ -16,14 +16,18 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use rustle::annotation_families::{
-    build_clusters, fold_graph, fold_parts_into_loci, fold_parts_into_loci_opt, graph_from_paf_loci_stranded, loci_from_exon_blocks, parse_gene_key,
+    build_clusters, fold_graph, fold_parts_into_loci_opt, graph_from_paf_loci_stranded, loci_from_exon_blocks, parse_gene_key,
     mcl_pair_rule_counted, sd_blocks, damp_non_sd_edges, add_sd_edges, sd_linked_pairs, Cluster, CoreStatus, GeneKey, GraphParams, PairRule, SdPairs,
 };
+#[cfg(test)]
+use rustle::annotation_families::fold_parts_into_loci;
 use rustle::fam_from_gtf::{
-    clip_extents_to_neighbours, exonic_blocks, gene_strands, gtf_loci, junction_count,
+    clip_extents_to_neighbours, exonic_blocks, gene_strands,
     lengths_from_blocks, loci_from_gtf, relation_loci, rep_frac_in, write_locus_rep_copies,
     GtfLocus, RepCopyStats, Representative,
 };
+#[cfg(test)]
+use rustle::fam_from_gtf::{gtf_loci, junction_count};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 
@@ -861,6 +865,35 @@ fn hierarchy_inputs(args: &Args) -> (Option<String>, Option<String>) {
     }
 }
 
+/// A unit's sequence: its exons (0-based half-open) joined, reverse-complemented on the minus strand.
+fn unit_seq(genome: &rustle::genome::GenomeIndex, chrom: &str, exons: &[(u64, u64)], strand: char) -> Result<Vec<u8>> {
+    let mut seq: Vec<u8> = Vec::new();
+    for &(s, e) in exons {
+        let Some(part) = genome.fetch_sequence(chrom, s, e) else {
+            anyhow::bail!("--emit-units: {chrom}:{s}-{e} is not in --fasta")
+        };
+        seq.extend_from_slice(&part);
+    }
+    Ok(if strand == '-' { rustle::seq_utils::revcomp_keep_case(&seq) } else { seq })
+}
+
+/// A member's exon blocks for `rustle::family_hierarchy`, which reads GFF 1-based closed exons: `blocks` are 0-based
+/// half-open (`exonic_blocks`), merged here; a member without exon records is its span (already 1-based closed).
+fn hierarchy_exons(mut blocks: Vec<(u64, u64)>, span: (u64, u64)) -> Vec<(u64, u64)> {
+    blocks.sort();
+    let mut merged: Vec<(u64, u64)> = vec![];
+    for (s, e) in blocks {
+        match merged.last_mut() {
+            Some(l) if s <= l.1 => l.1 = l.1.max(e),
+            _ => merged.push((s, e)),
+        }
+    }
+    if merged.is_empty() {
+        return vec![span];
+    }
+    merged.into_iter().map(|(s, e)| (s + 1, e)).collect()
+}
+
 /// `--emit-hierarchy`: the hierarchy tables of `rustle::family_hierarchy` for the clusters just written. Annotation only.
 #[allow(clippy::too_many_arguments)]
 fn write_hierarchy(
@@ -898,19 +931,7 @@ fn write_hierarchy(
         }
     }
     let exons_of = |m: &GeneKey| -> Vec<(u64, u64)> {
-        let mut v: Vec<(u64, u64)> = recs[m].iter().flat_map(|r| blocks.get(r).cloned().unwrap_or_default()).collect();
-        v.sort();
-        let mut merged: Vec<(u64, u64)> = vec![];
-        for (s, e) in v {
-            match merged.last_mut() {
-                Some(l) if s <= l.1 => l.1 = l.1.max(e),
-                _ => merged.push((s, e)),
-            }
-        }
-        if merged.is_empty() {
-            merged.push((m.1.saturating_sub(1), m.2)); // no exon record: the span, 0-based half-open (as `exonless_span`)
-        }
-        merged
+        hierarchy_exons(recs[m].iter().flat_map(|r| blocks.get(r).cloned().unwrap_or_default()).collect(), (m.1, m.2))
     };
     struct Row {
         fam: String,
@@ -1533,6 +1554,11 @@ fn main() -> Result<()> {
         Some(bed) if sd_damp < 1.0 || args.sd_add_edges.is_some() => {
             let sd = SdPairs::from_bed_str(&std::fs::read_to_string(bed).with_context(|| format!("reading {bed}"))?);
             anyhow::ensure!(sd.n_pairs() > 0, "--sd-damp-bed {bed}: no SD pair parsed");
+            anyhow::ensure!(
+                g.n_nodes() == 0 || sd.has_any_contig(g.genes.iter().map(|k| k.0.as_str())),
+                "--sd-damp-bed {bed}: none of its contigs is a contig of the loci (another assembly or naming?); \
+                 damping would weaken every edge"
+            );
             let linked = sd_linked_pairs(&g, &blocks, &sd);
             let (kept, damped) = if sd_damp < 1.0 { damp_non_sd_edges(&mut g, &linked, sd_damp) } else { (0, 0) };
             let added = args.sd_add_edges.map_or(0, |w| add_sd_edges(&mut g, &linked, w));
@@ -1621,13 +1647,13 @@ fn main() -> Result<()> {
                  evidence (--min-shared-exon-frac > 0 or --exonic-both-sides)"
             );
         }
-        if g.no_cigar_records > 0 {
-            anyhow::bail!(
-                "--shared-exon-columns: {} PAF record(s) carry no cg:Z: tag (or one that does not span the record), so \
-                 their exon-to-exon columns cannot be counted; the all-vs-all must be minimap2 -c output",
-                g.no_cigar_records
-            );
-        }
+    }
+    if g.no_cigar_records > 0 {
+        anyhow::bail!(
+            "--shared-exon-columns / --min-exon-share: {} PAF record(s) carry no cg:Z: tag (or one that does not span the \
+             record), so their exon-to-exon columns cannot be counted; the all-vs-all must be minimap2 -c output",
+            g.no_cigar_records
+        );
     }
     if p.reject_overlapping {
         eprintln!(
@@ -2149,7 +2175,7 @@ fn main() -> Result<()> {
                 };
                 let (_, reads) = rustle::denovo_assemble::reads_in_region(bam, &m.0, lo, hi, 1)
                     .with_context(|| format!("reading {}:{}-{}", m.0, lo, hi))?;
-                let (chain, rstrand, n_reads) = read_chain(
+                let (chain, rstrand, _n_reads) = read_chain(
                     &reads,
                     lo,
                     hi,
@@ -2215,16 +2241,7 @@ fn main() -> Result<()> {
                     }
                 }
                 let n_reads = n_in_chain;
-                let mut seq: Vec<u8> = Vec::new();
-                for &(s, e) in &exons {
-                    let Some(part) = genome.fetch_sequence(&m.0, s, e) else {
-                        anyhow::bail!("--emit-units: {}:{s}-{e} is not in --fasta", m.0)
-                    };
-                    seq.extend_from_slice(&part);
-                }
-                if strand == '-' {
-                    seq = rustle::seq_utils::revcomp_keep_case(&seq);
-                }
+                let seq = unit_seq(&genome, &m.0, &exons, strand)?;
                 let (sd_depth, core_bp) = core_records
                     .get(i)
                     .and_then(|v| v.get(mi))
@@ -2441,15 +2458,15 @@ fn main() -> Result<()> {
                         out.sort_unstable();
                         if out != u.exons {
                             cross_trimmed += 1;
+                            // audit round 70: `units.fa` kept the sequence of the exons before the trim
+                            u.seq = unit_seq(&genome, &u.member.0, &out, u.strand)?;
                         }
                         u.exons = out;
                     }
                 }
             }
-            // a unit trimmed to nothing is no longer a unit
-            for (_, pending, _) in staged.iter_mut() {
-                pending.retain(|u| !u.exons.is_empty());
-            }
+            // a unit trimmed to nothing is no longer a unit. It keeps its place (`merged_into` and the read-through
+            // evidence index the units by position: audit round 70, removing it shifted them) and is skipped below.
             eprintln!(
                 "[mcl_families] no-cross-family-exon-overlap: {cross_trimmed} unit(s) trimmed"
             );
@@ -2462,7 +2479,7 @@ fn main() -> Result<()> {
             let mut by_ctg: BTreeMap<&str, Vec<(usize, usize)>> = BTreeMap::new();
             for (fi, (_, pending, merged_into)) in staged.iter().enumerate() {
                 for (k, u) in pending.iter().enumerate() {
-                    if merged_into[k].is_none() {
+                    if merged_into[k].is_none() && !u.exons.is_empty() {
                         by_ctg.entry(u.member.0.as_str()).or_default().push((fi, k));
                     }
                 }
@@ -2494,7 +2511,7 @@ fn main() -> Result<()> {
                 let mut where_of: Vec<(usize, usize)> = Vec::new();
                 for (fi, (_, pending, merged_into)) in staged.iter().enumerate() {
                     for (k, u) in pending.iter().enumerate() {
-                        if merged_into[k].is_none() {
+                        if merged_into[k].is_none() && !u.exons.is_empty() {
                             flat.push((u.member.0.clone(), u.exons.clone()));
                             where_of.push((fi, k));
                         }
@@ -2594,6 +2611,9 @@ fn main() -> Result<()> {
                         u.member.0, u.member.1, u.member.2, r.member.0, r.member.1, r.member.2
                     )?;
                     unit_stats.3 += 1;
+                    continue;
+                }
+                if u.exons.is_empty() {
                     continue;
                 }
                 if u.source == "read_chain" {
@@ -3104,6 +3124,27 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Audit round 70: a unit's sequence is rebuilt from its exons after the cross-family trim, so the routine that
+    /// builds it is pinned: exons joined in order, reverse-complemented on the minus strand, an absent contig refused.
+    #[test]
+    fn unit_seq_joins_the_exons_and_follows_the_strand() {
+        let dir = tempfile::tempdir().unwrap();
+        let fasta = dir.path().join("g.fa");
+        std::fs::write(&fasta, ">c1\nAACCGGTTAC\n").unwrap();
+        let genome = rustle::genome::GenomeIndex::from_fasta(&fasta.to_string_lossy()).unwrap();
+        assert_eq!(unit_seq(&genome, "c1", &[(0, 2), (4, 7)], '+').unwrap(), b"AAGGT");
+        assert_eq!(unit_seq(&genome, "c1", &[(0, 2), (4, 7)], '-').unwrap(), b"ACCTT");
+        assert_eq!(unit_seq(&genome, "c1", &[(4, 7)], '+').unwrap(), b"GGT", "a trimmed unit gets the trimmed sequence");
+        assert!(unit_seq(&genome, "nope", &[(0, 2)], '+').is_err());
+    }
+
+    #[test]
+    fn hierarchy_exons_are_gff_coordinates() {
+        // 0-based half-open [1000,1100) is GFF 1001..=1100: a duplicon ending at 1000 must not touch it
+        assert_eq!(hierarchy_exons(vec![(1000, 1100), (1050, 1200), (5000, 5010)], (1, 9)), [(1001, 1200), (5001, 5010)]);
+        assert_eq!(hierarchy_exons(vec![], (1001, 1100)), [(1001, 1100)]);
+    }
     use rustle::copy_split::AlignedRead;
     use rustle::denovo_assemble::BamRead;
 

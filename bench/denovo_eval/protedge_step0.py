@@ -75,7 +75,7 @@ def prep(gtf, genome, copies, out):
 
 def score(out):
     st = pickle.load(open(f'{out}/state.pkl', 'rb')); names, truth, pred, cg = st['names'], st['truth'], st['pred'], st['coding_genes']
-    same = lambda p: os.environ.get('PAIRSCORE_SAME_SYMBOL') == 'ignore' and names[p[0]] == names[p[1]]
+    same = lambda p: os.environ.get('PAIRSCORE_SAME_SYMBOL', 'ignore') == 'ignore' and names[p[0]] == names[p[1]]
     coding_pred = {p for p in pred if p[0] in cg and p[1] in cg and not same(p)}
     missed = {p for p in truth if p not in coding_pred and not same(p)}
     link = {}

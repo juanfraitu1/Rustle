@@ -310,3 +310,37 @@ fn low_mem_caps_family_threads_at_16() {
     assert!(run(&["--low-mem"]).contains("--threads 16 "), "{}", recorded(&dir));
     assert!(run(&[]).contains("--threads 72 "), "{}", recorded(&dir));
 }
+
+/// Row 1662 (2026-11-13): `families` adds extra locus representatives by default. The first run's table stays as
+/// `PREFIX.fam.base.copies.*`; `RUSTLE_FAMREPS=0` writes the one table only. The stub here writes a whole copy table
+/// (the default stub writes no FASTA, which is the old-binary case: famreps is skipped).
+#[test]
+fn families_keeps_the_first_table_as_base_unless_famreps_is_off() {
+    let row = "MCL0\t{i}\tt{i}\tc1\t{s}\t{e}\t1\t+\t5\t{s}-{e}\t1.0\tlocus_rep\tg{i}\tNA\tNA\tNA\tNA\tungated\t{s}\t{e}\n";
+    let rows: String = [(0, 100, 200), (1, 1000, 1100)]
+        .iter()
+        .map(|(i, s, e)| row.replace("{i}", &i.to_string()).replace("{s}", &s.to_string()).replace("{e}", &e.to_string()))
+        .collect();
+    for (name, off) in [("famreps_on", false), ("famreps_off", true)] {
+        let d = scratch(name);
+        gtfs(&d, true);
+        let stub = d.join("bin/mcl_families");
+        let mut sh = std::fs::read_to_string(&stub).unwrap();
+        sh.push_str(&format!(
+            "printf 'family_id\\tcopy_idx\\ttid\\tchrom\\tstart\\tend\\tn_exon\\tstrand\\tn_reads\\texons\\tmax_family_identity\\tsource\\tgene_id\\tcore_hull\\tsd_depth\\tcore_bp\\trep_frac\\tmember_status\\tlocus_start\\tlocus_end\\n{}' > $OUT.copies.tsv\n\
+             printf '>MCL0|0|c1:100-200|+|nexon=1\\nACGT\\n>MCL0|1|c1:1000-1100|+|nexon=1\\nACGT\\n' > $OUT.copies.fa\n\
+             printf 'MCL0\\tc1:0-6100\\n' > $OUT.copies.regions\n: > $OUT.loci.gated.paf\n",
+            rows.replace('\t', "\\t").replace('\n', "\\n")
+        ));
+        std::fs::write(&stub, sh).unwrap();
+        let o = families(&d, if off { &[("RUSTLE_FAMREPS", "0")] } else { &[] });
+        assert!(o.status.success(), "{name}: {}", err(&o));
+        assert!(d.join("run.fam.copies.fa").exists(), "{name}");
+        assert_eq!(d.join("run.fam.base.copies.tsv").exists(), !off, "{name}: {}", err(&o));
+        if !off {
+            let (a, b) = (d.join("run.fam.base.copies.tsv"), d.join("run.fam.copies.tsv"));
+            // nothing to add in a two-locus stub: the installed table has the same copies
+            assert_eq!(std::fs::read_to_string(a).unwrap().lines().count(), std::fs::read_to_string(b).unwrap().lines().count());
+        }
+    }
+}

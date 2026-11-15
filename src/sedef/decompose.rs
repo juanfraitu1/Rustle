@@ -240,7 +240,7 @@ fn block_segments(b: &BlockAnchors, p: &DecomposeParams) -> Vec<Segment> {
 /// overlap). Returns representative segments. Group representatives are
 /// chosen deterministically (max anchors, then lexicographically smallest
 /// coordinates) so reruns are bit-identical.
-fn dedup_segments(mut segs: Vec<Segment>) -> Vec<Segment> {
+fn dedup_segments(segs: Vec<Segment>) -> Vec<Segment> {
     let n = segs.len();
     if n <= 1 {
         return segs;

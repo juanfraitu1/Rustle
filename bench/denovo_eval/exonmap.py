@@ -4,6 +4,8 @@
   exonmap.py [--threads N] FAM_PREFIX OUT_PREFIX     FAM_PREFIX = PREFIX.fam (reads .clusters.tsv, .loci.gff3, .loci.gated.paf)
   exonmap.py split S1|S50 FAM_PREFIX OUT_PREFIX.columns.tsv OUT.copies.tsv   row 1597: split families into components of
                                                   members sharing >= 1 column (S1) or >= half the smaller member's columns (S50)
+  exonmap.py gfa FAM_PREFIX OUT_PREFIX.columns.tsv OUTDIR    a graph view of each family (GFA 1.0 + Bandage colours): one segment
+                                                  per column tagged CL:Z:core|accessory|private and NC:i:members, one path per member
   exonmap.py --selftest
 Member = a clusters.tsv node key CONTIG:START-END (= the PAF name; its loci.gff3 exons = copies.tsv exons).
 Exon match = exonshare.py's 50% reciprocal projection through the pair's max-SHARE record (ties: earlier in the PAF).
@@ -226,6 +228,43 @@ def split(mode, prefix, columns, out):
           f'copies unmapped to a node {unmapped} -> {out}')
 
 
+COLOUR = {'core': '#1f77b4', 'accessory': '#9ecae1', 'private': '#ff7f0e'}
+
+
+def gfa_lines(fam, rows, strand):
+    """rows: one family's columns.tsv rows; strand: member key -> '+'/'-'. Returns (GFA lines, Bandage colour lines).
+    A segment is a whole exon column (no sequence, LN = median exon length); a member's path visits its exons 5' to 3'."""
+    segs, cols, walk = [], ['Name,Colour'], collections.defaultdict(list)
+    for r in rows:
+        lens = []
+        for e in r['exons'].split(','):
+            k, rest = e.split('#'); i, span = rest.split(':'); a, b = span.split('-')
+            lens.append(int(b) - int(a)); walk[k].append((int(i), r['column']))
+        segs.append(f"S\t{r['column']}\t*\tLN:i:{sorted(lens)[len(lens) // 2]}\tCL:Z:{r['class']}\tNC:i:{r['n_loci']}")
+        cols.append(f"{r['column']},{COLOUR[r['class']]}")
+    paths, links = [], set()
+    for k in sorted(walk):
+        p = [c for _, c in sorted(walk[k], reverse=strand[k] == '-')]
+        links.update(zip(p, p[1:]))
+        paths.append(f"P\t{k}\t{','.join(c + '+' for c in p)}\t*")
+    head = ['H\tVN:Z:1.0', f'# graph view of O1 family {fam}, built by exonmap.py from the families stage output; not used to define families']
+    return head + segs + [f'L\t{a}\t+\t{b}\t+\t0M' for a, b in sorted(links)] + paths, cols
+
+
+def gfa(prefix, columns, outdir):
+    import protedge as P
+    strand = {k: v[1] for k, v in P.read_loci(prefix + '.loci.gff3').items()}
+    fams = collections.defaultdict(list)
+    for r in csv.DictReader(open(columns), delimiter='\t'):
+        fams[r['family']].append(r)
+    os.makedirs(outdir, exist_ok=True)
+    for fam, rows in fams.items():
+        g, c = gfa_lines(fam, rows, strand)
+        open(os.path.join(outdir, fam + '.gfa'), 'w').write('\n'.join(g) + '\n')
+        open(os.path.join(outdir, fam + '.colours.csv'), 'w').write('\n'.join(c) + '\n')
+    print(f'gfa: {len(fams)} families -> {outdir}')
+
+
 def selftest():
     # identical 3-exon loci, '+': every exon matches its counterpart
     ea = [(0, 100), (200, 300), (400, 500)]
@@ -249,6 +288,13 @@ def selftest():
     cols = {'A': {1, 2, 3, 4}, 'B': {1, 2, 5, 6}, 'C': {7}, 'D': {1, 8, 9, 10}}
     assert components(['A', 'B', 'C', 'D'], cols, 'S1') == [['A', 'B', 'D'], ['C']]
     assert components(['A', 'B', 'C', 'D'], cols, 'S50') == [['A', 'B'], ['C'], ['D']]
+    # graph view: A (+) has exons 0, 1; B (-) has one exon matching A's exon 1; the minus member is walked 3' exon first
+    rows = [dict(column='C0', **{'class': 'private'}, n_loci='1', exons='c:1-9#0:0-3'),
+            dict(column='C1', **{'class': 'core'}, n_loci='2', exons='c:1-9#1:5-9,c:20-40#1:30-40'),
+            dict(column='C2', **{'class': 'private'}, n_loci='1', exons='c:20-40#0:20-25')]
+    g, c = gfa_lines('F', rows, {'c:1-9': '+', 'c:20-40': '-'})
+    assert 'S\tC1\t*\tLN:i:10\tCL:Z:core\tNC:i:2' in g and 'P\tc:1-9\tC0+,C1+\t*' in g and 'P\tc:20-40\tC1+,C2+\t*' in g, g
+    assert 'L\tC0\t+\tC1\t+\t0M' in g and 'L\tC1\t+\tC2\t+\t0M' in g and c[2] == 'C1,#1f77b4'
     print('selftest ok')
 
 
@@ -256,6 +302,8 @@ if __name__ == '__main__':
     a = sys.argv[1:]
     if a[0] == '--selftest':
         selftest()
+    elif a[0] == 'gfa':
+        gfa(*a[1:4])
     elif a[0] == 'split':
         split(*a[1:5])
     else:

@@ -1,0 +1,6 @@
+# genome	contig	how identified
+ref	NC_073247.2	GGO_genomic.gff region chromosome=X
+ref	NC_073248.2	GGO_genomic.gff region chromosome=Y
+ref	NC_011120.1	GGO_genomic.gff region genome=mitochondrion
+mat	CM054605.2	GCA_028885495.2 header: chromosome X
+pat	CM054581.2	GCA_028885475.2 header: chromosome Y

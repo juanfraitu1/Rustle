@@ -9,6 +9,7 @@
 //!                        --regions P.fam.copies.regions --cand P.cand --out P.aug
 //!   utilities sd-scan --genome FA --out PREFIX [--threads 4]     (or --version-key)
 //!   utilities sample-counts --gtf FINAL.gtf --bam A.bam,B.bam --samples A,B --out COUNTS.tsv
+//!   utilities guide --gtf DENOVO.gtf --guide GUIDE.gtf[.gz] --bam BAM --out GUIDED.gtf
 //!   utilities end-artifacts --gtf FINAL.gtf --fasta G.fa --out OUT.gtf [--mode drop|tag] [--flags FLAGS.tsv]
 
 use anyhow::Result;
@@ -35,6 +36,24 @@ enum Cmd {
         samples: String,
         #[arg(long)]
         out: String,
+    },
+    /// Guided mode (register 1622, rule G1d, src/guide.rs): the de novo GTF plus the guide transcripts that have a
+    /// full-chain primary alignment, minus de novo chains the guide explains or that lack support outside it.
+    Guide {
+        /// The de novo assembly (PREFIX.gtf); never modified.
+        #[arg(long)]
+        gtf: String,
+        /// The guide annotation, GTF (plain or .gz) with transcript_id on its exon lines.
+        #[arg(long)]
+        guide: String,
+        /// Coordinate-sorted, with its .bai.
+        #[arg(long)]
+        bam: String,
+        #[arg(long)]
+        out: String,
+        /// Contigs read in parallel.
+        #[arg(long, default_value_t = 4)]
+        threads: usize,
     },
     /// End-artifact layer (register 1500, rule E): drop or tag models with an RT-switching junction or an A-run after the
     /// 3' end (> 60% A in 20 bp) that have reads <= 2. SQANTI3 6.1 definitions, our code (src/end_artifacts.rs).
@@ -209,6 +228,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
         Cmd::GffToGtf { gff, chrom, out } => gff_to_gtf::run(&gff, &chrom, &out),
+        Cmd::Guide { gtf, guide, bam, out, threads } => guide_run(&gtf, &guide, &bam, &out, threads),
         Cmd::SampleCounts { gtf, bam, samples, out } => sample_counts_run(&gtf, &bam, &samples, &out),
         Cmd::EndArtifacts { gtf, fasta, out, mode, flags, rule } => end_artifacts_run(&gtf, &fasta, &out, &mode, flags.as_deref(), &rule),
         Cmd::LocusBed {
@@ -2050,4 +2070,152 @@ mod window_depth_tests {
         assert_eq!((w[0].2, w[0].3), (995_000, 1_017_000));
         assert_eq!((w[1].2, w[1].3), (0, 50_900), "no region holds it: the unclipped window");
     }
+}
+
+fn guide_run(gtf: &str, guide: &str, bam: &str, out: &str, threads: usize) -> Result<()> {
+    use anyhow::{ensure, Context};
+    use noodles_sam::alignment::record::cigar::op::Kind;
+    use rustle::guide::{chain, verdict, Chain, GuideSet, Verdict};
+    use std::collections::{BTreeMap, HashMap};
+    use std::io::{BufRead, Write};
+    // guide: transcript -> (chrom, strand, exons), in file order
+    let rd: Box<dyn BufRead> = if guide.ends_with(".gz") {
+        Box::new(std::io::BufReader::new(flate2::read::MultiGzDecoder::new(std::fs::File::open(guide).with_context(|| format!("open {guide}"))?)))
+    } else {
+        Box::new(std::io::BufReader::new(std::fs::File::open(guide).with_context(|| format!("open {guide}"))?))
+    };
+    let mut gtx: Vec<(String, String, char, Vec<(i64, i64)>)> = Vec::new();
+    let mut at: HashMap<String, usize> = HashMap::new();
+    for line in rd.lines() {
+        let line = line?;
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 9 || f[2] != "exon" {
+            continue;
+        }
+        let Some(t) = gtf_attr(f[8], "transcript_id") else { continue };
+        let i = *at.entry(t.to_string()).or_insert_with(|| {
+            gtx.push((t.to_string(), f[0].to_string(), f[6].chars().next().unwrap_or('.'), Vec::new()));
+            gtx.len() - 1
+        });
+        gtx[i].3.push((f[3].parse::<i64>()? - 1, f[4].parse::<i64>()?));
+    }
+    ensure!(!gtx.is_empty(), "guide: {guide} has no exon line with a transcript_id (a GTF is needed; convert GFF3 with `utilities gff-to-gtf`)");
+    let mut sets: HashMap<(String, char), GuideSet> = HashMap::new();
+    let mut want: HashMap<String, HashMap<Chain, u32>> = HashMap::new(); // chrom -> guide chain -> full-chain primary alignments
+    for (_, c, s, ex) in gtx.iter_mut() {
+        ex.sort_unstable();
+        let ch = chain(ex);
+        if !ch.is_empty() {
+            want.entry(c.clone()).or_default().insert(ch.clone(), 0);
+            sets.entry((c.clone(), *s)).or_default().insert(ch);
+        }
+    }
+    // one reader per guide contig, through the .bai: the pass is bgzf-bound, so contigs in parallel are the speedup
+    let count = |c: &String, w: &HashMap<Chain, u32>| -> Result<HashMap<Chain, u32>> {
+        let mut w = w.clone();
+        let mut reader = rustle::bam::open_bam(bam, 1).with_context(|| format!("open {bam}"))?;
+        let header = reader.read_header()?;
+        let Some(id) = rustle::bam::seek_to_contig(&mut reader, &header, bam, c)? else { return Ok(w) };
+        for r in reader.records() {
+            let r = r.with_context(|| format!("guide: read {bam}"))?;
+            if r.reference_sequence_id().transpose()? != Some(id) {
+                break;
+            }
+            let fl = r.flags();
+            if fl.is_unmapped() || fl.is_secondary() || fl.is_supplementary() {
+                continue;
+            }
+            let Some(st) = r.alignment_start() else { continue };
+            let mut p = usize::from(st?) as i64 - 1;
+            let mut ch: Chain = Vec::new();
+            for op in r.cigar().iter() {
+                let op = op?;
+                match op.kind() {
+                    Kind::Match | Kind::Deletion | Kind::SequenceMatch | Kind::SequenceMismatch => p += op.len() as i64,
+                    Kind::Skip => {
+                        ch.push((p, p + op.len() as i64));
+                        p += op.len() as i64;
+                    }
+                    _ => {}
+                }
+            }
+            if let Some(n) = w.get_mut(&ch) {
+                *n += 1;
+            }
+        }
+        Ok(w)
+    };
+    let pool = rayon::ThreadPoolBuilder::new().num_threads(threads.max(1)).build()?;
+    let counted: Vec<(String, Result<HashMap<Chain, u32>>)> = pool.install(|| {
+        use rayon::prelude::*;
+        want.par_iter().map(|(c, w)| (c.clone(), count(c, w))).collect()
+    });
+    let mut want: HashMap<String, HashMap<Chain, u32>> = HashMap::new();
+    for (c, w) in counted {
+        want.insert(c, w?);
+    }
+    // de novo: lines grouped by transcript, in file order
+    let text = std::fs::read_to_string(gtf).with_context(|| format!("read {gtf}"))?;
+    let mut order: Vec<&str> = Vec::new();
+    let mut tx: HashMap<&str, (Vec<&str>, Vec<(i64, i64)>, u32, &str, char)> = HashMap::new();
+    let mut head: Vec<&str> = Vec::new();
+    for line in text.lines() {
+        let f: Vec<&str> = line.split('\t').collect();
+        let t = if f.len() >= 9 { gtf_attr(f[8], "transcript_id") } else { None };
+        let Some(t) = t else {
+            head.push(line);
+            continue;
+        };
+        let e = tx.entry(t).or_insert_with(|| {
+            order.push(t);
+            (Vec::new(), Vec::new(), 0, f[0], f[6].chars().next().unwrap_or('.'))
+        });
+        e.0.push(line);
+        if f[2] == "exon" {
+            e.1.push((f[3].parse::<i64>()? - 1, f[4].parse::<i64>()?));
+        } else if f[2] == "transcript" {
+            e.2 = gtf_attr(f[8], "reads").and_then(|x| x.parse().ok()).unwrap_or(0);
+        }
+    }
+    // one verdict per chain: the best-supported de novo model of the chain decides for all of them
+    let mut best: HashMap<(&str, char, Chain), u32> = HashMap::new();
+    for e in tx.values_mut() {
+        e.1.sort_unstable();
+        let k = (e.3, e.4, chain(&e.1));
+        let b = best.entry(k).or_insert(0);
+        *b = (*b).max(e.2);
+    }
+    let mut w = std::io::BufWriter::new(std::fs::File::create(out).with_context(|| format!("create {out}"))?);
+    for l in &head {
+        writeln!(w, "{l}")?;
+    }
+    let mut tally: BTreeMap<String, u64> = BTreeMap::new();
+    for t in &order {
+        let e = &tx[t];
+        let ch = chain(&e.1);
+        let v = verdict(sets.get(&(e.3.to_string(), e.4)), &ch, best[&(e.3, e.4, ch.clone())]);
+        *tally.entry(format!("{v:?}")).or_default() += 1;
+        if v == Verdict::Keep {
+            for l in &e.0 {
+                writeln!(w, "{l}")?;
+            }
+        }
+    }
+    let mut added = 0u64;
+    let mut done: std::collections::HashSet<(&str, char, Chain)> = std::collections::HashSet::new();
+    for (t, c, s, ex) in &gtx {
+        let ch = chain(ex);
+        let n = want.get(c).and_then(|m| m.get(&ch)).copied().unwrap_or(0);
+        if n == 0 || best.contains_key(&(c.as_str(), *s, ch.clone())) || !done.insert((c.as_str(), *s, ch)) {
+            continue;
+        }
+        added += 1;
+        let a = format!("gene_id \"{t}\"; transcript_id \"{t}\"; reads \"{n}\"; guide \"rescued\";");
+        writeln!(w, "{c}\tguide\ttranscript\t{}\t{}\t.\t{s}\t.\t{a}", ex[0].0 + 1, ex[ex.len() - 1].1)?;
+        for (x, y) in ex {
+            writeln!(w, "{c}\tguide\texon\t{}\t{y}\t.\t{s}\t.\t{a}", x + 1)?;
+        }
+    }
+    eprintln!("[guide] de novo models {}: {tally:?}; guide transcripts added {added} (full-chain primary alignments, chain not assembled)", order.len());
+    Ok(())
 }

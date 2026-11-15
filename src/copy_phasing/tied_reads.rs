@@ -5,7 +5,7 @@ use super::pile::{aligned_pairs, cmp_base, oriented, Piles, Prim, Rec};
 use super::{Copy, Params, ReadId, TieWindow, MIN_READS, MIN_SUPPORT, SITE_FLANK};
 use crate::genome::IndexedFasta;
 use anyhow::{Context, Result};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
 /// {read index in the primary's orientation: (reference base, read base, reference position)}.

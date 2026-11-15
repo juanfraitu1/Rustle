@@ -10,7 +10,6 @@
 
 use rayon::prelude::*;
 use rustc_hash::FxHashMap;
-use std::collections::HashMap;
 
 use crate::sedef::kmer::for_each_kmer;
 

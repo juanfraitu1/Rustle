@@ -15,6 +15,7 @@
 pub mod bam;
 pub mod genome;
 pub mod end_artifacts;
+pub mod guide;
 pub mod sample_counts;
 pub mod types;
 

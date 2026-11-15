@@ -28,6 +28,7 @@ with open(as_table) as fh:
         if l[0] == '#': continue
         f = l.split('\t', 4)
         if f[0] in need: best[f[0]] = (int(f[1]), int(f[2]))
+assert need <= best.keys(), f'{len(need - best.keys())} of {len(need)} molecules are not in {as_table}: wrong table for this BAM'
 cnt = {}
 for r in H:
     c = collections.Counter()

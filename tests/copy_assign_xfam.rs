@@ -573,3 +573,34 @@ fn as_tied_gate_keeps_only_exact_ties() {
         );
     }
 }
+
+/// Audit round 66: under `--tied-prefilter` (the pipeline's assign always passes it) the gate's log line counted only
+/// the tied molecules as "all", so it always said 0 were skipped and the "no AS tags" warning could never fire.
+/// The line must be the one the unfiltered read path prints, and the assignments stay the same.
+#[test]
+fn tied_prefilter_reports_the_same_gate_counts() {
+    let dir = scratch("prefilter_counts");
+    let run = |prefilter: bool| -> (String, String) {
+        let out = dir.join(if prefilter { "pre" } else { "plain" });
+        let mut c = Command::new(env!("CARGO_BIN_EXE_copy_assign"));
+        if prefilter {
+            c.arg("--tied-prefilter");
+        }
+        c.args(["--bam", &format!("{FIX}/reads.bam"), "--fasta", &format!("{FIX}/genome.fa")])
+            .args(["--families", &format!("{FIX}/copies.tsv"), "--copies-fa", &format!("{FIX}/copies.fa")])
+            .args(["--region", "x1:0-20000", "--out", out.to_str().unwrap()]);
+        let o = c.output().unwrap();
+        let err = String::from_utf8_lossy(&o.stderr).into_owned();
+        assert!(o.status.success(), "{err}");
+        let gate = err.lines().find(|l| l.contains("AS-TIED GATE")).unwrap_or_else(|| panic!("no gate line:\n{err}")).to_string();
+        (gate, std::fs::read_to_string(format!("{}.assignments.tsv", out.display())).unwrap())
+    };
+    let (plain, pre) = (run(false), run(true));
+    assert_eq!(plain.1, pre.1, "assignments");
+    // audit round 66: the editing filter is not applied to pooled molecule observations (the default); the
+    // parameter record said `true`
+    let params = std::fs::read_to_string(dir.join("plain.params.tsv")).unwrap();
+    assert!(params.lines().any(|l| l == "rna_editing_filter\tfalse"), "{params}");
+    assert!(!plain.0.contains("; 0 unique/clear-best"), "the fixture has unique mappers: {}", plain.0);
+    assert_eq!(plain.0, pre.0);
+}

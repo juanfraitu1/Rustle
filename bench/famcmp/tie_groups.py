@@ -2,7 +2,8 @@
 """PREREG r1603 (docs/PREREG_tie_groups_2026-11-10.md): tie groups from the reads' own tie sets, and their score.
 
   tie_groups.py genes SPECIES > GENES_TABLE
-  tie_groups.py names GENES_TSV CAT_TSV BAM > names.txt
+  tie_groups.py names GENES_TSV CAT_TSV BAM > names.txt      (panel reads)
+  awk '$2 > 0 && $3 >= 0.98 * $2 {print $1}' BAM.as_table.tsv > names.txt   (genome-wide: only molecules that can be tied; build holds every record it is given in memory)
   samtools view -N names.txt BAM | tie_groups.py build PREFIX [exact|as98|asms98] [LINK_FRACTION] [LOCUS_FLOOR] [RMSK_BED[:MIN_FRACTION]] [unstranded|locus]
   tie_groups.py score PREFIX GENES_TSV CAT_TSV SIGNAL_TSV [full]   (full = r1605 scorer; needs the DENOVO_* truth variables)
 """
@@ -65,11 +66,47 @@ elif mode == 'build':
         else: t = [r for r in rs if r[0] >= 0.98 * b > 0 or (rule == 'asms98' and r[4] >= 0.98 * bm > 0)]
         if len(t) >= 2: tied += [(c, '.' if (unstranded and len(bl) == 1) or bylocus else s, bl[0][0], bl[-1][1], bl, n, s) for _, c, s, bl, _ in t]
     tied.sort(key=lambda r: r[:4]); loci = []; key = None
-    for r in tied:
-        if loci and key == r[:2]:
-            a, b = seed; o = min(b, r[3]) - max(a, r[2])
-            if o >= 0.5 * min(b - a, r[3] - r[2]): loci[-1].append(r); continue
-        loci.append([r]); key = r[:2]; seed = (r[2], r[3])
+    locus_rule = sys.argv[8] if len(sys.argv) > 8 else 'block'  # span (r1603) | block (r1612) | cc (r1620) | ccm (r1630)
+    assert locus_rule in ('span', 'block', 'cc', 'ccm'), locus_rule
+    tot = lambda bl: sum(b - a for a, b in bl)
+    def attract(p, q):  # r1612 criterion: aligned blocks overlap by >= half of the smaller block total
+        o = 0; i = j = 0
+        while i < len(p) and j < len(q):
+            o += max(0, min(p[i][1], q[j][1]) - max(p[i][0], q[j][0]))
+            if p[i][1] < q[j][1]: i += 1
+            else: j += 1
+        return o >= 0.5 * min(tot(p), tot(q))
+    if locus_rule in ('cc', 'ccm'):
+        # r1620: correlation clustering. Shapes (same chrom, strand, blocks) attract or repel; heaviest first, a shape joins the
+        # locus with the largest positive vote over ALL its member shapes, else opens one.
+        shapes = collections.defaultdict(list)
+        for r in tied: shapes[(r[0], r[1], tuple(r[4]))].append(r)
+        order = sorted(shapes, key=lambda k: (-len(shapes[k]), k[0], k[1], k[2]))
+        BIN = 20000; bins = collections.defaultdict(set); members = []  # locus -> [(blocks, weight)]
+        for k in order:
+            c, st, bl = k; w = len(shapes[k]); lo, hi = bl[0][0], bl[-1][1]
+            cand = set().union(*(bins[(c, st, b)] for b in range(lo // BIN, hi // BIN + 1)))
+            best = None
+            for li in sorted(cand):
+                v = 0
+                for mb, mw in members[li]:
+                    if mb[0][0] < hi and lo < mb[-1][1]: v += mw if attract(bl, mb) else -mw
+                if v > 0 and (best is None or v > best[0]): best = (v, li)
+            if best is None: members.append([]); loci.append([]); li = len(loci) - 1
+            else: li = best[1]
+            members[li].append((bl, w)); loci[li] += shapes[k]
+            for b in range(lo // BIN, hi // BIN + 1): bins[(c, st, b)].add(li)
+        for L in loci: L.sort(key=lambda r: r[:4])
+        loci.sort(key=lambda L: L[0][:4])
+    else:
+        for r in tied:
+            if loci and key == r[:2]:
+                if locus_rule == 'span':
+                    a, b = seed[0][0], seed[-1][1]
+                    if min(b, r[3]) - max(a, r[2]) >= 0.5 * min(b - a, r[3] - r[2]): loci[-1].append(r); continue
+                # r1612: overlap is counted on aligned blocks, not spans: a record inside the seed's intron is another locus
+                elif attract(seed, r[4]): loci[-1].append(r); continue
+            loci.append([r]); key = r[:2]; seed = r[4]
     if bylocus:
         for L in loci:
             c = collections.Counter(r[6] for r in L if len(r[4]) > 1).most_common(2)
@@ -85,7 +122,41 @@ elif mode == 'build':
         if any(a >= b for a, b in ex): ex = [(s, e)] if not chain else [(min(s, chain[0][0] - 1), chain[0][0])] + ex[1:-1] + [(chain[-1][1], max(e, chain[-1][1] + 1))]
         return ex
     models = [model(L) for L in loci]
-    if len(sys.argv) > 6:  # r1607: RMSK_BED[:MIN_FRACTION], a locus mostly made of interspersed repeat is written to PREFIX.repeat.tsv and takes no part
+    if locus_rule == 'ccm':  # r1630: loci whose models attract are one locus; model again, until no two models attract
+        for _ in range(10):
+            par = list(range(len(loci)))
+            def root(x):
+                while par[x] != x: par[x] = par[par[x]]; x = par[x]
+                return x
+            byk = collections.defaultdict(list)
+            for i, (L, ex) in enumerate(zip(loci, models)): byk[L[0][:2]].append((ex[0][0], ex[-1][1], i))
+            n = 0
+            for v in byk.values():
+                v.sort(); open_ = []
+                for a, b, i in v:
+                    open_ = [x for x in open_ if x[1] > a]
+                    for _, _, j in open_:
+                        if root(i) != root(j) and attract(models[i], models[j]): par[root(i)] = root(j); n += 1
+                    open_.append((a, b, i))
+            if not n: break
+            g = collections.defaultdict(list)
+            for i, L in enumerate(loci): g[root(i)] += L
+            loci = [sorted(L, key=lambda r: r[:4]) for L in g.values()]; loci.sort(key=lambda L: L[0][:4])
+            models = [model(L) for L in loci]
+    # r1620 defect measures, before the repeat filter: D1 duplicate models, D2 loci whose model spans > 5x the median record
+    by = collections.defaultdict(list)
+    for i, (L, ex) in enumerate(zip(loci, models)): by[L[0][:2]].append((ex[0][0], ex[-1][1], i))
+    dup = set()
+    for v in by.values():
+        v.sort(); open_ = []
+        for a, b, i in v:
+            open_ = [x for x in open_ if x[1] > a]
+            for _, _, j in open_:
+                if attract(models[i], models[j]): dup.add(i); break
+            open_.append((a, b, i))
+    swal = sum(ex[-1][1] - ex[0][0] > 5 * statistics.median(r[3] - r[2] for r in L) for L, ex in zip(loci, models))
+    print(f'locus rule {locus_rule}: loci {len(loci)}; D1 duplicate models {len(dup)} = {len(dup) / max(1, len(loci)):.3f}; D2 swallowed loci {swal} = {swal / max(1, len(loci)):.3f}', file=sys.stderr)
+    if len(sys.argv) > 6 and sys.argv[6]:  # r1607: RMSK_BED[:MIN_FRACTION], a locus mostly made of interspersed repeat is written to PREFIX.repeat.tsv and takes no part
         import bisect
         path, _, thr = sys.argv[6].partition(':'); thr = float(thr or 0.5); rm = collections.defaultdict(list)
         for l in open(path):
@@ -104,6 +175,7 @@ elif mode == 'build':
                 i = max(bisect.bisect_right(starts.get(c, []), a) - 1, 0)
                 while i < len(m) and m[i][0] < b: cov += max(0, min(b, m[i][1]) - max(a, m[i][0])); i += 1
             return cov / max(sum(b - a for a, b in ex), 1)
+        assert not loci or any(L[0][0] in rm for L in loci), f'no locus chromosome is in {path}: contig names differ'
         fr = [rep_frac(L[0][0], ex) for L, ex in zip(loci, models)]
         with open(pre + '.repeat.tsv', 'w') as w:
             for L, ex, x in zip(loci, models, fr):
@@ -138,6 +210,7 @@ elif mode == 'build':
                 names.append(f'{c}:{ex[0][0]}-{ex[-1][1]}{st}')
             t.write(f'TG{k}\t{len(ids)}\t{len(mols)}\t{",".join(names)}\n')
     print(f'molecules {len(recs)} tied records {len(tied)} loci {len(loci)} groups {len(groups)}', file=sys.stderr)
+    import resource; print(f'peak memory {resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1048576:.1f} GB', file=sys.stderr)
 
 elif mode == 'score':
     pre, genes_tsv, cat_tsv, sig_tsv = sys.argv[2:6]
@@ -222,8 +295,7 @@ elif mode == 'score':
         big = {g for g, ts in grp.items() if len(ts) >= 2}; gr = lambda r: any(M[t][2] in big for t in M if r['gene'] in hits[t])
         print(f"B2f purity (full truth + same-family pseudogenes) {p2} of {j2} = {p2 / max(j2, 1):.3f} (bar 0.90)")
         print(f"B1g grouped reach {sum(gr(r) for r in ind)} of {len(ind)} (bar 58); TAF11L grouped {sum(gr(r) for r in taf)} of {len(taf)}")
-        print(f"B5 largest group {max(len(v) for v in grp.values())} loci (bar <= 60)")
-        bg = max(grp, key=lambda g: len(grp[g])); ts = grp[bg]; c = collections.Counter(full[x] for t in ts for x in hits[t] if x in full)
+        bg = max(grp, key=lambda g: len(grp[g]), default=None); ts = grp[bg]; c = collections.Counter(full[x] for t in ts for x in hits[t] if x in full)
         withcat = [t for t in ts if hits[t]]; top = c.most_common(1)[0][0] if c else None
         share = sum(any(in_family(x, top) for x in hits[t]) for t in withcat) / max(len(withcat), 1) if c else 0.0
         print(f"B5r largest group {len(ts)} loci on {len({M[t][0] for t in ts})} chromosome(s); {share:.3f} of its {len(withcat)} annotated loci in one family (bar: 1 chromosome or >= 0.90)")

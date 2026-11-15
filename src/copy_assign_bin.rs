@@ -566,6 +566,14 @@ struct Args {
     #[arg(long, default_value = "off", value_parser = ["off", "tag", "drop"])]
     polish_subchain: String,
 
+    /// NASCENT TAG / DROP over the emitted GTF (register 1635; StringTie's `mark_if_nascent`, its `-N`). A transcript is
+    /// flagged when a better-supported transcript with more exons on its strand has its introns as first introns from
+    /// the 5' end and the flagged one runs on into the following intron. `tag` appends `nascent_of "<n>";`, `drop` removes
+    /// it. Decided after `--polish-subchain`, on what that left. **Default off = byte-identical.**
+    /// Driver pass-through: `RUSTLE_POLISH_NASCENT=tag|drop`.
+    #[arg(long, default_value = "off", value_parser = ["off", "tag", "drop"])]
+    polish_nascent: String,
+
     /// READ-PROVEN TSS (`--gtf`, `--assemble-only`; needs `--assembly-polish` mono|full). A 5' end counts as a
     /// transcription start site only when the run's own reads PROVE it. Reads only, per contig; the only constants
     /// are alpha = 0.05 and TOL = 10 bp (the `--polish-subchain` tolerance; window W = 2*TOL+1).
@@ -990,6 +998,8 @@ struct Args {
     /// Disable the RNA-editing filter (Clair3-RNA): by default, A↔G PSV columns showing within-copy
     /// heterogeneity are flagged as A-to-I editing sites and downweighted in the certificate so an edited
     /// base cannot fake copy-support. This reverts to trusting every PSV column uniformly.
+    /// Applies to the record-level path (`--no-molecule-observations`) only: the default pooled molecule
+    /// observations take no editing columns (audit round 66), and `params.tsv` records `false` there.
     #[arg(long, default_value_t = false)]
     no_editing_filter: bool,
     /// ⭐ O2-8a (§6ej): abstain on junction/PSV CONFLICT — a read whose own splice junctions fit another copy
@@ -1084,10 +1094,15 @@ struct Args {
     /// the family's longest molecule (the §6fd rule). Without the columns both arms are byte-identical.
     #[arg(long, default_value_t = false)]
     read_star_pad_locus: bool,
-    /// Escape hatch (L3, §6fi): report every single-candidate molecule as `tied` (the §6fa rule) instead of
-    /// `assigned` with `sole_candidate = 1` when its only candidate passes the origin certificate.
+    /// Accepted for old command lines; it is the default since 2026-11-13 (see `--sole-candidate`).
     #[arg(long, default_value_t = false)]
     no_sole_candidate: bool,
+    /// Opt-in (L3, §6fi; the default before 2026-11-13): report a contested molecule with exactly one candidate copy
+    /// as `assigned` with `sole_candidate = 1` when that candidate passes the origin certificate. Default (user rulings
+    /// 2026-11-13, registers 787 / 1656 / 1695): such a molecule is `tied`, with or without `--tie-ms` or
+    /// `--union-certificate`: its tie partner is outside the catalog and no site decides it.
+    #[arg(long, default_value_t = false, conflicts_with = "no_sole_candidate")]
+    sole_candidate: bool,
     /// ⭐ §6ha (user 2026-09-09; PREREG_best_by_psv_score_2026-09-09.md): escape hatch — pick read-star's BEST
     /// candidate (`bk`) by alignment (aligned bases − substitutions over the whole read), the pre-2026-09-09
     /// choice, instead of by PSV score (Σ ±1 over the columns the pairwise certificate itself uses). The
@@ -1639,7 +1654,28 @@ fn molecule_pool_on(a: &Args) -> bool {
 }
 
 /// Every `--psv-population` / `--psv-fixed-only` flag guard, from the arguments alone (R30: before any file or BAM is read).
+/// What `--rescue-singletons` groups reads by: the intron chain, and for an unspliced read (no chain) the copy it was
+/// assigned to. Audit round 70: every unspliced read shared the empty chain, so reads of copies far apart became one
+/// transcript from the smallest start to the largest end.
+fn rescue_key(chain: &[(u64, u64)], catalog_idx: &str) -> (Vec<(u64, u64)>, String) {
+    (chain.to_vec(), if chain.is_empty() { catalog_idx.to_string() } else { String::new() })
+}
+
+/// `--posterior`'s zone: the span, on the top copy's contig, of the copies above the floor (`idx`, best first).
+fn posterior_zone(spans: &[(String, u64, u64)], idx: &[usize]) -> (String, u64, u64) {
+    let Some(top) = idx.iter().find_map(|&c| spans.get(c)) else { return (String::new(), 0, 0) };
+    let on = || idx.iter().filter_map(|&c| spans.get(c)).filter(|s| s.0 == top.0);
+    (top.0.clone(), on().map(|s| s.1).min().unwrap_or(0), on().map(|s| s.2).max().unwrap_or(0))
+}
+
 fn population_guards(a: &Args) -> Result<()> {
+    for (on, flag) in [(a.union_certificate, "--union-certificate"), (a.phase, "--phase"), (a.posterior, "--posterior"), (a.em, "--em")] {
+        anyhow::ensure!(!(a.assemble_only && on), "{flag} reads the assignment, which --assemble-only does not run");
+    }
+    anyhow::ensure!(
+        !(a.read_star_junctions && read_star_genomic_on(a)),
+        "--read-star-junctions needs --read-star-unit: the genomic read-star builds no junction list, so the flag would decide nothing"
+    );
     check_population_flags(
         a.psv_population.is_some(),
         a.psv_fixed_only,
@@ -2421,6 +2457,12 @@ fn block_overlap(read: &rustle::copy_split::AlignedRead, s: u64, e: u64) -> u64 
         .sum()
 }
 
+/// The first of `units` (chrom, start, end) that an aligned block of `br` touches. Blocks, not the span: a placement
+/// whose intron merely crosses a unit does not lie on it (audit round 66; the tie-outside gate used the span).
+fn unit_under(units: &[(String, u64, u64)], br: &rustle::denovo_assemble::BamRead) -> Option<usize> {
+    units.iter().position(|(c, a, b)| *c == br.chrom && block_overlap(&br.read, *a, *b) > 0)
+}
+
 /// The O3 detector's "truth" table: for every primary-aligned read, the family's own candidate copy
 /// whose span the read's PRIMARY alignment overlaps MOST (by [`block_overlap`]), independent of O2's own
 /// (possibly MAPQ-0-ambiguous) `catalog_copy_idx` call -- mirrors `bench/missing_copy_flag_pass.py`'s `truth` dict
@@ -2825,18 +2867,10 @@ fn load_supplied_families(
 /// `exclude_supplementary` is true under the AS-tied gate (a supplementary is another segment of the read,
 /// not an alternative placement) and false on the `--no-as-tied-only` escape, which must reproduce the
 /// pre-2026-09-09 columns byte-for-byte.
-/// r1507: the copy windows' records of every region, swept once per chromosome before the region sweep (`index`:
-/// region -> its windows' slots in `compute`'s window order; each slot is taken exactly once).
-struct WindowStore {
-    index: DetHashMap<RegionKey, Vec<usize>>,
-    light: Vec<Mutex<Option<(Vec<PrimaryRead>, Vec<BamRead>)>>>,
-    full: Vec<Mutex<Option<Vec<BamRead>>>>,
-}
-
 /// The pooling `compute`'s window loop applies to a region's windows, on records fetched elsewhere: primaries kept once
 /// per (chrom, span, intron chain) — or, with `keep_dups`, dropped when they overlap an earlier window of the region
 /// (`window(i)` = the i-th window's (chrom, lo, hi)) — and BAM records once per (name, chrom, start). The one copy of
-/// the rule: `compute`'s window loop and the r1507 sweep's tie pass both call it.
+/// the rule.
 fn pool_windows(
     windows: Vec<(Vec<PrimaryRead>, Vec<BamRead>)>,
     keep_dups: bool,
@@ -3105,6 +3139,7 @@ fn as_tied(ev: &AsEvidence, ratio: f64) -> bool {
     }
 }
 
+/// Register 1542: the guard is on under `--tie-ms` unless `--no-primary-on-family`; `--primary-on-family` alone keeps it on.
 /// Register 1542: the guard is on under `--tie-ms` unless `--no-primary-on-family`; `--primary-on-family` alone keeps it on.
 fn guard_on(primary_on_family: bool, tie_ms: Option<i32>, no_primary_on_family: bool) -> bool {
     primary_on_family || (tie_ms.is_some() && !no_primary_on_family)
@@ -4187,6 +4222,96 @@ fn subchain_flags(
     }
     let n_multi = chain.values().filter(|c| !c.is_empty()).count();
     (flags, n_multi)
+}
+
+/// `--polish-nascent` (register 1635): StringTie's `mark_if_nascent` (rlink.cpp, `-N`) over the emitted GTF. Transcript p is
+/// a nascent of n (same contig and strand, more exons, more reads) when p's introns are n's first introns from the 5' end,
+/// p starts no later than the end of n's first exon and p runs past the end of n's next exon into the following intron.
+/// Returns p -> n (the best-supported n, ties to the smaller id).
+fn nascent_flags(lines: &[String]) -> std::collections::BTreeMap<String, String> {
+    use std::collections::BTreeMap;
+    let mut info: BTreeMap<String, (String, String, u64)> = BTreeMap::new();
+    let mut exons: DetHashMap<String, Vec<(i64, i64)>> = DetHashMap::default();
+    for line in lines {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 9 {
+            continue;
+        }
+        let Some(tid) = re_attr(f[8], "transcript_id") else { continue };
+        if f[2] == "transcript" {
+            info.insert(tid, (f[0].to_string(), f[6].to_string(), gtf_attr_digits(f[8], "reads").unwrap_or(0)));
+        } else if f[2] == "exon" {
+            if let (Ok(a), Ok(b)) = (f[3].parse::<i64>(), f[4].parse::<i64>()) {
+                exons.entry(tid).or_default().push((a, b));
+            }
+        }
+    }
+    // 5' first on both strands: a '-' transcript is mirrored
+    type Tx<'a> = (&'a str, Vec<(i64, i64)>, u64);
+    let mut by: BTreeMap<(&str, &str), Vec<Tx>> = BTreeMap::new();
+    for (tid, (c, st, reads)) in &info {
+        let Some(e) = exons.get(tid) else { continue };
+        let mut e = e.clone();
+        e.sort_unstable();
+        match st.as_str() {
+            "+" => {}
+            "-" => e = e.iter().rev().map(|&(a, b)| (-b, -a)).collect(),
+            _ => continue,
+        }
+        by.entry((c.as_str(), st.as_str())).or_default().push((tid.as_str(), e, *reads));
+    }
+    let mut flags = BTreeMap::new();
+    for txs in by.values() {
+        // multi-exon transcripts by the end of their first exon
+        let mut first: BTreeMap<i64, Vec<usize>> = BTreeMap::new();
+        for (i, (_, e, _)) in txs.iter().enumerate() {
+            if e.len() > 1 {
+                first.entry(e[0].1).or_default().push(i);
+            }
+        }
+        for (tid, p, reads) in txs {
+            let k = p.len() - 1;
+            // a single-exon p must cross n's first donor; a spliced p shares it
+            let range = if k == 0 { p[0].0 + 1..p[0].1 } else { p[0].1..p[0].1 + 1 };
+            let mut best: Option<(u64, &str)> = None;
+            for &i in first.range(range).flat_map(|(_, v)| v) {
+                let (ntid, n, nreads) = &txs[i];
+                if n.len() <= p.len() || nreads <= reads || p[0].0 >= n[0].1 || p[k].1 <= n[k].1 {
+                    continue;
+                }
+                if (0..k).any(|j| p[j].1 != n[j].1 || p[j + 1].0 != n[j + 1].0) {
+                    continue;
+                }
+                if best.map_or(true, |(r, t)| (*nreads, std::cmp::Reverse(*ntid)) > (r, std::cmp::Reverse(t))) {
+                    best = Some((*nreads, ntid));
+                }
+            }
+            if let Some((_, n)) = best {
+                flags.insert(tid.to_string(), n.to_string());
+            }
+        }
+    }
+    flags
+}
+
+/// `--polish-nascent drop` removes every line of a flagged transcript; `tag` appends `nascent_of "<n>";` to its transcript line.
+fn nascent_apply(lines: &mut Vec<String>, flags: &std::collections::BTreeMap<String, String>, drop: bool) {
+    if flags.is_empty() {
+        return;
+    }
+    let of = |line: &str| {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 9 { None } else { re_attr(f[8], "transcript_id").and_then(|t| flags.get(&t)).map(|n| (f[2] == "transcript", n.clone())) }
+    };
+    if drop {
+        lines.retain(|l| of(l).is_none());
+    } else {
+        for l in lines.iter_mut() {
+            if let Some((true, n)) = of(l) {
+                l.push_str(&format!(" nascent_of \"{n}\";"));
+            }
+        }
+    }
 }
 
 /// `--polish-subchain drop`: remove every line of a flagged transcript.
@@ -6497,6 +6622,8 @@ fn tes_extend(lines: &[String], unsp: &[(bool, i64, i64)], seq: &[u8]) -> (Vec<S
 /// `--mono-model cluster`'s constants (register 1489): end window and read floor of a single-exon cluster.
 const MONO_W: i64 = 50;
 const MONO_MIN_READS: usize = 3;
+/// `RUSTLE_MONO_RULE=keep`: an existing single-exon model this long or longer is never kept (the span-chained blobs).
+const MONO_KEEP_MAX_BP: i64 = 20_000;
 
 /// `--mono-model cluster` (register 1489, PREREG ASSEMBLY ENDS E5) on one contig's final lines: remove every single-exon
 /// transcript; cluster the deduplicated primary unspliced records `unsp` (minus, oriented 5', oriented 3') per strand,
@@ -6505,6 +6632,11 @@ const MONO_MIN_READS: usize = 3;
 /// start, lower median end], dropped when it overlaps an exon of a multi-exon transcript on its strand, when its 3' end is
 /// internally primed or carries no canonical PAS (`--polish-tes`'s tests). Returns (lines, (removed, emitted)).
 fn mono_models(lines: &[String], unsp: &[(bool, i64, i64)], seq: &[u8], chrom: &str) -> (Vec<String>, (usize, usize)) {
+    mono_models_rule(lines, unsp, seq, chrom, &std::env::var("RUSTLE_MONO_RULE").unwrap_or_default())
+}
+
+/// `mono_models` under an explicit RUSTLE_MONO_RULE value ("" = the r1489 rule).
+fn mono_models_rule(lines: &[String], unsp: &[(bool, i64, i64)], seq: &[u8], chrom: &str, rule: &str) -> (Vec<String>, (usize, usize)) {
     let txs = tss_parse(lines);
     let single: DetHashSet<String> = txs.iter().filter(|(_, t)| t.oex.len() == 1).map(|(k, _)| k.clone()).collect();
     // genomic exons of the multi-exon transcripts, per strand
@@ -6514,14 +6646,35 @@ fn mono_models(lines: &[String], unsp: &[(bool, i64, i64)], seq: &[u8], chrom: &
             multi[usize::from(t.minus)].push(if t.minus { (-b, -a) } else { (a, b) });
         }
     }
-    let mut res: Vec<String> = lines
-        .iter()
-        .filter(|l| {
-            let f: Vec<&str> = l.split('\t').collect();
-            !(f.len() > 8 && re_attr(f[8], "transcript_id").is_some_and(|t| single.contains(&t)))
-        })
-        .cloned()
-        .collect();
+    // RUSTLE_MONO_RULE (register 1626, experimental; unset = the r1489 rule, byte-identical): comma list of
+    //   keep   an existing single-exon model with < MONO_MIN_READS primary unspliced records on its strand and a span
+    //          < MONO_KEEP_MAX_BP stays (it was built from other evidence; the clusters have nothing to say about it)
+    //   pas    a cluster needs no canonical PAS (still dropped when internally primed)
+    //   either a cluster is dropped only when it is BOTH internally primed and without a canonical PAS
+    //   ends3  clusters are formed on the 3' end alone; the 5' end is the 5'-most start that max(2, 10%) of the reads reach
+    let has = |k: &str| rule.split(',').any(|x| x == k);
+    let single: DetHashSet<String> = if has("keep") {
+        single
+            .into_iter()
+            .filter(|k| {
+                let t = &txs[k];
+                let (a, b) = if t.minus { (-t.oex[0].1, -t.oex[0].0) } else { t.oex[0] };
+                let n = unsp
+                    .iter()
+                    .filter(|r| r.0 == t.minus)
+                    .filter(|&&(m, o5, o3)| {
+                        let (x, y) = if m { (-o3, -o5) } else { (o5, o3) };
+                        x <= b && y >= a
+                    })
+                    .count();
+                n >= MONO_MIN_READS || b - a >= MONO_KEEP_MAX_BP
+            })
+            .collect()
+    } else {
+        single
+    };
+    let mut res: Vec<String> = Vec::new(); // the cluster models
+    let mut made: [Vec<(i64, i64)>; 2] = [Vec::new(), Vec::new()];
     let mut emitted = 0usize;
     let mut ids_seen: DetHashMap<String, usize> = DetHashMap::default();
     for minus in [false, true] {
@@ -6530,7 +6683,13 @@ fn mono_models(lines: &[String], unsp: &[(bool, i64, i64)], seq: &[u8], chrom: &
             .filter(|r| r.0 == minus)
             .map(|&(_, o5, o3)| if minus { (-o3, -o5) } else { (o5, o3) })
             .collect();
-        v.sort_unstable();
+        let ends3 = has("ends3");
+        let k3 = |m: &(i64, i64)| if minus { m.0 } else { m.1 }; // genomic 3' end
+        if ends3 {
+            v.sort_unstable_by_key(|m| (k3(m), m.0, m.1));
+        } else {
+            v.sort_unstable();
+        }
         let mut used = vec![false; v.len()];
         let strand = if minus { "-" } else { "+" };
         for i in 0..v.len() {
@@ -6540,12 +6699,22 @@ fn mono_models(lines: &[String], unsp: &[(bool, i64, i64)], seq: &[u8], chrom: &
             let (a, b) = v[i];
             let mut members: Vec<(i64, i64)> = Vec::new();
             let mut j = i;
-            while j < v.len() && v[j].0 <= a + MONO_W {
-                if !used[j] && (v[j].1 - b).abs() <= MONO_W {
-                    used[j] = true;
-                    members.push(v[j]);
+            if ends3 {
+                while j < v.len() && k3(&v[j]) <= k3(&v[i]) + MONO_W {
+                    if !used[j] {
+                        used[j] = true;
+                        members.push(v[j]);
+                    }
+                    j += 1;
                 }
-                j += 1;
+            } else {
+                while j < v.len() && v[j].0 <= a + MONO_W {
+                    if !used[j] && (v[j].1 - b).abs() <= MONO_W {
+                        used[j] = true;
+                        members.push(v[j]);
+                    }
+                    j += 1;
+                }
             }
             if members.len() < MONO_MIN_READS {
                 continue;
@@ -6554,12 +6723,39 @@ fn mono_models(lines: &[String], unsp: &[(bool, i64, i64)], seq: &[u8], chrom: &
             let mut en: Vec<i64> = members.iter().map(|m| m.1).collect();
             st.sort_unstable();
             en.sort_unstable();
-            let (ms, me) = (st[(st.len() - 1) / 2], en[(en.len() - 1) / 2]);
+            let (mut ms, mut me) = (st[(st.len() - 1) / 2], en[(en.len() - 1) / 2]);
+            if ends3 {
+                let r = (members.len() / 10).max(1); // the 5' end that r + 1 reads reach
+                if minus {
+                    me = en[en.len() - 1 - r];
+                } else {
+                    ms = st[r];
+                }
+            }
+            let o3 = if minus { -ms } else { me };
+            // RUSTLE_MONO_DUMP=FILE (diagnostic, register 1626): every cluster with the verdict of each filter; no effect on output
+            if let Ok(path) = std::env::var("RUSTLE_MONO_DUMP") {
+                use std::io::Write;
+                let over = multi[usize::from(minus)].iter().any(|&(x, y)| x <= me && y >= ms);
+                let over_any = multi.iter().flatten().any(|&(x, y)| x <= me && y >= ms);
+                let line = format!(
+                    "{chrom}\t{ms}\t{me}\t{strand}\t{}\t{}\t{}\t{}\t{}\n",
+                    members.len(),
+                    u8::from(over),
+                    u8::from(over_any),
+                    u8::from(ms <= me && tes_primed(seq, minus, o3)),
+                    u8::from(ms <= me && tes_pas(seq, minus, o3))
+                );
+                if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+                    let _ = f.write_all(line.as_bytes());
+                }
+            }
             if ms > me || multi[usize::from(minus)].iter().any(|&(x, y)| x <= me && y >= ms) {
                 continue;
             }
-            let o3 = if minus { -ms } else { me };
-            if tes_primed(seq, minus, o3) || !tes_pas(seq, minus, o3) {
+            let (primed, pas) = (tes_primed(seq, minus, o3), tes_pas(seq, minus, o3));
+            let drop = if has("either") { primed && !pas } else if has("pas") { primed } else { primed || !pas };
+            if drop {
                 continue;
             }
             let base_id = format!("MONO_{chrom}_{strand}_{ms}_{me}");
@@ -6572,10 +6768,34 @@ fn mono_models(lines: &[String], unsp: &[(bool, i64, i64)], seq: &[u8], chrom: &
                 members.len()
             ));
             res.push(format!("{chrom}\trustle\texon\t{ms}\t{me}\t.\t{strand}\t.\t{at} exon_number \"1\";"));
+            made[usize::from(minus)].push((ms, me));
             emitted += 1;
         }
     }
-    (res, (single.len(), emitted))
+    //   fallback (Amendment 1) an existing single-exon model < MONO_KEEP_MAX_BP is removed only when a cluster model is
+    //          emitted over it on its strand
+    let single: DetHashSet<String> = if has("fallback") {
+        single
+            .into_iter()
+            .filter(|k| {
+                let t = &txs[k];
+                let (a, b) = if t.minus { (-t.oex[0].1, -t.oex[0].0) } else { t.oex[0] };
+                b - a >= MONO_KEEP_MAX_BP || made[usize::from(t.minus)].iter().any(|&(x, y)| x <= b && y >= a)
+            })
+            .collect()
+    } else {
+        single
+    };
+    let mut out: Vec<String> = lines
+        .iter()
+        .filter(|l| {
+            let f: Vec<&str> = l.split('\t').collect();
+            !(f.len() > 8 && re_attr(f[8], "transcript_id").is_some_and(|t| single.contains(&t)))
+        })
+        .cloned()
+        .collect();
+    out.extend(res);
+    (out, (single.len(), emitted))
 }
 
 /// One contig's `--polish-tes` statistics (params.tsv, the log line). `end_pas` / `end_primed` are of the emitted 3'
@@ -7162,7 +7382,7 @@ fn main() -> Result<()> {
         read_star_junctions: args.read_star_junctions,
         read_star_genomic: read_star_genomic_on(&args),
         read_star_catalog_locus: !args.read_star_pad_locus,
-        sole_candidate: !args.no_sole_candidate,
+        sole_candidate: args.sole_candidate,
         best_by_psv: !args.best_by_alignment,
         best_by_duel: args.best_by_duel && !args.no_best_by_duel,
         dump_star: args.dump_star,
@@ -7213,12 +7433,6 @@ fn main() -> Result<()> {
             "--union-certificate is defined on AS-tied molecules (their tied placements are the candidates) and \
              needs the AS-tied gate; drop --no-as-tied-only."
         );
-    }
-    // locus from a de-novo tid `DN_<chrom>_<start>_<n>` (chrom may contain `_`, so split from the right).
-    fn parse_locus(tid: &str) -> Option<(String, u64)> {
-        let rest = tid.strip_prefix("DN_")?;
-        let parts: Vec<&str> = rest.rsplitn(3, '_').collect(); // [n, start, chrom]
-        Some((parts.get(2)?.to_string(), parts.get(1)?.parse().ok()?))
     }
     let mut quant_rows: Vec<QuantRow> = Vec::new();
     // O3 Phase 2 (Task 6): accumulated across the WHOLE serial drain (every region, every family) -- the
@@ -7436,119 +7650,6 @@ fn main() -> Result<()> {
         .flat_map(|(_, fams)| fams.iter().flat_map(|f| f.copies.iter()))
         .map(|c| (c.chrom.clone(), c.start, c.end))
         .collect();
-    // r1507 (2026-11-02, docs/PREREG_assign_window_sweep_2026-11-02.md): the copy windows of EVERY region, read in one
-    // multithreaded query per chromosome instead of one query per window (the slim A119b run spent 89% of its wall
-    // re-decoding the same blocks window by window). Light records first; then, per region, the AS-tied molecules by
-    // the same dedup + `as_tied` rule `compute` applies; then the full records of those names, again one query per
-    // chromosome. `compute` takes each window's light and full records from the store, in the window order it would
-    // have queried them, so every product is the per-window query's. Only on the buffered `--tied-prefilter` path with
-    // an index and none of the per-window record states (read-home table, secondary AS ratio, readthrough flags);
-    // Opt-in `RUSTLE_WINDOW_SWEEP=1` until the genome-wide identity check of the prereg passes.
-    let sweep_on = args.tied_prefilter
-        && bam_cache.is_some()
-        && !args.assemble_only
-        && rt_switch.is_none()
-        && rustle::denovo_assemble::sweep_supported()
-        && std::env::var("RUSTLE_WINDOW_SWEEP").map(|v| v == "1").unwrap_or(false);
-    // r1543: the store is built per BATCH of regions (`RUSTLE_SWEEP_BATCH` regions, default 64) and dropped after the batch is
-    // computed: the r1507 genome-wide run held every key's windows at once (the hotspot's records once per cross-chromosome
-    // key that covers them) and was OOM-killed at 250 GB. Each window's records are the same whichever batch serves them.
-    let window_store: Mutex<Option<WindowStore>> = Mutex::new(None);
-    let build_store = |flat: &[(String, u64, u64)]| -> Result<WindowStore> {
-        let t = std::time::Instant::now();
-        let c = bam_cache.as_ref().expect("checked above");
-        let mut index: DetHashMap<RegionKey, Vec<usize>> = DetHashMap::default();
-        let mut by_chrom: DetHashMap<String, Vec<(usize, u64, u64)>> = DetHashMap::default();
-        let mut n_win = 0usize;
-        let mut win_coord: Vec<(String, u64, u64)> = Vec::new();
-        for (contig, lo, hi) in flat {
-            let key: RegionKey = (contig.clone(), *lo, *hi);
-            let wins: Vec<(String, u64, u64)> = region_windows
-                .as_ref()
-                .and_then(|w| w.get(&key))
-                .cloned()
-                .unwrap_or_else(|| vec![(contig.clone(), *lo, *hi)]);
-            let ids: Vec<usize> = wins
-                .iter()
-                .map(|(wc, wl, wh)| {
-                    let g = n_win;
-                    n_win += 1;
-                    by_chrom.entry(wc.clone()).or_default().push((g, *wl, *wh));
-                    win_coord.push((wc.clone(), *wl, *wh));
-                    g
-                })
-                .collect();
-            anyhow::ensure!(index.insert(key.clone(), ids).is_none(), "region {}:{}-{} listed twice", key.0, key.1, key.2);
-        }
-        let light: Vec<Mutex<Option<(Vec<PrimaryRead>, Vec<BamRead>)>>> = (0..n_win).map(|_| Mutex::new(None)).collect();
-        let chroms: Vec<&String> = { let mut v: Vec<&String> = by_chrom.keys().collect(); v.sort(); v };
-        let swept: Vec<Vec<(usize, (Vec<PrimaryRead>, Vec<BamRead>))>> = chroms
-            .par_iter()
-            .map(|chrom| -> Result<Vec<(usize, (Vec<PrimaryRead>, Vec<BamRead>))>> {
-                let ws = &by_chrom[*chrom];
-                let spec: Vec<(u64, u64, rustle::denovo_assemble::ReadMode<'_>)> =
-                    ws.iter().map(|(_, l, h)| (*l, *h, rustle::denovo_assemble::ReadMode::Light)).collect();
-                let got = c.sweep_windows(&args.bam, chrom, &spec).with_context(|| format!("sweeping {chrom}"))?;
-                Ok(ws.iter().map(|(g, _, _)| *g).zip(got).collect())
-            })
-            .collect::<Result<Vec<_>>>()?;
-        for (g, r) in swept.into_iter().flatten() {
-            *light[g].lock().unwrap() = Some(r);
-        }
-        let t_light = t.elapsed().as_secs_f64();
-        // the tied names of each region, from its windows' light records exactly as `compute` pools them
-        let tied: Vec<Arc<DetHashSet<String>>> = flat
-            .par_iter()
-            .map(|(contig, lo, hi)| {
-                let ids = &index[&(contig.clone(), *lo, *hi)];
-                let wins: Vec<(Vec<PrimaryRead>, Vec<BamRead>)> = ids
-                    .iter()
-                    .map(|g| (Vec::new(), light[*g].lock().unwrap().as_ref().expect("swept").1.clone()))
-                    .collect();
-                let (_, br) = pool_windows(wins, args.keep_coordinate_duplicates, |i| win_coord[ids[i]].clone());
-                let ev = as_evidence_per_read(&br, true);
-                let t: DetHashSet<String> = br
-                    .iter()
-                    .zip(ev.iter())
-                    .filter(|(_, e)| gate_tied(e, args.as_tie_ratio, args.tie_ms, guard_on(args.primary_on_family, args.tie_ms, args.no_primary_on_family)))
-                    .map(|(b, _)| b.name.clone())
-                    .collect();
-                Arc::new(t)
-            })
-            .collect();
-        let tied_of_window: Vec<Arc<DetHashSet<String>>> = {
-            let mut v: Vec<Option<Arc<DetHashSet<String>>>> = vec![None; n_win];
-            for (ri, (contig, lo, hi)) in flat.iter().enumerate() {
-                for g in &index[&(contig.clone(), *lo, *hi)] {
-                    v[*g] = Some(tied[ri].clone());
-                }
-            }
-            v.into_iter().map(|x| x.expect("every window has a region")).collect()
-        };
-        let full: Vec<Mutex<Option<Vec<BamRead>>>> = (0..n_win).map(|_| Mutex::new(None)).collect();
-        let swept: Vec<Vec<(usize, Vec<BamRead>)>> = chroms
-            .par_iter()
-            .map(|chrom| -> Result<Vec<(usize, Vec<BamRead>)>> {
-                let ws = &by_chrom[*chrom];
-                let spec: Vec<(u64, u64, rustle::denovo_assemble::ReadMode<'_>)> = ws
-                    .iter()
-                    .map(|(g, l, h)| (*l, *h, rustle::denovo_assemble::ReadMode::Only(&tied_of_window[*g])))
-                    .collect();
-                let got = c.sweep_windows(&args.bam, chrom, &spec).with_context(|| format!("sweeping {chrom}"))?;
-                Ok(ws.iter().map(|(g, _, _)| *g).zip(got.into_iter().map(|(_, b)| b)).collect())
-            })
-            .collect::<Result<Vec<_>>>()?;
-        for (g, r) in swept.into_iter().flatten() {
-            *full[g].lock().unwrap() = Some(r);
-        }
-        if timing {
-            eprintln!(
-                "[timing] window sweep: {} windows of {} regions over {} chromosome(s): light {:.1}s, tie + full {:.1}s",
-                n_win, flat.len(), chroms.len(), t_light, t.elapsed().as_secs_f64() - t_light
-            );
-        }
-        Ok(WindowStore { index, light, full })
-    };
     // The expensive, INDEPENDENT per-region work: BAM read + detect_and_assign (the dominant poasta alignment
     // lives here). Pure w.r.t. the read-only genome/bam_cache. The heavy read SEQUENCES are dropped here —
     // only the read NAMES + computed `fams` are returned — so collecting every region's result is lightweight.
@@ -7740,6 +7841,8 @@ fn main() -> Result<()> {
         };
         // --tied-prefilter: every record's span from the light pass (the per-copy read-presence check needs ALL records)
         let mut light_spans: Option<Vec<(String, u64, u64)>> = None;
+        // (molecules, records) of the light pass: what the gate's log line calls "all" (the records below are the tied ones only)
+        let mut light_counts: Option<(usize, usize)> = None;
         let (primary, mut bam_reads) = if streaming {
             (Vec::new(), Vec::new())
         } else {
@@ -7759,21 +7862,11 @@ fn main() -> Result<()> {
             // true counts, removes more matching chains than the fix adds (polished −147 human dev,
             // −1,096 gorilla held-out, with gorilla precision +3.2 pts). So the historical key stays the
             // DEFAULT (byte-identical) and the window rule is opt-in via `--keep-coordinate-duplicates`.
-            // every window's records, from the r1507 store or its own query, then the pooling rule (`pool_windows`)
+            // every window's records, then the pooling rule (`pool_windows`)
             let mut fetched: Vec<(Vec<PrimaryRead>, Vec<BamRead>)> = Vec::with_capacity(wins.len());
-            for (wi, (wchrom, wlo, whi)) in wins.iter().enumerate() {
+            for (wchrom, wlo, whi) in wins.iter() {
                 let (wlo, whi) = (*wlo, *whi);
                 let (p, b) = match &bam_cache {
-                    Some(_) if sweep_on => {
-                        let taken = {
-                            let guard = window_store.lock().unwrap();
-                            let st = guard.as_ref().expect("the batch's store is built before its regions compute");
-                            let g = st.index[&(contig.clone(), lo, hi)][wi];
-                            let x = st.light[g].lock().unwrap().take();
-                            x
-                        };
-                        Ok(taken.expect("each window's light records are taken once"))
-                    }
                     Some(c) if args.tied_prefilter => c.reads_in_region_mode(
                         &args.bam,
                         wchrom,
@@ -7806,33 +7899,15 @@ fn main() -> Result<()> {
                     .map(|(b, _)| b.name.clone())
                     .collect();
                 light_spans = Some(br.iter().map(|b| (b.chrom.clone(), b.read.ref_start, read_ref_end(&b.read))).collect());
+                light_counts = Some((br.iter().map(|b| b.name.as_str()).collect::<DetHashSet<&str>>().len(), br.len()));
                 drop(br);
                 let c = bam_cache.as_ref().expect("checked at startup");
                 let mut full: Vec<rustle::denovo_assemble::BamRead> = Vec::new();
-                for (wi, (wchrom, wlo, whi)) in wins.iter().enumerate() {
-                    let b = match sweep_on {
-                        true => {
-                            let taken = {
-                                let guard = window_store.lock().unwrap();
-                                let st = guard.as_ref().expect("the batch's store is built before its regions compute");
-                                let g = st.index[&(contig.clone(), lo, hi)][wi];
-                                let x = st.full[g].lock().unwrap().take();
-                                x
-                            };
-                            taken.expect("each window's full records are taken once")
-                        }
-                        false => {
-                            c.reads_in_region_mode(
-                                &args.bam,
-                                wchrom,
-                                *wlo,
-                                *whi,
-                                rustle::denovo_assemble::ReadMode::Only(&tied),
-                            )
-                            .with_context(|| format!("reading {wchrom}:{wlo}-{whi}"))?
-                            .1
-                        }
-                    };
+                for (wchrom, wlo, whi) in wins.iter() {
+                    let b = c
+                        .reads_in_region_mode(&args.bam, wchrom, *wlo, *whi, rustle::denovo_assemble::ReadMode::Only(&tied))
+                        .with_context(|| format!("reading {wchrom}:{wlo}-{whi}"))?
+                        .1;
                     full.extend(b);
                 }
                 let mut fseen = DetHashSet::default();
@@ -7953,7 +8028,8 @@ fn main() -> Result<()> {
                     tied.insert(br.name.as_str());
                 }
             }
-            let (n_all, n_tied, n_rec) = (all.len(), tied.len(), bam_reads.len());
+            let n_tied = tied.len();
+            let (n_all, n_rec) = light_counts.unwrap_or((all.len(), bam_reads.len()));
             let mut tied_owned: DetHashSet<String> =
                 tied.into_iter().map(|s| s.to_string()).collect();
             // ⭐ §6gz: which tied molecules have a tied placement OUTSIDE every supplied family UNIT?
@@ -8010,10 +8086,7 @@ fn main() -> Result<()> {
                 let tied_placement = |br: &rustle::denovo_assemble::BamRead| {
                     is_tied_placement((br.as_score, br.ms), best_as[br.name.as_str()], args.as_tie_ratio, args.tie_ms)
                 };
-                let on = |spans: &[(String, u64, u64)], br: &rustle::denovo_assemble::BamRead| {
-                    let (s0, e0) = (br.read.ref_start, read_ref_end(&br.read));
-                    spans.iter().any(|(c, a, b)| *c == br.chrom && s0 < *b && e0 > *a)
-                };
+                let on = |spans: &[(String, u64, u64)], br: &rustle::denovo_assemble::BamRead| unit_under(spans, br).is_some();
                 // molecules with a tied placement on one of this region's units: a placement of theirs on a
                 // cross-chromosome copy stays outside (this family never scores it)
                 let touches_units: DetHashSet<&str> = bam_reads
@@ -8047,11 +8120,9 @@ fn main() -> Result<()> {
                             e0,
                         );
                     }
-                    if (args.gtf_copy_set && !args.no_gtf_copy_set) {
+                    if args.gtf_copy_set && !args.no_gtf_copy_set {
                         // the copy SET of an undecided isoform (§6hn): catalog indices at the tied placements
-                        let hit = targets
-                            .iter()
-                            .position(|(c, a, b)| *c == br.chrom && s0 < *b && e0 > *a);
+                        let hit = unit_under(&targets, br);
                         let mut reg = TIE_SET.get_or_init(Default::default).lock().unwrap();
                         let e = reg
                             .entry(br.name.clone())
@@ -8071,12 +8142,7 @@ fn main() -> Result<()> {
                 // ⭐ §6hd: aligner self-disagreement. Per molecule: the unit index of its PRIMARY record and of
                 // its best-AS record(s), both by unit-span overlap (same `targets` as above). Disagree ⟹ admit.
                 if args.admit_aligner_disagreement {
-                    let unit_of = |br: &rustle::denovo_assemble::BamRead| -> Option<usize> {
-                        let (s0, e0) = (br.read.ref_start, read_ref_end(&br.read));
-                        targets
-                            .iter()
-                            .position(|(c, a, b)| *c == br.chrom && s0 < *b && e0 > *a)
-                    };
+                    let unit_of = |br: &rustle::denovo_assemble::BamRead| -> Option<usize> { unit_under(&targets, br) };
                     let mut prim: DetHashMap<&str, Option<usize>> = DetHashMap::default();
                     let mut best: DetHashMap<&str, (i32, Vec<Option<usize>>)> =
                         DetHashMap::default();
@@ -8115,7 +8181,7 @@ fn main() -> Result<()> {
                 }
             }
             GATE_MOL_OUTSIDE.fetch_add(n_outside, std::sync::atomic::Ordering::Relaxed);
-            if (args.gtf_copy_set && !args.no_gtf_copy_set) {
+            if args.gtf_copy_set && !args.no_gtf_copy_set {
                 for br in bam_reads.iter().filter(|br| {
                     !tied_owned.contains(&br.name) && !br.is_secondary && !br.is_supplementary
                 }) {
@@ -8726,18 +8792,11 @@ fn main() -> Result<()> {
         }))
     };
     // Compute all regions (out-of-order across contigs when region_threads > 1), collected in the flat order.
-    let batch: usize = if sweep_on {
-        std::env::var("RUSTLE_SWEEP_BATCH").ok().and_then(|v| v.parse().ok()).filter(|&n| n > 0).unwrap_or(64)
-    } else {
-        flat.len().max(1)
-    };
+    let batch: usize = flat.len().max(1);
     let mut works: Vec<RegionWork> = Vec::with_capacity(flat.len());
     // raw transcript id -> the region that emitted it, per contig (ids are made unique per region only, below)
     let mut tid_region: DetHashMap<String, DetHashMap<String, (u64, u64)>> = DetHashMap::default();
     for chunk in flat.chunks(batch) {
-        if sweep_on {
-            *window_store.lock().unwrap() = Some(build_store(chunk)?);
-        }
         // Regions run on plain OS threads (not a rayon pool): `compute` blocks on the read budget / star
         // slots, and a rayon worker blocked while holding permits can be the thief of another region's
         // inner job -> deadlock (gw4 2026-11-05 hung 7.5 h at 334/936). Inner par_iters use the global pool.
@@ -8848,9 +8907,6 @@ fn main() -> Result<()> {
                 .collect::<Result<Vec<_>>>()?
         };
         works.append(&mut w);
-        if sweep_on {
-            *window_store.lock().unwrap() = None;
-        }
     }
     // ⭐ PREREG_o2_tie_outside_gate_2026-10-13: the §6gz gate once more, now that EVERY region has registered its
     // outside ties. Inside a worker the gate reads a registry the other regions are still filling, so a molecule whose
@@ -9204,8 +9260,6 @@ fn main() -> Result<()> {
                 // soft per-copy POSTERIOR + consistent ZONE (opt-in): localize even the unassignable reads.
                 if args.posterior {
                     const FLOOR: f64 = 0.01; // a copy is in the consistent ZONE if its posterior exceeds this
-                    let loci: Vec<Option<(String, u64)>> =
-                        fa.copy_tids.iter().map(|t| parse_locus(t)).collect();
                     for (ri, a) in &fa.assignments {
                         if a.posterior.len() != fa.copy_tids.len() {
                             continue; // posterior frame must line up with the copy roster (e.g. post-freeze)
@@ -9227,18 +9281,7 @@ fn main() -> Result<()> {
                         let mut idx: Vec<usize> =
                             (0..post.len()).filter(|&c| post[c] > FLOOR).collect();
                         idx.sort_by(|&a2, &b2| post[b2].partial_cmp(&post[a2]).unwrap());
-                        let zone: Vec<u64> = idx
-                            .iter()
-                            .filter_map(|&c| loci[c].as_ref().map(|l| l.1))
-                            .collect();
-                        let chrom = idx
-                            .iter()
-                            .find_map(|&c| loci[c].as_ref().map(|l| l.0.clone()))
-                            .unwrap_or_default();
-                        let (zs, ze) = (
-                            zone.iter().min().copied().unwrap_or(0),
-                            zone.iter().max().copied().unwrap_or(0),
-                        );
+                        let (chrom, zs, ze) = posterior_zone(&fa.copy_spans, &idx);
                         let pstr = idx
                             .iter()
                             .map(|&c| format!("{}:{:.3}", c, post[c]))
@@ -9898,7 +9941,7 @@ fn main() -> Result<()> {
                             *votes.entry(r.catalog_copy_idx.as_str()).or_insert(0) += 1;
                         }
                     }
-                    if (args.gtf_copy_set && !args.no_gtf_copy_set) {
+                    if args.gtf_copy_set && !args.no_gtf_copy_set {
                         matched_ri.push(ri);
                     }
                 }
@@ -10470,7 +10513,7 @@ fn main() -> Result<()> {
                     fwd: u32,
                     rev: u32,
                 }
-                let mut groups: std::collections::BTreeMap<Vec<(u64, u64)>, Resc> =
+                let mut groups: std::collections::BTreeMap<(Vec<(u64, u64)>, String), Resc> =
                     std::collections::BTreeMap::new();
                 let mut classified: Vec<(usize, Rec)> = Vec::with_capacity(bam_reads.len());
                 for (ri, name) in bam_reads.iter().enumerate() {
@@ -10538,7 +10581,7 @@ fn main() -> Result<()> {
                             // `chain` is guaranteed to have found no gate-passed match here (that is exactly
                             // the condition classification checked before ever producing `Rec::Eligible`),
                             // via `gate_passed_tid_for`'s position-aware lookup — not raw chain membership.
-                            let e = groups.entry(chain.clone()).or_insert_with(|| Resc {
+                            let e = groups.entry(rescue_key(chain, catalog_idx)).or_insert_with(|| Resc {
                                 starts: Vec::new(),
                                 ends: Vec::new(),
                                 introns: chain.clone(),
@@ -10559,7 +10602,7 @@ fn main() -> Result<()> {
                     }
                 }
                 let mut n_rescued = 0usize;
-                let mut rescue_tid_of: DetHashMap<Vec<(u64, u64)>, String> = DetHashMap::default();
+                let mut rescue_tid_of: DetHashMap<(Vec<(u64, u64)>, String), String> = DetHashMap::default();
                 if args.rescue_singletons {
                     for (i, (chain, g)) in groups.iter().enumerate() {
                         let s0 = *g.starts.iter().min().unwrap();
@@ -10633,14 +10676,14 @@ fn main() -> Result<()> {
                                 format!("NA(assigned_copy={cidx})"),
                                 "excluded_chain_at_unassigned_locus",
                             ),
-                            Rec::Eligible { chain, .. } => {
+                            Rec::Eligible { chain, catalog_idx, .. } => {
                                 if !args.rescue_singletons {
                                     (
                                         fmt_chain(chain),
                                         "NA".to_string(),
                                         "eligible_for_rescue_flag_off",
                                     )
-                                } else if let Some(t) = rescue_tid_of.get(chain) {
+                                } else if let Some(t) = rescue_tid_of.get(&rescue_key(chain, catalog_idx)) {
                                     (fmt_chain(chain), t.clone(), "contributed_rescued_singleton")
                                 } else {
                                     // defensive only: every `Eligible` chain is grouped and emitted above,
@@ -10774,9 +10817,54 @@ fn main() -> Result<()> {
             let (mut n_ism, mut n_mono, mut n_frac, mut n_ret) = (0usize, 0usize, 0usize, 0usize);
             let mut floors: Vec<u64> = Vec::new();
             let mut polished: Vec<String> = Vec::with_capacity(gtf_lines.len());
-            // --polish-junction-snap reads: one indexed BAM reader for the whole loop, opened on first use
-            let mut snap_bam: Option<SnapBam> = None;
-            for (c, mut part) in contigs.iter().zip(parts) {
+            // Audit round 60: contigs are polished IN PARALLEL and merged in contig order. A contig's polish reads only
+            // its own lines and its own end evidence (moved out of `tss_all` here, into a per-contig value of the same
+            // type so the body below is the serial loop's text), and what it produced is appended in the order the serial
+            // loop appended it: lines, counts, floors, tags, statistics and its log lines (written to a buffer, printed
+            // at the merge). A119b: the serial loop was ~85 s of the stage in each of the two assemble runs.
+            macro_rules! plog {
+                ($l:expr, $($a:tt)*) => {{
+                    use std::fmt::Write as _;
+                    let _ = writeln!($l, $($a)*);
+                }};
+            }
+            type ContigPolish = (
+                Vec<String>, (usize, usize, usize, usize), Vec<u64>, DetHashMap<String, String>, DetHashSet<String>,
+                Vec<TssStats>, Vec<TesStats>, Vec<(usize, usize)>, DetHashMap<String, String>, Vec<SnapStats>, String,
+            );
+            let work: Vec<(&String, Vec<String>, rustle::denovo_assemble::TssEvidence)> = contigs
+                .iter()
+                .zip(parts)
+                .map(|(c, part)| {
+                    let mut own = rustle::denovo_assemble::TssEvidence::default();
+                    if let Some(v) = tss_all.by_chrom.remove(c.as_str()) {
+                        own.by_chrom.insert(c.clone(), v);
+                    }
+                    if let Some(v) = tss_all.unspliced.remove(c.as_str()) {
+                        own.unspliced.insert(c.clone(), v);
+                    }
+                    if let Some(v) = tss_all.mono.remove(c.as_str()) {
+                        own.mono.insert(c.clone(), v);
+                    }
+                    if let Some(v) = tss_all.mono_window.get(c.as_str()) {
+                        own.mono_window.insert(c.clone(), v.clone());
+                    }
+                    (c, part, own)
+                })
+                .collect();
+            let polish_one = |(c, mut part, mut tss_all): (&String, Vec<String>, rustle::denovo_assemble::TssEvidence)| -> Result<ContigPolish> {
+                let (mut n_ism, mut n_mono, mut n_frac, mut n_ret) = (0usize, 0usize, 0usize, 0usize);
+                let mut floors: Vec<u64> = Vec::new();
+                let mut tss_attrs: DetHashMap<String, String> = DetHashMap::default();
+                let mut tss_protect: DetHashSet<String> = DetHashSet::default();
+                let mut tss_stats: Vec<TssStats> = Vec::new();
+                let mut tes_stats: Vec<TesStats> = Vec::new();
+                let mut mono_primed_stats: Vec<(usize, usize)> = Vec::new();
+                let mut tes_attrs: DetHashMap<String, String> = DetHashMap::default();
+                let mut snap_stats: Vec<SnapStats> = Vec::new();
+                let mut log = String::new();
+                // --polish-junction-snap reads: one indexed BAM reader per contig, opened on first use
+                let mut snap_bam: Option<SnapBam> = None;
                 // --polish-junction-snap: on the polish INPUT, before every polish step (off: never entered)
                 if args.polish_junction_snap != "off" {
                     let t0 = std::time::Instant::now();
@@ -10796,7 +10884,7 @@ fn main() -> Result<()> {
                                 .expect("opened above")
                                 .evidence(c, seq, partners)
                         })?;
-                    eprintln!(
+                    plog!(log, 
                         "[copy_assign] JUNCTION SNAP ({}) {}: {} near junction pairs (same locus and strand, \
                          |d|,|a| <= {} bp) -> {} sequence-equivalent + {} read-contradicted junctions re-placed -> {} \
                          transcripts rewritten, {} collapsed into an identical chain (reads summed); evidence {} reads \
@@ -10872,14 +10960,14 @@ fn main() -> Result<()> {
                         }
                         let (moved_lines, moved) = tss_end_median(&part, &recs, &skip);
                         part = moved_lines;
-                        eprintln!(
+                        plog!(log, 
                             "[copy_assign] TSS END ({}) {}: {} multi-exon transcripts moved their 5' end to the lower median \
                              of their own exact-chain starts (>= 2; {} rescued / split forms left at their proven mode)",
                             args.polish_tss_end, c, moved, skip.len()
                         );
                     }
                     let st = &out.stats;
-                    eprintln!(
+                    plog!(log, 
                         "[copy_assign] TSS PROOF ({}) {}: {}; cap signal {} (capped {}/{} at the proven first-exon \
                          clusters, {}/{} in internal-exon bodies); case A: {} candidate short forms, {} proven, {} in scope \
                          ({} proven without an own start in the window: not protected) -> rescued ISM {} / fraction {} / \
@@ -10918,7 +11006,7 @@ fn main() -> Result<()> {
                     part = tes_apply(part, &out);
                     tes_attrs.extend(out.attrs.iter().map(|(k, v)| (k.clone(), v.clone())));
                     let st = &out.stats;
-                    eprintln!(
+                    plog!(log, 
                         "[copy_assign] TES PROOF ({}) {}: {} multi-exon transcripts, {} with a 3' cluster of >= 2 own \
                          reads, {} with a PAS-proven cluster ({} with >= 2); emitted 3' end: canonical PAS {}, internally \
                          primed {} -> {} moved to the most-3' proven cluster's mode",
@@ -10948,7 +11036,7 @@ fn main() -> Result<()> {
                             *a = set(&set(a, "tes_pas", tes_pas(seq, minus, m)), "tes_primed", tes_primed(seq, minus, m));
                         }
                     }
-                    eprintln!(
+                    plog!(log, 
                         "[copy_assign] TES EXTEND ({}) {}: {} unspliced records; {} multi-exon transcripts moved their 3' end \
                          to a PAS-proven unspliced cluster over >= 2-read coverage (<= {} bp, no other gene's exon)",
                         args.polish_tes_extend, c, unsp.len(), moved, TES_EXT_MAX
@@ -11006,7 +11094,7 @@ fn main() -> Result<()> {
                     part.retain(|l| {
                         re_attr(l, "transcript_id").map_or(true, |t| !drop.contains(t.as_str()))
                     });
-                    eprintln!(
+                    plog!(log, 
                         "[copy_assign] MONO PRIMED {c}: {} single-exon transcripts, {} with reads -> {n_drop} dropped \
                          (>= {MONO_PRIMED_SHARE} of their unspliced reads internally primed; evidence {src})",
                         monos.len(),
@@ -11024,12 +11112,32 @@ fn main() -> Result<()> {
                         .unwrap_or(&[]);
                     let (m, (removed, emitted)) = mono_models(&part, &unsp, seq, c);
                     part = m;
-                    eprintln!(
+                    plog!(log, 
                         "[copy_assign] MONO MODEL ({}) {}: {} single-exon transcripts removed, {} emitted from >= {} unspliced reads \
                          with starts and ends within {} bp (PAS, not primed, no multi-exon exon on the strand)",
                         args.mono_model, c, removed, emitted, MONO_MIN_READS, MONO_W
                     );
                 }
+                Ok((part, (n_ism, n_mono, n_frac, n_ret), floors, tss_attrs, tss_protect, tss_stats, tes_stats, mono_primed_stats, tes_attrs, snap_stats, log))
+            };
+            let done: Vec<Result<ContigPolish>> = {
+                work.into_par_iter().map(polish_one).collect()
+            };
+            for r in done {
+                let (part, n, fl, ta, tp, ts, es, mp, ea, ss, log) = r?;
+                eprint!("{log}");
+                n_ism += n.0;
+                n_mono += n.1;
+                n_frac += n.2;
+                n_ret += n.3;
+                floors.extend(fl);
+                tss_attrs.extend(ta);
+                tss_protect.extend(tp);
+                tss_stats.extend(ts);
+                tes_stats.extend(es);
+                mono_primed_stats.extend(mp);
+                tes_attrs.extend(ea);
+                snap_stats.extend(ss);
                 polished.extend(part);
             }
             let comments: Vec<String> = gtf_lines
@@ -11102,12 +11210,22 @@ fn main() -> Result<()> {
             );
             regroup_stats = Some(st);
         }
+        let nascent = if args.polish_nascent == "off" { Default::default() } else { nascent_flags(&gtf_lines) };
+        if args.polish_nascent != "off" {
+            eprintln!("[copy_assign] NASCENT ({}): {} transcripts follow a better-supported transcript's first introns and run into its next intron", args.polish_nascent, nascent.len());
+        }
+        if args.polish_nascent == "drop" {
+            nascent_apply(&mut gtf_lines, &nascent, true);
+        }
         if args.gtf_tpm {
             let n = annotate_tpm(&mut gtf_lines);
             eprintln!("[copy_assign] ⭐ TPM: annotated {n} transcript lines with count-based `TPM` and `cov` (§6r5)");
         }
         if args.polish_subchain == "tag" {
             subchain_tag(&mut gtf_lines, &subchain);
+        }
+        if args.polish_nascent == "tag" {
+            nascent_apply(&mut gtf_lines, &nascent, false);
         }
         // --polish-tss then --polish-tes attributes: the line's last attributes (after TPM and any sub-chain tag)
         tss_tag(&mut gtf_lines, &tss_attrs);
@@ -12492,6 +12610,9 @@ fn main() -> Result<()> {
             }
         }
         // --polish-subchain: rows only when not `off` (the default params.tsv stays byte-identical)
+        if args.polish_nascent != "off" {
+            row("polish_nascent", args.polish_nascent.clone())?;
+        }
         if args.polish_subchain != "off" {
             row("polish_subchain", args.polish_subchain.clone())?;
             row("polish_subchain_tol_bp", format!("{SUBCHAIN_TOL_BP}"))?;
@@ -12792,7 +12913,8 @@ fn main() -> Result<()> {
         row("error_rate", format!("{}", args.error_rate))?;
         row("alpha", format!("{}", args.alpha))?;
         row("margin_gate", format!("{}", args.margin_gate))?;
-        row("rna_editing_filter", format!("{}", !args.no_editing_filter))?;
+        // not applied to pooled molecule observations (the default): the pair test there takes no editing columns
+        row("rna_editing_filter", format!("{}", !args.no_editing_filter && !molecule_pool_on(&args)))?;
         row(
             "junction_conflict_abstain",
             format!("{}", args.junction_conflict_abstain),
@@ -12872,7 +12994,7 @@ fn main() -> Result<()> {
             "read_star_catalog_locus",
             format!("{}", !args.read_star_pad_locus),
         )?;
-        row("sole_candidate", format!("{}", !args.no_sole_candidate))?;
+        row("sole_candidate", format!("{}", args.sole_candidate))?;
         row(
             "sole_candidates",
             format!(
@@ -12971,6 +13093,10 @@ fn main() -> Result<()> {
         row("phase", format!("{}", args.phase))?;
         row("posterior", format!("{}", args.posterior))?;
         row("em", format!("{}", args.em))?;
+        if args.em {
+            row("em_eps", format!("{}", args.em_eps))?;
+            row("em_max_iter", format!("{}", args.em_max_iter))?;
+        }
         row("gtf", format!("{}", args.gtf))?;
         eprintln!(
             "[copy_assign] wrote {}.params.tsv (run certificate)",
@@ -13902,6 +14028,32 @@ mod tests {
             gtf_attr_digits("gene_id \"g\"; reads \"1.5\"; reads \"2\";", "reads"),
             Some(2)
         );
+    }
+
+    /// Register 1635: StringTie's `mark_if_nascent` (rlink.cpp, -N). A transcript is a nascent of a better-supported one
+    /// with more exons on its strand when its introns are that one's first introns from the 5' end, it starts no later
+    /// than the end of that one's first exon, and it runs past the next exon's end into the following intron.
+    #[test]
+    fn nascent_follows_the_first_introns_then_runs_into_the_next_intron() {
+        let mut l = sc_gtf("X", "G", "+", 10, &SC_X);
+        l.extend(sc_gtf("P1", "G", "+", 2, &[(101, 200), (301, 450)])); // into intron 2: nascent
+        l.extend(sc_gtf("P0", "G", "+", 2, &[(120, 250)])); // single exon into intron 1: nascent
+        l.extend(sc_gtf("FRAG", "G", "+", 2, &[(101, 200), (301, 390)])); // ends inside the exon: a fragment, not nascent
+        l.extend(sc_gtf("HI", "G", "+", 99, &[(101, 200), (301, 460)])); // better supported than X: not its nascent
+        l.extend(sc_gtf("M", "H", "-", 10, &SC_X));
+        l.extend(sc_gtf("Q", "H", "-", 2, &[(450, 600), (701, 800)])); // '-': 5' is the right end; into intron 2: nascent
+        l.extend(sc_gtf("NOTQ", "H", "-", 2, &[(101, 200), (301, 450)])); // the 3' side of a '-' transcript: not nascent
+        let flags = nascent_flags(&l);
+        let got: Vec<(&str, &str)> = flags.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
+        assert_eq!(got, [("P0", "HI"), ("P1", "X"), ("Q", "M")]); // P0: the best-supported parent
+        let mut t = l.clone();
+        nascent_apply(&mut t, &flags, false);
+        assert_eq!(t.len(), l.len());
+        assert!(t.iter().any(|x| x.contains("transcript_id \"P1\"") && x.ends_with(" nascent_of \"X\";")));
+        let mut d = l.clone();
+        nascent_apply(&mut d, &flags, true);
+        assert!(!d.iter().any(|x| x.contains("\"P0\"") || x.contains("\"P1\"") || x.contains("\"Q\"")));
+        assert_eq!(d.len(), l.len() - 2 - 3 - 3);
     }
 
     #[test]
@@ -15098,6 +15250,39 @@ mod tests {
         let ids: DetHashSet<String> = mono_txs(&out).into_iter().map(|t| t.0).collect();
         assert_eq!(ids.len(), 3);
     }
+    /// RUSTLE_MONO_RULE arms (register 1626).
+    #[test]
+    fn mono_rule_arms_keep_pas_either_ends3() {
+        let l0 = sc_gtf("T", "G", "+", 5, &EXT_T);
+        let u = mono_unsp(false, &[(2001, 2500), (2010, 2490), (2040, 2520)]);
+        let no_pas = tes_seq(7000, &[]);
+        let primed_pas = tes_seq(7000, &[(2470, "AATAAA"), (2501, "AAAAAAAAAAAA")]);
+        let primed_only = tes_seq(7000, &[(2501, "AAAAAAAAAAAA")]);
+        assert_eq!(mono_models_rule(&l0, &u, &no_pas, "c", "pas").1, (0, 1));
+        assert_eq!(mono_models_rule(&l0, &u, &primed_pas, "c", "pas").1, (0, 0));
+        assert_eq!(mono_models_rule(&l0, &u, &primed_pas, "c", "either").1, (0, 1));
+        assert_eq!(mono_models_rule(&l0, &u, &primed_only, "c", "either").1, (0, 0));
+        // keep: M (3000-6000, no unspliced primary on it) stays; a model with 3 records on it is replaced
+        let mut l = l0.clone();
+        l.extend(sc_gtf("M", "G9", "+", 9, &[(3000, 6000)]));
+        l.extend(sc_gtf("N", "G8", "+", 9, &[(1900, 2600)]));
+        let pas = tes_seq(7000, &[(2470, "AATAAA")]);
+        let (out, st) = mono_models_rule(&l, &u, &pas, "c", "keep");
+        let ids: Vec<String> = mono_txs(&out).into_iter().map(|t| t.0).collect();
+        assert_eq!(st, (1, 1));
+        assert!(ids.contains(&"M".to_string()) && !ids.contains(&"N".to_string()));
+        // fallback: N (3 records on it) stays when its cluster is dropped (no PAS), goes when the cluster is emitted
+        let ids = |seq: &[u8]| -> Vec<String> { mono_txs(&mono_models_rule(&l, &u, seq, "c", "fallback").0).into_iter().map(|t| t.0).collect() };
+        assert!(ids(&no_pas).contains(&"N".to_string()) && ids(&no_pas).contains(&"M".to_string()));
+        assert!(!ids(&pas).contains(&"N".to_string()) && ids(&pas).contains(&"M".to_string()));
+        // ends3: ragged 5' ends, one 3' end -> one model from the start two reads reach to the median end
+        let rag = mono_unsp(false, &[(2001, 2500), (2150, 2495), (2300, 2505), (2400, 2500)]);
+        let (out, st) = mono_models_rule(&l0, &rag, &pas, "c", "ends3");
+        assert_eq!(st, (0, 1));
+        let m = mono_txs(&out);
+        assert_eq!((m[1].1, m[1].2), (2150, 2500));
+        assert_eq!(mono_models_rule(&l0, &rag, &pas, "c", "").1, (0, 0)); // the r1489 rule needs agreeing starts
+    }
     #[test]
     fn mono_model_orients_minus_strand_ends() {
         let l = sc_gtf("T", "G", "+", 5, &EXT_T);
@@ -15356,6 +15541,81 @@ mod tests {
     }
 
     use super::*;
+
+    /// Audit round 66: `--read-star-junctions` on the genomic read-star (the default form) builds no junction list,
+    /// so the flag decided nothing while `params.tsv` recorded it as on. Refused unless `--read-star-unit` is given.
+    #[test]
+    fn read_star_junctions_is_refused_where_it_does_nothing() {
+        use clap::Parser;
+        let parse = |extra: &[&str]| {
+            super::Args::try_parse_from(["copy_assign", "--bam", "r.bam", "--fasta", "g.fa", "--out", "o"].iter().chain(extra.iter()))
+                .unwrap()
+        };
+        assert!(super::population_guards(&parse(&[])).is_ok());
+        assert!(super::population_guards(&parse(&["--read-star-junctions", "--read-star-unit"])).is_ok());
+        let e = super::population_guards(&parse(&["--read-star-junctions"])).unwrap_err().to_string();
+        assert!(e.contains("--read-star-unit"), "{e}");
+    }
+
+    /// Audit round 69: flags that read the assignment did nothing under `--assemble-only` and were recorded as on.
+    #[test]
+    fn assignment_flags_are_refused_under_assemble_only() {
+        use clap::Parser;
+        let parse = |extra: &[&str]| {
+            super::Args::try_parse_from(["copy_assign", "--bam", "r.bam", "--fasta", "g.fa", "--out", "o"].iter().chain(extra.iter()))
+                .unwrap()
+        };
+        assert!(super::population_guards(&parse(&["--assemble-only"])).is_ok());
+        assert!(super::population_guards(&parse(&["--posterior"])).is_ok());
+        for f in ["--posterior", "--phase", "--em", "--union-certificate"] {
+            let e = super::population_guards(&parse(&["--assemble-only", f])).unwrap_err().to_string();
+            assert!(e.contains(f), "{e}");
+        }
+    }
+
+    #[test]
+    fn unspliced_rescues_group_by_copy_and_spliced_ones_by_chain() {
+        assert_ne!(super::rescue_key(&[], "0"), super::rescue_key(&[], "3"));
+        assert_eq!(super::rescue_key(&[], "3"), super::rescue_key(&[], "3"));
+        assert_eq!(super::rescue_key(&[(10, 20)], "0"), super::rescue_key(&[(10, 20)], "3"));
+    }
+
+    /// Audit round 69: `--posterior`'s zone ended at the largest copy START, was empty for copy ids not named
+    /// `DN_...`, and mixed contigs. It is the span of the zone's copies on the top copy's contig.
+    #[test]
+    fn posterior_zone_is_the_span_of_its_copies_on_one_contig() {
+        let spans = vec![("chr1".to_string(), 100, 200), ("chr2".to_string(), 5, 9), ("chr1".to_string(), 500, 900)];
+        assert_eq!(super::posterior_zone(&spans, &[2, 1, 0]), ("chr1".to_string(), 100, 900));
+        assert_eq!(super::posterior_zone(&spans, &[1]), ("chr2".to_string(), 5, 9));
+        assert_eq!(super::posterior_zone(&spans, &[]), (String::new(), 0, 0));
+    }
+
+    /// Audit round 66: the tie-outside gate asked whether a tied placement's SPAN meets a unit, so a placement whose
+    /// intron merely crosses a unit counted as inside it. The unit a placement lies on is the first one its aligned
+    /// blocks touch.
+    #[test]
+    fn a_placement_lies_on_a_unit_only_where_its_blocks_do() {
+        let br = BamRead {
+            chrom: "c".to_string(),
+            read: rustle::copy_split::AlignedRead { ref_start: 1000, cigar: vec![('M', 1000), ('N', 88_000), ('M', 1000)], seq: vec![], qual: vec![] },
+            mapq: 0,
+            name: "r".to_string(),
+            as_score: 0,
+            ms: 0,
+            de: 0.0,
+            is_supplementary: false,
+            is_secondary: false,
+            reverse: false,
+            ts: None,
+        };
+        let u = |c: &str, a: u64, b: u64| vec![(c.to_string(), a, b)];
+        assert_eq!(unit_under(&u("c", 40_000, 50_000), &br), None, "the intron crosses the unit, no block does");
+        assert_eq!(unit_under(&u("c", 1500, 1600), &br), Some(0));
+        assert_eq!(unit_under(&u("c", 90_500, 95_000), &br), Some(0));
+        assert_eq!(unit_under(&u("d", 1500, 1600), &br), None, "another contig");
+        let two = vec![("c".to_string(), 40_000, 50_000), ("c".to_string(), 90_000, 91_000)];
+        assert_eq!(unit_under(&two, &br), Some(1));
+    }
 
     #[test]
     fn block_overlap_ignores_an_intron_that_merely_spans_the_window() {

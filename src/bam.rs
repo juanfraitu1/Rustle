@@ -80,6 +80,17 @@ pub fn exons_from_cigar(ref_start: u64, cigar: &Cigar) -> Result<Vec<(u64, u64)>
     Ok(cigar_exons(ref_start, cigar))
 }
 
+/// BGZF inflate workers of one region reader: `RUSTLE_BAM_THREADS`, else a quarter of the cores, at least min(4, cores)
+/// and at most 16 (audit round 50: A119b assemble 397 s at 4 workers, 309 s at 8, 275 s at 16, products identical).
+pub fn bgzf_workers() -> usize {
+    let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+    bgzf_workers_for(std::env::var("RUSTLE_BAM_THREADS").ok().as_deref(), cores)
+}
+
+fn bgzf_workers_for(over: Option<&str>, cores: usize) -> usize {
+    over.and_then(|v| v.parse::<usize>().ok()).unwrap_or_else(|| (cores / 4).clamp(cores.min(4), 16)).max(1)
+}
+
 /// Open BAM from path. Plain .bam (uncompressed or bgzf) via noodles_bam.
 pub fn open_bam<P: AsRef<Path>>(
     path: P,
@@ -450,6 +461,18 @@ where
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn region_reader_workers_scale_with_the_machine_and_obey_the_override() {
+        // audit round 50: 4 workers were the cap on any machine; A119b assemble 397 s at 4, 275 s at 16 (72 cores)
+        assert_eq!(super::bgzf_workers_for(None, 72), 16);
+        assert_eq!(super::bgzf_workers_for(None, 32), 8);
+        assert_eq!(super::bgzf_workers_for(None, 16), 4);
+        assert_eq!(super::bgzf_workers_for(None, 8), 4);
+        assert_eq!(super::bgzf_workers_for(None, 2), 2);
+        assert_eq!(super::bgzf_workers_for(Some("3"), 72), 3);
+        assert_eq!(super::bgzf_workers_for(Some("0"), 72), 1);
+        assert_eq!(super::bgzf_workers_for(Some("x"), 8), 4); // unparsable = the default, as before
+    }
     use super::*;
     use noodles_sam::alignment::record::cigar::op::{Kind, Op};
 

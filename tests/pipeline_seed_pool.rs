@@ -66,7 +66,9 @@ const FAI: &str = "chr1\t248387328\t7\t80\t81\nchr16\t96330374\t252000000\t80\t8
 
 /// The scratch directory of a case (the helper empties it first).
 fn case_dir(tag: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("pipeline_seed_pool").join(tag)
+    // the driver records resolved paths (readlink -f), so resolve a symlinked target directory here too
+    let tmp = PathBuf::from(env!("CARGO_TARGET_TMPDIR"));
+    std::fs::canonicalize(&tmp).unwrap_or(tmp).join("pipeline_seed_pool").join(tag)
 }
 
 /// Run `assemble` with `flags`. `env` is added to an otherwise empty environment (PATH only), so an exported
@@ -290,7 +292,7 @@ fn merged_env(pool: &str, ratio: &str) -> String {
 }
 
 fn merged_env_for(pool: &str, ratio: &str, contig: &str) -> String {
-    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("pipeline_seed_pool").join("merged_env");
+    let dir = case_dir("merged_env");
     std::fs::create_dir_all(&dir).unwrap();
     let (bam, fasta) = (dir.join("reads.bam"), dir.join("g.fa"));
     std::fs::write(&bam, "").unwrap();

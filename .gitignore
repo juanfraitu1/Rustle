@@ -143,3 +143,5 @@ bench/st_debug*.jsonl
 /figures/inputs.local.tsv
 /figures/data_recorded/
 graphify-out/
+# small reference sequences the driver documents (RUSTLE_EXCLUDE_FASTA)
+!tools/data/*.fa
