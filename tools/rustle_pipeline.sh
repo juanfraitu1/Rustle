@@ -89,6 +89,10 @@
 #   tools/rustle_pipeline.sh shiftdrop --bam B --fasta G --out PREFIX [--threads N]   OPT-IN (register 1728-1730 / 1732 / 1734 / 1738 / 1739): PREFIX.shiftdrop.gtf = PREFIX.gtf without
 #                              weaker copies of a stronger chain with one internal exon end moved whose reads carry an indel beside the moved
 #                              intron (>= half of them); 0.3-0.9% of chains, 2-4% of them annotated; no other stage reads this file
+#   tools/rustle_pipeline.sh shortexons --bam B --fasta G --out PREFIX [--threads N]   OPT-IN (register 1753 / 1754 / 1757): PREFIX.shortexons.gtf = the default
+#                              assembly of the reads after those that skip an exon of <= 15 bp are rewritten through it (another read spells
+#                              the exon, or >= 2 reads carry its bases and one splice-flanked site of the intron fits); repairs a small class,
+#                              no consistent effect on precision; needs python3 with pysam; PREFIX.gtf is not touched
 #   tools/rustle_pipeline.sh earlyends --bam B --fasta G --out PREFIX [--threads N]   (register 1721 / 1722; also the last step of `all`, RUSTLE_EARLYENDS=0 = off): PREFIX.earlyends.gtf = PREFIX.gtf plus
 #                              nested early ends whose reads end at one position with a polyA signal and no A-rich run
 #   tools/rustle_pipeline.sh cache-ls --out PREFIX      list what PREFIX.cache holds (cache-clear: delete it)
@@ -873,6 +877,22 @@ stage_trunc5() {
   mv -f "$OUT.trunc5.gtf.tmp" "$OUT.trunc5.gtf"
   say "trunc5: $(tail -1 "$OUT.trunc5.log") -> $OUT.trunc5.gtf"
 }
+# shortexons: OPT-IN, named only (register 1753 / 1754 / 1757, never part of `all`). minimap2 drops exons of <= 15 bp (row 1746); the
+# reads that skip one are rewritten through it (bench/famcmp/short_exons.py) and assembled with the default command into
+# $OUT.shortexons.gtf (+ .final.gtf). Measured on eight samples: false skip chains at the reached exons nearly vanish, chains with the
+# exon double to triple, panel precision -0.0016 to +0.0049 with no consistent sign (the rewrite also adds new unannotated chains).
+# Not a default until a rule removes those. $OUT.gtf is never changed. RUSTLE_SHORTEXONS_KEEP=1 keeps the rewritten BAM.
+stage_shortexons() {
+  [ -s "$BAM" ] && [ -s "$FASTA" ] || { echo "[rustle_pipeline] shortexons needs --bam and --fasta" >&2; exit 2; }
+  local d="$OUT.shortexons.d"; mkdir -p "$d"
+  ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/../bench/famcmp/short_exons.py" "$BAM" "$FASTA" "$d/reads.bam" "$OUT.shortexons" "$THREADS" > "$OUT.shortexons.log" 2>&1 \
+    && bash "$0" assemble --bam "$d/reads.bam" --fasta "$FASTA" --out "$d/run" --threads "$THREADS" --bin "$BIN" > "$OUT.shortexons.assemble.log" 2>&1 \
+    && [ -s "$d/run.gtf" ] \
+    || { echo "[rustle_pipeline] shortexons failed (see $OUT.shortexons.log, $OUT.shortexons.assemble.log); $OUT.gtf is unaffected" >&2; exit 1; }
+  mv -f "$d/run.gtf" "$OUT.shortexons.gtf"; [ ! -s "$d/run.final.gtf" ] || mv -f "$d/run.final.gtf" "$OUT.shortexons.final.gtf"
+  [ -n "${RUSTLE_SHORTEXONS_KEEP:-}" ] || rm -rf "${d:?}"
+  say "shortexons: $(tail -1 "$OUT.shortexons.log") -> $OUT.shortexons.gtf"
+}
 # capstarts: register 1717 / 1720; `all` writes it last as a side product since 2026-11-14 (user; RUSTLE_CAPSTARTS=0 = off). $OUT.capstarts.gtf = $OUT.gtf plus nested starts
 # (>= 5 reads, 3'-terminal sub-run of an emitted chain) with >= 3 capped reads (non-templated 5' G) at one position.
 # Refuses libraries without a usable cap G (self-check in the log). $OUT.gtf is never changed.
@@ -1607,7 +1627,7 @@ stage_all() {
 }
 case "$STAGE" in
   merged) stage_merged;;
-  assemble) stage_assemble; if [ -n "${GUIDE:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_guided; fi;; guided) stage_guided;; siblings) stage_siblings;; flairlike) stage_flairlike;; altends) stage_altends;; trunc5) stage_trunc5;; shiftdrop) stage_shiftdrop;; capstarts) stage_capstarts;; earlyends) stage_earlyends;; repeatloci) stage_repeatloci;; exonmap) stage_exonmap;; relatives) stage_relatives;; famreps) stage_famreps;; families) stage_families;; candidates) stage_candidates;; catalog) stage_catalog;;
+  assemble) stage_assemble; if [ -n "${GUIDE:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_guided; fi;; guided) stage_guided;; siblings) stage_siblings;; flairlike) stage_flairlike;; altends) stage_altends;; trunc5) stage_trunc5;; shiftdrop) stage_shiftdrop;; shortexons) stage_shortexons;; capstarts) stage_capstarts;; earlyends) stage_earlyends;; repeatloci) stage_repeatloci;; exonmap) stage_exonmap;; relatives) stage_relatives;; famreps) stage_famreps;; families) stage_families;; candidates) stage_candidates;; catalog) stage_catalog;;
   assign) stage_assign;; flag) stage_flag;; flag_scan) stage_flag_scan;; index) stage_index;;
   # `all`'s background flag stage: the scan, then align + verdict, whose wall goes to PREFIX.flag.time
   flag_bg) stage_flag_scan; export RP_FLAG_SCAN_DONE=1; fb0=$SECONDS; stage_flag; printf 'wall_s\t%s\n' "$(( SECONDS - fb0 ))" > "$OUT.flag.time.tmp";;

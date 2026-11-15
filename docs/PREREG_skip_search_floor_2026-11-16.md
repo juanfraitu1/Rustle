@@ -64,3 +64,8 @@ Across eight samples (rows 1754 and 1757) the same picture: the rewrite removes 
 units it reaches and doubles to triples the chains with the exon there; RefSeq-correct chains gain on six samples and
 lose on OR6737 and PPY; panel precision moves by -0.0016 to +0.0049 with no consistent sign. The new chains it adds are
 3-28% RefSeq-correct. No stage built. Panel BAMs deleted; `*.fix.bam.fixes.tsv` kept.
+
+**User decision (2026-11-16):** built as the opt-in driver stage `shortexons` (`bench/famcmp/short_exons.py`, no
+annotation needed), to be promoted only if another rule removes the wrong new chains. Check on PTR through the driver:
+the same 294 units and the same 3,280 rewritten reads as this row's run; whole genome against the default assembly
+139 new chains (19 RefSeq-correct), 130 lost (8 correct); 151 s on 72 cores.

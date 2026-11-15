@@ -610,6 +610,40 @@ fn trunc5_needs_the_assembly_and_then_writes_the_trunc5_gtf() {
     assert_eq!(std::fs::read_to_string(&gtf).unwrap(), "model\n");
 }
 
+/// Opt-in `shortexons` (register 1753 / 1754 / 1757): refuses without the reads, then rewrites them, assembles the rewritten BAM through the
+/// driver itself and leaves PREFIX.gtf alone; the rewritten BAM is removed.
+#[test]
+fn shortexons_needs_the_reads_and_then_writes_the_shortexons_gtf() {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("pipeline_driver_dispatch").join("shortexons");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("create scratch dir");
+    let (out, py, me, inp) = (dir.join("run"), dir.join("py.sh"), dir.join("driver.sh"), dir.join("in"));
+    std::fs::write(&py, "#!/bin/bash\necho reads > \"$4\"\necho 3 units\n").unwrap();
+    // the stub driver: `assemble --bam B --fasta G --out P ..` writes P.gtf from the BAM it was given
+    std::fs::write(&me, "#!/bin/bash\n[ \"$1\" = assemble ] && cat \"$3\" > \"$7.gtf\"\n").unwrap();
+    let gtf = format!("{}.gtf", out.display());
+    std::fs::write(&gtf, "model\n").unwrap();
+    let script = |bam: &str| {
+        format!(
+            "set -euo pipefail\nexport RUSTLE_PYTHON='bash {py}'\nOUT={out}; BAM={bam}; FASTA={inp}; THREADS=2; BIN=bin; RP_DRIVER_DIR=tools\nsay() {{ :; }}\n{}\nstage_shortexons\n",
+            function_block("stage_shortexons"),
+            py = py.display(),
+            out = out.display(),
+            inp = inp.display()
+        )
+    };
+    let run = |bam: &str| std::process::Command::new("bash").arg("-c").arg(script(bam)).arg(&me).output().expect("run bash");
+    std::fs::write(&inp, "x\n").unwrap();
+    let o = run(&dir.join("missing").display().to_string());
+    assert_eq!(o.status.code(), Some(2), "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("shortexons needs"));
+    let o = run(&inp.display().to_string());
+    assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!(std::fs::read_to_string(format!("{}.shortexons.gtf", out.display())).unwrap(), "reads\n");
+    assert_eq!(std::fs::read_to_string(&gtf).unwrap(), "model\n");
+    assert!(!PathBuf::from(format!("{}.shortexons.d", out.display())).exists());
+}
+
 /// Opt-in `shiftdrop` (register 1727 / 1730 / 1732): refuses without the assembly, then writes PREFIX.shiftdrop.gtf and leaves PREFIX.gtf alone.
 #[test]
 fn shiftdrop_needs_the_assembly_and_then_writes_the_shiftdrop_gtf() {

@@ -422,6 +422,7 @@ tools/rustle_pipeline.sh flairlike $A --threads 72       # run.flairlike.gtf (r1
 tools/rustle_pipeline.sh altends $A                      # run.altends.gtf: alt_tes attributes, no coordinate change
 tools/rustle_pipeline.sh trunc5 $A --threads 72          # run.trunc5.gtf (r1677, r1692)
 tools/rustle_pipeline.sh shiftdrop $A --threads 72       # run.shiftdrop.gtf (r1728-1739)
+tools/rustle_pipeline.sh shortexons $A --threads 72      # run.shortexons.gtf + .units.tsv + .reads.tsv (r1753 / r1754 / r1757)
 tools/rustle_pipeline.sh earlyends $A --threads 72       # run.earlyends.gtf alone (r1721 / r1722); RUSTLE_EARLYENDS=0 off in `all`
 tools/rustle_pipeline.sh capstarts $A --threads 72       # run.capstarts.gtf alone (r1717 / r1720); RUSTLE_CAPSTARTS=0 off in `all`
 tools/rustle_pipeline.sh repeatloci $A                   # run.repeat_loci.tsv (r1698 / r1702); marks loci, drops nothing
