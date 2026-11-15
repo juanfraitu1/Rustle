@@ -78,7 +78,7 @@ the default products untouched:
 | `altends` | `PREFIX.altends.gtf` | 1660 |
 | `trunc5` | `PREFIX.trunc5.gtf` | 1677, 1692 |
 | `shiftdrop` | `PREFIX.shiftdrop.gtf` | 1728-1739 |
-| `shortexons` | `PREFIX.shortexons.gtf` (reassembly after reads that skip an exon of <= 15 bp are rewritten through it) | 1746, 1753, 1754, 1757 |
+| `shortexons` | `PREFIX.shortexons.gtf` (default reassembly after reads that skip an exon of <= 15 bp are rewritten through it; needs room for a second copy of the BAM while it runs) | 1746, 1753, 1754, 1757 |
 | `repeatloci` | `PREFIX.repeat_loci.tsv` | 1698, 1702 |
 | `exonmap` | `PREFIX.fam.exonmap.columns.tsv` + one GFA per family | 1595 |
 | `relatives` | `PREFIX.fam.relatives.tsv` | 1676, 1737 |

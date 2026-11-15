@@ -92,7 +92,9 @@
 #   tools/rustle_pipeline.sh shortexons --bam B --fasta G --out PREFIX [--threads N]   OPT-IN (register 1753 / 1754 / 1757): PREFIX.shortexons.gtf = the default
 #                              assembly of the reads after those that skip an exon of <= 15 bp are rewritten through it (another read spells
 #                              the exon, or >= 2 reads carry its bases and one splice-flanked site of the intron fits); repairs a small class,
-#                              no consistent effect on precision; needs python3 with pysam; PREFIX.gtf is not touched
+#                              no consistent effect on precision; needs python3 with pysam; PREFIX.gtf is not touched. The inner assemble is the
+#                              default one (RUSTLE_* switches apply, command-line assemble options do not); while it runs, PREFIX.shortexons.d
+#                              holds a second copy of the BAM (peak about twice its size), removed at the end
 #   tools/rustle_pipeline.sh earlyends --bam B --fasta G --out PREFIX [--threads N]   (register 1721 / 1722; also the last step of `all`, RUSTLE_EARLYENDS=0 = off): PREFIX.earlyends.gtf = PREFIX.gtf plus
 #                              nested early ends whose reads end at one position with a polyA signal and no A-rich run
 #   tools/rustle_pipeline.sh cache-ls --out PREFIX      list what PREFIX.cache holds (cache-clear: delete it)
@@ -888,7 +890,7 @@ stage_shortexons() {
   ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/../bench/famcmp/short_exons.py" "$BAM" "$FASTA" "$d/reads.bam" "$OUT.shortexons" "$THREADS" > "$OUT.shortexons.log" 2>&1 \
     && bash "$0" assemble --bam "$d/reads.bam" --fasta "$FASTA" --out "$d/run" --threads "$THREADS" --bin "$BIN" > "$OUT.shortexons.assemble.log" 2>&1 \
     && [ -s "$d/run.gtf" ] \
-    || { echo "[rustle_pipeline] shortexons failed (see $OUT.shortexons.log, $OUT.shortexons.assemble.log); $OUT.gtf is unaffected" >&2; exit 1; }
+    || { [ -n "${RUSTLE_SHORTEXONS_KEEP:-}" ] || rm -rf "${d:?}"; echo "[rustle_pipeline] shortexons failed (see $OUT.shortexons.log, $OUT.shortexons.assemble.log); $OUT.gtf is unaffected" >&2; exit 1; }
   mv -f "$d/run.gtf" "$OUT.shortexons.gtf"; [ ! -s "$d/run.final.gtf" ] || mv -f "$d/run.final.gtf" "$OUT.shortexons.final.gtf"
   [ -n "${RUSTLE_SHORTEXONS_KEEP:-}" ] || rm -rf "${d:?}"
   say "shortexons: $(tail -1 "$OUT.shortexons.log") -> $OUT.shortexons.gtf"
