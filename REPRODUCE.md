@@ -408,6 +408,34 @@ RUSTLE_BRIDGE_REGROUP=f1units RUSTLE_BRIDGE_UNITS_LIST=run.units.list.tsv RUSTLE
 python3 bench/test_units_from_annotation.py                                                # the helper's 10 tests
 ```
 
+### Driver stages added in November 2026
+
+`all` (above) also writes `run.earlyends.gtf` and `run.capstarts.gtf` after its last stage. The stages below are opt-in,
+each run by name after `assemble` (the family ones after `families`), with the same `--bam --fasta --out` as the run they
+extend; none changes `run.gtf` or any default product. Register rows and switches: the header of `tools/rustle_pipeline.sh`.
+
+```bash
+A="--bam READS.bam --fasta GENOME.fa --out run"
+tools/rustle_pipeline.sh assemble $A --guide ANNOT.gtf   # + run.guided.gtf (r1622); `guided` alone rewrites it from run.gtf
+tools/rustle_pipeline.sh siblings $A                     # run.sibling.gtf (r1628); after families
+tools/rustle_pipeline.sh flairlike $A --threads 72       # run.flairlike.gtf (r1640; second minimap2 pass)
+tools/rustle_pipeline.sh altends $A                      # run.altends.gtf: alt_tes attributes, no coordinate change
+tools/rustle_pipeline.sh trunc5 $A --threads 72          # run.trunc5.gtf (r1677, r1692)
+tools/rustle_pipeline.sh shiftdrop $A --threads 72       # run.shiftdrop.gtf (r1728-1739)
+tools/rustle_pipeline.sh earlyends $A --threads 72       # run.earlyends.gtf alone (r1721 / r1722); RUSTLE_EARLYENDS=0 off in `all`
+tools/rustle_pipeline.sh capstarts $A --threads 72       # run.capstarts.gtf alone (r1717 / r1720); RUSTLE_CAPSTARTS=0 off in `all`
+tools/rustle_pipeline.sh repeatloci $A                   # run.repeat_loci.tsv (r1698 / r1702); marks loci, drops nothing
+tools/rustle_pipeline.sh exonmap $A --threads 72         # run.fam.exonmap.columns.tsv + run.fam.exonmap.gfa/ (r1595)
+RUSTLE_SEDEF_BED=GENOME.sedef.bed RUSTLE_EXCLUDE_BED=SATELLITES.bed tools/rustle_pipeline.sh relatives $A   # run.fam.relatives.tsv (r1676 / r1737)
+# assign skip lists, opt-in: soft-masked families (r1690) and families covered by an rDNA unit (r1691)
+RUSTLE_EXCLUDE_SOFTMASK=0.9 RUSTLE_EXCLUDE_FASTA=tools/data/rdna_human.fa tools/rustle_pipeline.sh assign $A
+# back to the pre-November defaults: no extra locus representatives, sole-candidate promotion on
+RUSTLE_FAMREPS=0 RUSTLE_SOLE_CANDIDATE=1 tools/rustle_pipeline.sh all $A
+```
+
+The opt-in stages other than `guided` run Python (`bench/`, `tools/`): `python3` with pysam on PATH, or `RUSTLE_PYTHON`.
+These lines give the commands; the figures measured with them are in the register rows named, not repeated here.
+
 ## Tandem-copy simulations: what the aligner and the pipeline do with near-identical adjacent copies (§6zg, 2026-09-24)
 
 ```bash

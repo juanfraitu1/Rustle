@@ -22,6 +22,13 @@ the user's sandbox) — OTHER-BINARY: `utilities sd-scan` and the driver's `sd` 
 `mcl_families --emit-hierarchy --sd-cache`. Not adopted as the SD source (V1 FAIL), the SD98 source (V1b FAIL) or the
 duplicon source (V2 FAIL): see `docs/archive/2026-11/LEDGER_O1.md:4038 (PREREG_sedef_rs_layers_2026-10-13.md)`.
 
+**Top-level module, not a family module:** `src/guide.rs` (2026-11-10) — OPT-IN: guided mode, `utilities guide`
+(driver `assemble --guide ANNOT.gtf` or stage `guided` -> `PREFIX.guided.gtf`). A guide GTF applied to a finished de novo
+assembly (register 1622, rule G1d): guide chains with a full-chain primary alignment are added; de novo chains the guide
+explains are dropped; a chain with a new intron beside guide introns needs 10 reads, any other chain outside the guide 3
+(user-adopted floor, 2026-11-10; not tested on HG002). The de novo `PREFIX.gtf` and every later stage are unchanged.
+Chain set identical to the prototype `bench/famcmp/guide_proto.py` on gorilla OR6737; tests in `tests/utilities_guide.rs`.
+
 **Directory module, not a family module:** `src/copy_phasing/` (2026-10-24) — OTHER-BINARY: the `copy_phasing` binary
 (source in src/copy_phasing_bin.rs), the Rust port of `bench/o3_graph/o3port.py run` (Strainy/IsoCon side, slot matching,
 certified / putative copies, O2 `--semi` / `--guard`). Byte-identical to the Python on 122 golden cases
