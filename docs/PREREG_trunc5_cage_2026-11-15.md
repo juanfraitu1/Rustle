@@ -47,3 +47,31 @@ bar is read.
 
 Human only (no CAGE set for gorilla). Says nothing about 3' ends. refTSS is a multi-tissue atlas lifted from GRCh38:
 a testis- or sample-specific start can be real and outside every peak. No default changes in this row.
+
+## OUTCOME (2026-11-15, workspace `r1742_trunc5_cage`, `a.txt` / `hg.txt`): INVALID as registered
+
+| sample | group | chains | in peak | within 50 bp | background | ratio |
+|---|---|---|---|---|---|---|
+| A119b | dropped | 36,762 | 0.048 | 0.095 | 0.016 | 3.1 |
+| A119b | dropped, RefSeq-correct | 873 | 0.257 | 0.409 | 0.077 | 3.3 |
+| A119b | kept | 182,755 | 0.272 | 0.466 | 0.094 | 2.9 |
+| A119b | kept, RefSeq-correct (gate) | 37,842 | 0.344 | 0.648 | 0.189 | **1.83** |
+| HG002 | dropped | 16,889 | 0.125 | 0.187 | 0.029 | 4.4 |
+| HG002 | dropped, RefSeq-correct | 546 | 0.416 | 0.604 | 0.115 | 3.6 |
+| HG002 | kept | 136,144 | 0.493 | 0.709 | 0.140 | 3.5 |
+| HG002 | kept, RefSeq-correct (gate) | 35,199 | 0.463 | 0.796 | 0.220 | **2.10** |
+
+**Gate FAILS on both samples (1.83 x and 2.10 x against 3 x), so no bar is read.** Cause, from the table: the background
+position 100 bp downstream is in a peak for 0.19-0.22 of annotated chains (promoter peak clusters, and `PREFIX.gtf`'s most
+extended 5' end lying upstream of the main peak); the background that worked for nested starts in row 1716 (0.016) is
+not a background for full-length starts. The gate was mis-designed, not the samples.
+
+Post hoc, not a verdict:
+- The dropped chains are in a peak 5.7 x (A119b) and 3.9 x (HG002) less often than the kept ones, and 3.1 x / 4.4 x
+  above their own background. Had the bars been read: not SAFE on either sample, MIXED on HG002 (0.125 > 0.10), neither
+  on A119b (0.048).
+- Excess over background: about 1,200 (A119b) and 1,600 (HG002) dropped chains with a CAGE-supported start, 3.5% and
+  3.3% of all supported multi-exon starts, while the stage drops 16.7% and 11.0% of the multi-exon chains.
+- Reading: mostly truncations, with a real minority that a CAGE-free rule cannot name. Consistent with tagging rather
+  than dropping; not evidence for a default. A valid rerun needs a background that leaves the promoter (for example
+  the same offset on the opposite strand, or >= 1 kb), registered as a new row.
