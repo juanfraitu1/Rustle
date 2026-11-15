@@ -36,3 +36,31 @@ building it is the user's decision. No default changes in this row.
 
 RefSeq is thinner on the orangutans (rows 1748 / 1750), so fewer units can be judged there and S2 / S3 undercount
 correct new chains. All four are testis; no fibroblast sample. Exons of 3-5 bp stay out of reach.
+
+## OUTCOME (2026-11-16, job 4473731, `r1757_skipfloor/TAG.{r1746,junc,search,prec,score}.txt`): NOT TESTABLE on precision
+
+| | PTR | PPA | PPY | PAB |
+|---|---|---|---|---|
+| gate: decoy / found reads (<= 0.05) | 0.0052 | 0.0006 | 0.0038 | 0.0032 |
+| precision, right / judged (>= 0.95 where >= 20 judged) | 22 / 23 (0.957) | 15 / 16 | 14 / 14 | 17 / 18 |
+| reach, search / junction rule / either (>= 0.75) | 8 / 6 / 14 of 17 (0.824) | 8 / 6 / 14 of 20 (0.700) | 5 / 5 / 10 of 13 (0.769) | 6 / 2 / 8 of 10 (0.800) |
+| found exons kept / left out by the floor | 79 / 135 | 80 / 160 | 163 / 413 | 69 / 125 |
+
+Gate valid, reach passes (3 of 4). Only PTR reaches the 20 judged units the precision bar needs, and the rule asked for
+two such samples: NOT TESTABLE as registered. The floor of 20 was set from the human samples (87-116 judged units); these
+read sets are 5-10 times smaller. Pooled, post hoc: 68 of 71 (0.958). Step 1 therefore decides nothing.
+
+Step 1 as measured (it would not have passed: S3 holds on 2 of 4):
+
+| | PTR | PPA | PPY | PAB |
+|---|---|---|---|---|
+| reads rewritten | 3,280 | 3,542 | 4,704 | 1,683 |
+| S1 skip chains at exon-only units, base -> fix | 51 -> 1 | 47 -> 2 | 39 -> 2 | 27 -> 3 |
+| chains with the exon at those units | 25 -> 74 | 31 -> 73 | 51 -> 85 | 23 -> 48 |
+| S2 new correct / lost correct other than both-annotated skip forms | 19 / 2 | 11 / 4 | 6 / 12 | 8 / 3 |
+| S3 panel precision, base -> fix | 0.3086 -> 0.3135 | 0.2762 -> 0.2752 | 0.1617 -> 0.1601 | 0.1571 -> 0.1576 |
+
+Across eight samples (rows 1754 and 1757) the same picture: the rewrite removes nearly all false skip chains at the
+units it reaches and doubles to triples the chains with the exon there; RefSeq-correct chains gain on six samples and
+lose on OR6737 and PPY; panel precision moves by -0.0016 to +0.0049 with no consistent sign. The new chains it adds are
+3-28% RefSeq-correct. No stage built. Panel BAMs deleted; `*.fix.bam.fixes.tsv` kept.
