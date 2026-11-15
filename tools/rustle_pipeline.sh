@@ -426,7 +426,9 @@ if [ "$INSPECT" = 1 ]; then
   INSPECT_CAT=("RUSTLE_ER_EDGE_DUMP=$OUT.cache/inspect/catalog" RUSTLE_COLLAPSE_STATS=1)
   INSPECT_ASSIGN=(--dump-psv --posterior)
 fi
-POLISH="--assembly-polish full --polish-isoform-fraction 0.02 --polish-mono-shadow --polish-mono-quantile 0.82 --polish-ism-ratio 0.7 --polish-retained-ratio 10"
+POLISH="--assembly-polish full --polish-isoform-fraction 0.02 --polish-mono-shadow --polish-mono-quantile 0.82 --polish-ism-ratio 0.7 --polish-retained-ratio ${RUSTLE_POLISH_RETAINED_RATIO:-10}"
+# RUSTLE_POLISH_RETAINED_RATIO=R (register 1745; unset = 10, the same command): a transcript whose exon contains an intron of its
+# gene is dropped when that intron has >= R x the transcript's reads; 0 turns the retained-intron filter off.
 # RUSTLE_POLISH_SUBCHAIN=tag|drop (opt-in; unset = off, the same command): copy_assign --polish-subchain, which tags
 # (or drops) each transcript that is an end-compatible contiguous sub-chain of a longer emitted transcript of the same
 # locus with >= 1/2 its reads (`subchain_of` / `subchain_missing`; drop is a documented dev-only trade, see its --help)
