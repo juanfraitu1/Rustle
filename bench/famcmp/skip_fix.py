@@ -123,6 +123,27 @@ def scan(job):
                     dec[L, 'fired'] += bool(try_fix(cig, st, seq, {iv: decoy[iv]}, fetch))
     return [(contig, d, x, y, a, pair[d, x, y, a], n[d, a], fixed[d, x, y, a]) for (d, a), v in cands.items() for x, y in v], dec
 
+def annot(ref_p):
+    """unit -> which of its two forms the annotation has"""
+    ann_i, ann_p = set(), set()
+    for (c, s), d in load(ref_p).items():
+        for ch in d:
+            ann_i.update((c, *iv) for iv in ch); ann_p.update((c, d0, x, y, a) for (d0, x), (y, a) in zip(ch, ch[1:]))
+    return lambda c, d, x, y, a: {(1, 0): 'incl', (1, 1): 'both', (0, 1): 'skip', (0, 0): 'neither'}[(c, d, x, y, a) in ann_p, (c, d, a) in ann_i]
+
+def write_units(rows, out):
+    """OUT.units.tsv and OUT.regions.bed (fired units +- FLANK, merged)"""
+    with open(out + '.units.tsv', 'w') as o:
+        o.write('contig\tdonor\texon_start\texon_end\tacceptor\tannotation\treads_with_exon\treads_with_skip\treads_fixed\n')
+        for r in rows: o.write('\t'.join(map(str, r)) + '\n')
+    with open(out + '.regions.bed', 'w') as o:
+        cur = None
+        for c, s, e in sorted((r[0], max(0, r[1] - FLANK), r[4] + FLANK) for r in rows if r[8]):
+            if cur and cur[0] == c and s <= cur[2]: cur[2] = max(cur[2], e); continue
+            if cur: o.write('%s\t%d\t%d\n' % tuple(cur))
+            cur = [c, s, e]
+        if cur: o.write('%s\t%d\t%d\n' % tuple(cur))
+
 def read_units(path):
     rows = [l.rstrip('\n').split('\t') for l in open(path)][1:]
     return [(r[0], *map(int, r[1:5]), r[5], *map(int, r[6:9])) for r in rows]   # contig d x y a class pair_reads skip_reads fixed
@@ -153,25 +174,11 @@ if __name__ == '__main__':
     import pysam
     if mode == 'scan':
         ref_p, bam, fa, out = sys.argv[2:6]; thr = int(sys.argv[6]) if len(sys.argv) > 6 else 16; prior = sys.argv[7] if len(sys.argv) > 7 else None
-        ann_i, ann_p = set(), set()
-        for (c, s), d in load(ref_p).items():
-            for ch in d:
-                ann_i.update((c, *iv) for iv in ch); ann_p.update((c, d0, x, y, a) for (d0, x), (y, a) in zip(ch, ch[1:]))
+        klass = annot(ref_p)
         rows, dec = [], collections.Counter()
         with multiprocessing.Pool(thr) as pool:
             for r, d in pool.imap_unordered(scan, [(bam, fa, c) for c in pysam.AlignmentFile(bam).references]): rows += r; dec.update(d)
-        klass = lambda c, d, x, y, a: {(1, 0): 'incl', (1, 1): 'both', (0, 1): 'skip', (0, 0): 'neither'}[(c, d, x, y, a) in ann_p, (c, d, a) in ann_i]
-        rows = sorted((c, d, x, y, a, klass(c, d, x, y, a), p, n, f) for c, d, x, y, a, p, n, f in rows)
-        with open(out + '.units.tsv', 'w') as o:
-            o.write('contig\tdonor\texon_start\texon_end\tacceptor\tannotation\treads_with_exon\treads_with_skip\treads_fixed\n')
-            for r in rows: o.write('\t'.join(map(str, r)) + '\n')
-        with open(out + '.regions.bed', 'w') as o:
-            cur = None
-            for c, s, e in sorted((r[0], max(0, r[1] - FLANK), r[4] + FLANK) for r in rows if r[8]):
-                if cur and cur[0] == c and s <= cur[2]: cur[2] = max(cur[2], e); continue
-                if cur: o.write('%s\t%d\t%d\n' % tuple(cur))
-                cur = [c, s, e]
-            if cur: o.write('%s\t%d\t%d\n' % tuple(cur))
+        rows = sorted((c, d, x, y, a, klass(c, d, x, y, a), p, n, f) for c, d, x, y, a, p, n, f in rows); write_units(rows, out)
         print('annotation of the unit\tcandidate units\tfired units\tskip reads at fired units\treads fixed')
         for k in ('incl', 'both', 'skip', 'neither', 'all'):
             u = [r for r in rows if k in (r[5], 'all')]; f = [r for r in u if r[8]]
