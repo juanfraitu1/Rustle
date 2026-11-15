@@ -42,3 +42,38 @@ RefSeq pairs only; an RI chain's reads can be unspliced precursor RNA; a skipped
 an insertion or mismatches beside the junction, which gives the same skip chain and is counted; exons skipped by reads
 that also differ elsewhere are not counted. The assemblies are the row 1714 files (default assembly rules have not
 changed since).
+
+## OUTCOME (2026-11-15, job 4472241, `r1744_altevents2/{or,a,kb}.txt`)
+
+Pairs with both chains emitted, minor >= 5 reads (expressed pairs in brackets):
+
+| class | OR6737 default | StringTie | FLAIR | A119b default | StringTie | FLAIR | KB3781 default |
+|---|---|---|---|---|---|---|---|
+| CASSETTE (control) | 0.975 (3,531) | 0.799 | 0.916 | 0.912 (7,382) | 0.695 | 0.876 | 0.942 (5,045) |
+| MICRO (skipped exon <= 30 bp) | 0.985 (131) | 0.809 | 0.908 | 0.917 (218) | 0.679 | 0.913 | 0.952 (167) |
+| MXE | 0.953 (232) | 0.707 | 0.901 | 0.879 (471) | 0.573 | 0.919 | 0.858 (379) |
+| RI | 0.744 (43) | 0.698 | 0.953 | 0.682 (192) | 0.557 | 0.906 | 0.584 (89) |
+
+Rule 1: MICRO and MXE are within 0.05 of the control on both deciding samples: modelled like ordinary splicing (MXE on
+KB3781, reported only, is 0.084 below its control). **RI is a gap**: 0.231 and 0.230 below the control; the lost form is
+almost always the minor one (major only 10 of 43 and 52 of 192); FLAIR is ahead on this class (0.953 / 0.906), StringTie
+behind. `final.gtf` equals the default on all four classes.
+
+Skip reads (chain x exon units with >= 5 reads; skip share of reads; units where skip reads >= full-chain reads):
+
+| exon length | OR6737 units | skip share | skip >= full | A119b units | skip share | skip >= full | KB3781 units | skip share | skip >= full |
+|---|---|---|---|---|---|---|---|---|---|
+| <= 15 bp | 44 | 0.109 | 16 | 160 | 0.627 | 94 | 60 | 0.055 | 18 |
+| 16-30 bp | 932 | 0.026 | 29 | 1,425 | 0.024 | 66 | 1,219 | 0.009 | 31 |
+| 31-60 bp | 12,886 | 0.005 | 114 | 18,862 | 0.008 | 267 | 15,525 | 0.001 | 125 |
+| > 60 bp (control) | 163,204 | 0.004 | 689 | 228,967 | 0.004 | 1,789 | 185,435 | 0.002 | 858 |
+
+Rule 2, <= 30 bp pooled against the control: OR6737 0.040 vs 0.004 (+0.036), A119b 0.070 vs 0.004 (+0.066), KB3781
+0.036 vs 0.002. **NOT flagged as registered** (OR6737 is under the +0.05 bar).
+
+Post hoc, not a verdict: the pooled bar hides a concentrated loss. Exons of <= 15 bp are skipped by as many reads as
+spell them in 36% (OR6737), 59% (A119b) and 30% (KB3781) of units, against 0.4-0.8% for exons over 60 bp; the default
+emits only the skip chain for 13 of 44, 79 of 160 and 18 of 60 of them, and StringTie and FLAIR do the same (same
+alignments). It is a small class (44 / 160 / 60 chain x exon units). 16-30 bp exons are skipped 5-7 x more often than
+the control but still rarely (2.5-4.6% of units). Not shown: that the skip reads are misalignments rather than real
+skipping (the length gradient and the three-sample agreement suggest it; no read was realigned).
