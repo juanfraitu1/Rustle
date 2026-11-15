@@ -32,3 +32,24 @@ Full-chain reads of the <= 15 and 16-30 bp bins pooled: `has_exon` >= 0.90 on ea
 Annotated exons only, so this is a ceiling measurement, not a de novo rule. A read with the exon partly present or
 with errors in a <= 5 bp exon can fall in `unclear` (the 2-edit margin). The cap of 20 reads per unit weights units,
 not reads. No default changes.
+
+## OUTCOME (2026-11-15, job 4472244, `r1746_skipreads/{or,a,kb}.txt`): MISALIGNMENT as registered
+
+Gate (full-chain reads, <= 30 bp bins pooled, `has_exon`): OR6737 0.995, A119b 1.000, KB3781 0.996. Passes.
+
+| exon length | OR6737 skip reads with the exon | units (>= half) | A119b | units | KB3781 | units |
+|---|---|---|---|---|---|---|
+| <= 15 bp | 0.853 (278 of 326) | 30 of 43 | 0.768 (696 of 906) | 79 of 119 | 0.794 (354 of 446) | 36 of 49 |
+| 16-30 bp | 0.018 (3 of 171) | 2 of 58 | 0.017 (2 of 115) | 1 of 31 | 0.000 (0 of 214) | 0 of 51 |
+| 31-60 bp (control) | 0.000 (0 of 169) | 0 of 39 | 0.000 (0 of 175) | 0 of 42 | 0.000 (0 of 148) | 0 of 39 |
+
+Reads that skip an exon of <= 15 bp carry the exon's bases at the junction 77-85% of the time; from 16 bp up the skip
+reads do not have the exon (real skipping). The aligner drops exons of <= 15 bp, and only those. Units affected
+(annotated, with skip reads, at least half of them carrying the exon): 30 / 79 / 36. A119b reached the 1,500-unit cap in
+the <= 15 bp bin, so its 79 is a count within the sample of units taken, not the genome total; the gorilla samples
+took all 608.
+
+Reading as registered: a local realignment of such reads against the junctions other reads of the locus show is worth
+registering, with these units as its ceiling. Not shown: a de novo rule that finds the exon without the annotation
+(the exon must be spelled by at least one read of the locus, which row 1744 says holds for the units counted, since
+they have >= 5 reads and many have full-chain reads); how many unannotated short exons are lost the same way.
