@@ -60,3 +60,14 @@ Limit: on KB3781 (discovery) the class was 33 right / 0 wrong; it is not wrong e
    haplotype): the tie partner is a unit of a different family, which the guard counts as inside and this family never
    scores as a candidate. That is the "whichever family" half of 787's rule, not shipped. The rest (25 and 3) have the
    truth copy in the same family with no chain there. Right rows: truth always in the row's family.
+
+## Row 1695 (2026-11-13, registered before the run): sole-candidate rows under the DEFAULT gate, measurement only
+The user's ruling of 2026-11-13 made sole-candidate rows `tied` under `--tie-ms`. The shipped pipeline runs the default
+gate (no `--tie-ms`), where the rule is unchanged and row 1656 has no truth-scored figure. Measurement: the r1657 HG002
+own-haplotype panel (same families, regions, truth, strict scorer at slack 0) without `--tie-ms`, arms D (default) and
+DN (`--no-sole-candidate`); sole rows = D minus DN.
+Reading rule: recommend extending the ruling to the default gate only when there are at least 20 decidable sole rows
+and their wrong rate is at least twice that of the other assigned rows. Otherwise no recommendation. Limits: one
+sample on its own haplotype (the friendly case); the truth table was built from the `--tie-ms 10` run's reads, so a
+default-gate row outside it is undecidable. No default is changed by this row.
+Outcome: **meets the reading rule as registered, on thin counts.** HG002 own-haplotype panel, default gate (job 4470903): 419 assigned rows with sole candidates (38 sole) vs 381 without. Decidable at slack 0: all rows 22 right / 4 wrong; without sole rows 5 / 0; so sole rows 17 right / 4 wrong (19% wrong, 21 decidable) and all 4 wrong rows of the default gate are sole rows. Both conditions hold (21 >= 20; 19% vs 0%), but the comparison class is 5 rows and the sample is the friendly case, so this is a weak recommendation to extend the ruling to the default gate; the cost on A119b would be up to 2,229 of 5,784 assigned rows. The default was the user's call: ruled "Extend to the default gate" the same day (see `LEDGER_O2.md`); A119b assigned rows 5,784 -> 3,555.

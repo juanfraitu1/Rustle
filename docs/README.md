@@ -13,6 +13,8 @@ Compacted 2026-11-01 and merged 2026-11-03: fourteen living documents stay here,
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | O2: assignment, abstention, the gate (`--tie-ms`, `--primary-on-family`) and the truth |
 | [`ADVISOR_QUESTIONS.md`](ADVISOR_QUESTIONS.md) | The advisor's standing questions and the current best answer with register rows |
 | [`DATA.md`](DATA.md) | Datasets and products: what they are, where they live on Fritz and in the workspace, how to rebuild them |
+| [`ASSEMBLY_ENDS_2026-11-14.md`](ASSEMBLY_ENDS_2026-11-14.md) | Transcript starts and ends: the two default side files (`capstarts`, `earlyends`), the read pre-flight check, polyA / orientation state of the reads, and the closed fraction-rule exemption (rows 1717-1724, 1731, 1733) |
+| [`SHIFTED_EXON_ENDS_2026-11-14.md`](SHIFTED_EXON_ENDS_2026-11-14.md) | Shifted ends of internal exons: the class, the rules tried (rows 1725-1739), the opt-in `shiftdrop` stage, what is not known |
 | [`PERFORMANCE.md`](PERFORMANCE.md) | Where pipeline time goes and the speed switches, with measured effect and whether products stay identical |
 | [`REFERENCE.md`](REFERENCE.md) | Glossary, the working set (binaries, driver, bench, cleanup audit), the DAZ worked example |
 | [`MODULE_STATUS.md`](MODULE_STATUS.md) | Which Rust modules exist and their state (checked by a test in `src/lib.rs`) |

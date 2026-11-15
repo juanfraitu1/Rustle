@@ -62,6 +62,29 @@ the earlier pipeline, byte for byte except `assign` on a catalog with cross-chro
 (`bench/README.md` lists each one, and maps every retired script name to its current command); `tools/` the pipeline
 driver and the cleanup-audit script.
 
+### Stages added in November 2026
+
+`all` now also writes two side files after its last stage, each a copy of `PREFIX.gtf` with extra models and nothing
+removed: `PREFIX.earlyends.gtf` (`RUSTLE_EARLYENDS=0` turns it off) and `PREFIX.capstarts.gtf` (`RUSTLE_CAPSTARTS=0`;
+refused, and reported, on a library without a usable cap G). `families` and `assign` use extra locus representatives
+(`famreps`, `RUSTLE_FAMREPS=0` off; needs `python3`). Everything else below is opt-in, runs only when named, and leaves
+the default products untouched:
+
+| stage | product | register |
+|---|---|---|
+| `assemble --guide G.gtf` / `guided` | `PREFIX.guided.gtf` | 1622 |
+| `siblings` | `PREFIX.sibling.gtf` | 1628 |
+| `flairlike` | `PREFIX.flairlike.gtf` | 1640 |
+| `altends` | `PREFIX.altends.gtf` | 1660 |
+| `trunc5` | `PREFIX.trunc5.gtf` | 1677, 1692 |
+| `shiftdrop` | `PREFIX.shiftdrop.gtf` | 1728-1739 |
+| `repeatloci` | `PREFIX.repeat_loci.tsv` | 1698, 1702 |
+| `exonmap` | `PREFIX.fam.exonmap.columns.tsv` + one GFA per family | 1595 |
+| `relatives` | `PREFIX.fam.relatives.tsv` | 1676, 1737 |
+
+The header of `tools/rustle_pipeline.sh` has each stage's inputs and switches; `docs/LEDGER_O1.md` (update 2026-11-15)
+has the verdicts. Several of these stages run Python scripts under `bench/` and `tools/` and need `python3` with pysam.
+
 ## The record
 
 - `docs/LEDGER_O1.md`, `docs/LEDGER_O2.md`, `docs/LEDGER_O3.md` — the running ledgers (the O1 notebook to 2026-10, §6xx, is `docs/archive/2026-11/o1_ledger.md`).

@@ -21,7 +21,7 @@ representative-rule scorer). The same collision exists for `make_bam.py` (two in
 
 | file | role |
 |---|---|
-| `rustle_pipeline.sh` | THE pipeline driver: `assemble\|families\|catalog\|assign\|merged\|flag\|all` (AGENTS.md §3; the opt-in `candidates` stage) |
+| `rustle_pipeline.sh` | THE pipeline driver: `assemble\|families\|catalog\|assign\|merged\|flag\|all` (AGENTS.md §3; the opt-in `candidates` stage; the November 2026 opt-in stages are listed in the top-level `README.md`) |
 | `rlock.sh` | the WSL2 job locks every heavy/light call runs under (`heavy`/`light`) |
 | `mm2_shard.sh` | the one minimap2-sharding wrapper (PAF caches, long all-vs-alls) |
 | `rustle_reassemble.sh` | the closed-loop pass 2 (`union → home → pass2 → g0`; figure 9's loop; cited by `figures/fig_loop.py` + `figures/captions/fig9.md`) |

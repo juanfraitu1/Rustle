@@ -14,15 +14,42 @@ Compacted 2026-11-01. One short entry per section, in the original order; every 
 
 **Comparisons:** IsoCon WORSE in both classes (r1478); SQANTI single-copy chr20: ours FSM+ISM 30.2% / artifact 5.0%, StringTie, FLAIR, IsoCon worse (r1482); multi-sample pooling A119b + HG002 more sensitive, not more precise (r1503).
 
-**Open:** families GTF from pre-layer transcripts is done (the SPLIT); a fresh long-read RNA sample for any new family rule (KB3781, OR6737, A119b, HG002 are spent); NEXT TARGETS single `rustle` binary with stage hatches; FAMASM only with a stricter certificate on A119b.
+**Open:** families GTF from pre-layer transcripts is done (the SPLIT); a fresh long-read RNA sample for any new family rule (KB3781, OR6737, A119b, HG002 are spent); the one run directory with stage hatches (`all --to / --from`) is done; FAMASM only with a stricter certificate on A119b (conditional idea, not registered, not run). Checked 2026-11-14: no registered row of this ledger is pending.
 
 ## Update 2026-11-10: members StringTie and FLAIR both miss, and tie groups (register 1601-1611)
 
 - **Hard set (r1601/r1602, A119b):** 150 expressed panel members have no StringTie and no FLAIR model. Ours overlaps 68; 35 are copy-specific models with a CAT intron (26 exact chains; TSPY 14, GAGE 4, CT45 3, SPDYE 3). Both registered bars FAIL (Q1 35 < 40; family cuts +0, `final.gtf` +1). 72 of the 150 have no molecule that prefers the copy (26 are the chr5 TAF11L array); 54 missed ones are distinguishable but low-support.
 - **Tie groups (prototype `bench/famcmp/tie_groups.py`, r1603-1610):** loci linked by >= 2 shared tied molecules become one group with one model per locus and one molecule count per group. Frozen recipe (r1607): `build PREFIX as98 0 1 RMSK_BED:0.5`, stranded; loci >= 50% interspersed repeat set aside to `PREFIX.repeat.tsv`; scorer `full` + co-duplicated category from SEDEF (`RUSTLE_SEDEF_BED`). A119b: grouped reach 70/72 of the indistinguishable members, purity 0.982 with co-duplicated groups (strict 0.884), TAF11L 31/31. Failed variants: exact ties (r1603, reach 39/72), link fraction (r1605, inert), locus floor (r1606), unstranded (r1608, defective rule), by-locus strand (r1609, reach 61). The fixed 60-locus size bar was replaced by B5r (one chromosome or >= 0.90 one family; user-approved 2026-11-10).
 - **Gorilla transfer (r1611 PASS, OR6737, recipe unchanged):** grouped reach 124/128, purity 129/129, strict 0.907, largest group 33 loci on one chromosome in one family, 528 s. Needed protein-hit truth for LOC genes: `bench/famcmp/protein_truth.py` (mmseqs vs GENCODE v47 proteins, identity >= 0.80, cover >= 0.50, check 0.993) -> `DENOVO_GGO_ENS_MAP`; the gorilla panel grows 176 -> 661 expressed members (138 T-only: ours 0.601, StringTie/FLAIR 0.000). r1610 without it STOPPED (M = 0).
+- **Block locus rule (r1612):** passes its bars on A119b and gorilla but over-splits groups; not adopted, locus rule open.
+- **Advisor control (r1613, gorilla):** StringTie given tied secondary alignments relabelled primary models the no-primary-alignment members as often as ours (75 vs 72 of 110); with all secondaries relabelled its genome precision falls 0.350 -> 0.222. The assembler is not what separates the tools on these members; the input rule, assignment and tie groups are.
+- **Isoforms StringTie or FLAIR find and ours misses (r1614-r1618, RefSeq exact intron chains; gorilla OR6737 dev, A119b held out):** 4,866 gorilla misses = 69% one full-chain read (our 2-read floor), 8% none (StringTie stitches partial reads), 23% two or more (2% minor-isoform cut); no strand or flow error. Every lever recovers chains at or below the accuracy of our weakest accepted chains (2-read chains: gorilla 0.170, A119b 0.066 correct): fraction floor N=3/5/10, 1-read floor (0.060), polish off, single-read rule with pair support >= 3 and known ends (gorilla 0.181, A119b 0.062 FAIL), compatible support (new chains 0.150 / 0.046 FAIL), transfrags union (0.094 FAIL), junction snap (-1,598 correct). Best opt-in trade: `RUSTLE_EXTEND_TRANSFRAGS=1` (StringTie-like extension of partial reads), gorilla +630 correct at precision 0.352 -> 0.347 (new chains 0.173 PASS), A119b +1,371 at 0.176 -> 0.170 (new chains 0.064, FAIL by 0.002). Bars count new chains, not the net change, because the modes also drop chains. Defaults unchanged. Register 1616-1618.
+- **Where ours stands on reference chains (r1619):** correct chains at precision, ours / StringTie / FLAIR: gorilla 25,794 at 0.352 / 23,248 at 0.344 / 24,293 at 0.176; A119b 38,715 at 0.176 / 31,781 at 0.150 / 39,230 at 0.063. Cut by read count ours stays above StringTie cut by coverage at every level (gorilla reads >= 3: 22,270 at 0.423 vs cov >= 2: 18,842 at 0.407). A chain score from our own features (reads, share of the locus's top intron, intron count, sub-chain flag) beat the read-count curve on gorilla (+0.025) but not on A119b held out (-0.006); FAIL, not adopted. Multi-exon chains only.
+- **Correlation clustering, five uses tried 2026-11-10, none adopted:** tie-group loci (r1620: gorilla passes every bar, A119b duplicate models 0.068 against 0.05; span 0.058, block 0.640; locus rule still open); families with negative edges (r1621: STOP at step 0, 4 true pairs lost per false pair removed); tandem readthrough (r1623: the confined-vs-crossing statistic holds at 59 of 69 fused loci and inside 266 of 1,000 single genes, STOP); allele vs paralog (r1624: same quantity as the r1541 guard, 12 reads with truth, STOP without a run); pooling a family's unassigned reads with `copy_phasing` (r1625: 115 right / 5 wrong against the primary's 118 / 2 on the same rows, FAIL). Docs `PREREG_tie_groups_cc`, `PREREG_families_negative_edges`, `PREREG_cc_readthrough_allele`, `PREREG_pooled_family_reads` (all `_2026-11-10.md`).
+- **Guided assembly (r1622, opt-in guide GTF, separate from de novo; prototype `bench/famcmp/guide_proto.py`, nothing in the binary):** adding guide chains that have a full-chain primary alignment gives +7,349 known chains on gorilla OR6737 (G1), but precision outside the guide stays at the de novo level (0.145 against StringTie -G 0.320). Dropping fragments and retained introns of guide chains: 0.166. A 10-read floor on chains with a new intron inside a guide gene (G1c) passes on gorilla with hidden transcripts (6,141 hidden chains at 0.306 against 4,538 at 0.296) and FAILS held out on A119b on precision (8,713 at 0.099 against 5,334 at 0.126). Post hoc candidate G1d (also 3 reads on every non-guide chain) is above StringTie -G's default point on both axes in both samples; on unseen KB3781 (Amendment 5) it FAILS the default-point bar by 0.0005 precision (6,137 hidden chains at 0.3032 against 4,555 at 0.3037) and PASSES the curve bar at all six StringTie -G coverage points; a 5-read floor is above StringTie -G on both axes in all three samples, all now seen. The user adopted the 3-read floor for the guided mode (2026-11-10, no further held-out test). G3 as a guide splice graph per locus (Amendment 6) STOPPED at step 0: link-by-link tiling from partial reads reaches 8% of the known chains StringTie -G emits without a full-chain read; StringTie -G emits those on much weaker evidence (most have uncovered links), so the known-chain gap is a difference in evidence standard, not a missing stitching step. Ported 2026-11-10 as opt-in: `rustle_pipeline.sh assemble --guide GUIDE.gtf` writes `PREFIX.guided.gtf` (`utilities guide`, `src/guide.rs`); chain set identical to the prototype on gorilla (47,369, 0 differences); `PREFIX.gtf`, families and assign stay de novo; the BAM pass is single-threaded (1,469 s on gorilla). Known-chain recovery is behind StringTie -G (A119b 40,084 against 59,668): it builds known chains from partial reads (arm G3, not built). Guided FLAIR without a junction file cannot find genes outside the guide (1 hidden chain). FLAIR 3.0.1 here is locally patched (`ssPrep.py`). `PREREG_guided_assembly_2026-11-10.md`.
 - **Limits:** Python prototype restricted to panel reads (genome-wide run on both samples not done yet); a LOC gene's family = the most similar human protein; a group gives one structure and count for a set of loci, not which copy is expressed; the 54 low-support misses stay open (every read-level rule failed, r1526-1536).
 - **Datasets (user, 2026-11-10):** reuse of KB3781/OR6737/A119b/HG002 is accepted when the method is shown on another species or unseen members; always name the tuning sample. This supersedes the "fresh sample for any new family rule" line above.
+
+## Update 2026-11-15: register 1627-1716 rows not yet in this ledger (assembly levers, tool matching, single-exon members, SD uses, alternative events)
+
+One line per topic; figures are the register rows'. Rows of the same range already carried elsewhere in this ledger (1642-1657, 1662, 1671-1681, 1686-1691, 1694-1713, 1717-1741) are not repeated.
+
+- **Sibling models as a second witness (r1627-1629, r1632):** a sibling's model projected onto a member. Two-read form STOP on yield (KB3781 13 correct of 173, bar 15); single-read form FAIL on A119b yield (r1628), ported opt-in by the user as driver stage `siblings` -> `PREFIX.sibling.gtf`; dropping 2-read chains no sibling projects to STOP (dropped 0.057 correct vs kept 0.088); sibling models as `--guide` FAIL (16 of 263 new chains correct, net -146). Family sharing for assembly is closed.
+- **Tie-group locus rule (r1630, r1631):** cc + merge (`ccm`) PASS on A119b and OR6737 (duplicate models 0, reach 69/72 and 127/128), both samples seen under cc. Transfer to unseen KB3781 genome-wide FAIL: largest group 43 loci on 9 chromosomes; 1,232 new multi-exon chains, 15 correct (0.012 vs bar 0.070). Tie groups are a grouping product, not an assembly improvement; not wired.
+- **Matching StringTie (r1633, r1634, r1636, r1639, r1658):** default shares 0.639 of StringTie's chains on gorilla (Jaccard 0.442). Best existing switches 0.519 (STOP, bar 0.60); read-level oracle of StringTie's own transfrag chains 0.156-0.227 (FAIL: its output is decided by the flow); the retired Rust flow port rebuilt in workspace `r1658` reaches 0.805 on one gorilla contig (inside 0.868 vs bar 0.90, FAIL). Decision trace r1636 is descriptive: no single rule.
+- **Matching FLAIR (r1637, r1638, r1640):** strict subset-read merge FAIL (15,464 new chains at 0.049 correct vs bar 0.170); FLAIR-like support rule STOP at Jaccard 0.456; collapse emulation with FLAIR's realignment step reaches 0.873 (gorilla, through the driver) and is ported opt-in as stage `flairlike` -> `PREFIX.flairlike.gtf`, never part of `all` (precision 0.162 vs default 0.352 on gorilla).
+- **Nascent polish (r1635):** `--polish-nascent tag|drop` (`RUSTLE_POLISH_NASCENT`) PASS on gorilla, FAIL held out on A119b (dropped chains 0.073 correct vs bar 0.066). User 2026-11-12: a tag behind the flag, never a default filter.
+- **bambu as a fourth tool (r1641, descriptive):** de novo and guided as separate blocks. Gorilla: ours 25,794 correct at 0.352, bambu at most 15,381 at 0.481. A119b: ours 38,715 at 0.176, bambu at most 12,793 at 0.306; bambu wins the strict end on human, ours the reach.
+- **3' end = commonest read end (r1660):** FAIL. Found on gorilla (0.668 vs 0.532 within 10 bp), A119b lower than the emitted end (0.459 vs 0.495); no end statistic of the full-chain reads transfers between the two samples. Later work: `ASSEMBLY_ENDS_2026-11-14.md`.
+- **Wider truth level (r1663):** counting eutherian paralogs as correct changes little (A119b precision_wide 0.917 base / 0.907 default); the default fails on that track as on r1654.
+- **Shared reads as a second witness for a low-SHARE pair (r1664):** STOP, precision 0.087-0.115; read sharing adds nothing to an alignment record.
+- **Members with no model, single-exon levers (r1665-1669):** additive single-exon feed FAIL on the recall bar (A119b) and FAIL as opt-in on HG002 (0 new true, 1 new false; switch removed); primed-read overlap FAIL (2 of 291 members; switch removed); attribution r1667: priming filter / shadow rule / read floor off regain 11 / 22 / 25 members at > 1,000 added models per member, all three off 103; targeted rule STOP.
+- **Members per tool (r1670, descriptive):** A119b 1,098 expressed members: modelled ours 807 / StringTie 836, clean in no tool 451; gorilla OR6737 519 members, clean 246 / 244 / 246. Our no-model members are hard for every tool.
+- **SD as a signal beyond damping (r1682, r1683):** SD-pair identity as a gate on refused pairs STOP (best precision 0.212 A119b / 0.431 HG002; precision falls with SD identity); SD mate as the mark of a shadow locus FAIL (marks 1,400 of 1,518 flagged loci, vacuous). `--sd-damp 0.25` stays the only SD use that works.
+- **`trunc5` on a fourth sample (r1692):** HG002 +0.015 precision at equal correct chains vs bar +0.02; stays opt-in.
+- **Soft mask at the edge level (r1693):** STOP, 2 of 103 false links rest on masked exon bases; not a precision lever on protein-coding pairs.
+- **Alternative events (r1714-1716, measured):** shifted exon ends and alternative first / last exons are modelled like ordinary splicing and ahead of both tools; nested alternative starts / ends about half. The loss is the default ISM collapse (`--polish-ism-ratio 0.7`); no read-end signature recovers the annotated ones (r1715), and not-emitted nested starts are mostly not real by CAGE (1.6 x background, r1716). The rule stands; stated limit.
+- **Opt-in driver stages added 2026-11-10 to 2026-11-15 (defaults unchanged unless said):** `guided` (`assemble --guide`), `siblings`, `flairlike`, `altends`, `trunc5`, `shiftdrop`, `repeatloci`, `exonmap`, `relatives`. Default side files of `all` since 2026-11-14: `capstarts` (`RUSTLE_CAPSTARTS=0` off), `earlyends` (`RUSTLE_EARLYENDS=0` off). `famreps` is default in families and assign since 2026-11-13 (`RUSTLE_FAMREPS=0` off).
 
 ## Contents
 
@@ -800,7 +827,7 @@ Pre-registrations in `archive/2026-11/`: `PREREG_isocon_only_2026-11-03.md`, `PR
 - Provenance route pre-check (2026-11-04, not registered; ~/r1528/step0_prov.py): assemble each member from reads O2 certifies to it. On the 28 missed T-only members (201 tied reads, A119b a1.assign of 2026-10-31): assigned to the member 4, to a sibling 15, tied 16, ambiguous 16, never in the assign table 146 (136 are secondaries at the member whose primary lies elsewhere, 119 on the same chromosome; 15 of the 28 members overlap no catalog copy at all). Ceiling today: no member reaches a 2-read certified floor. The bottleneck is upstream of O2 and of the assembler: the catalog misses the member (sketch / family discovery) or the read pair never enters the family's tie window. A certified-read assembly row is premature until the pool admits those reads.
 - Shared-exon gate vs coverage (r1528, FAIL as registered): 631 of the panel's 1,136 expressed members are catalog copies; 299 uncovered members have a base model and are sketch singletons whose sibling pairs fail the 0.60 shared-exon gate (120 of 137 aligned pairs below it; 68 pairs do not align at all: PRAMEF/GAGE/PAGE/XAGE). Lowering the gate (new switch RUSTLE_MIN_SHARED_EXON_FRAC) to 0.45 / 0.30 raises coverage to 676 / 713 and pair recall to 0.753 / 0.779 but pair precision falls 0.726 -> 0.670 / 0.662 (new pairs mostly domain-level relatives). Gate stays 0.60. This is the family layer's coverage ceiling on the panel: the members it cannot reach are either DNA-divergent families or pairs the gate rejects for the same reason it rejects domain relatives.
 - Transcript-level edge (r1529, STOPPED at step 0): pairscore's spliced-sequence rule reaches 30 of the 238 singleton expressed members with a sibling locus (bar 60) and passes 40% of the base's false coding pairs as registered (8% once the 205 same-symbol CAT-duplicate pairs, identical copies Compara cannot name, are excluded). The rejected sibling pairs are diverged at the transcript level too; no edge criterion on sequence reaches them. Family-layer ceiling on the panel recorded: 631 of 1,136 expressed members. Scorer note: about a third of pairscore's 'false' pairs are identical-copy duplicate ids, so the catalog's pair precision is understated.
-- Same-symbol scorer correction (r1530, ADOPTED): 213 of 213 same-symbol false pairs share an Ensembl source id, so `PAIRSCORE_SAME_SYMBOL=ignore` drops them (215 pairs incl. 2 truth). Base 0.60 catalog: precision 0.726 -> 0.802, recall 0.740. r1528 arms re-scored: f0.45 0.734, f0.30 0.721, both under the corrected bar 0.792 as predicted; r1528 verdict stands. The family-layer figure for the thesis is 0.802 / 0.740.
+- Same-symbol scorer correction (r1530, ADOPTED): 213 of 213 same-symbol false pairs share an Ensembl source id, so `PAIRSCORE_SAME_SYMBOL=ignore` (the scorer default since 2026-11-14) drops them (215 pairs incl. 2 truth). Base 0.60 catalog: precision 0.726 -> 0.802, recall 0.740. r1528 arms re-scored: f0.45 0.734, f0.30 0.721, both under the corrected bar 0.792 as predicted; r1528 verdict stands. The family-layer figure for the thesis is 0.802 / 0.740.
 - Pooled depth (r1531, FAIL as registered): HG002 Kinnex reaches 59 of the 215 panel misses (immune/histone/TAS2R genes, 0 of the one-chain class). Sliced arm on 7 contigs: pooled A119b+HG002 vs A119b alone passes every panel bar (complete 93 -> 101, fused 24 -> 23, hit rates up, CAT 0.084, wall 2,582 s) but keeps only 0.865 of the base's spliced chains (bar 0.95; 3,271 of the lost chains had >= 5 reads). Pooling re-collapses chains (r1503 again). Depth closed on this panel.
 - Family graph threading (r1532 ceiling + r1533 arm, FAIL as registered): on the 35 multimapper misses, 18 are exon-identical to a sibling (no graph can separate them), 10 are reachable by tied reads (2-25 each); a graph of the expressed members is not a closed world (uniquely placed reads from absent pseudogenes cover its 'private' nodes), and only 1 of the 10 has a catalog copy. The closed-world arm (loci from the tied reads' own placements, thread_tied.py) reached 1 of 10, put 3 models on exon-identical members and 0.806 on CAT genes. The multimapper misses are at most 35 of 212 on the panel; the other 177 have unique primaries and are an unspliced / single-exon emission matter (r1518/r1520 trade).
 
@@ -849,6 +876,211 @@ Workspace: `/anvme/workspace/v138da13-rustle/` (`r6aln/`, `r1571/clu/`, `r1578sp
   Simiiformes and younger) is the first two rows, which is why SD damping removes false pairs (older paralogs,
   domain-sharing genes) while keeping most true ones, and why it cannot help families older than ~40 My or retrocopies.
   Caveat: the span rule misses partial duplications and gene fusions, so the SD share is if anything an underestimate.
+- Single-exon models (r1626, `docs/PREREG_single_exon_models_2026-11-10.md`): experimental `RUSTLE_MONO_RULE`; `fallback,either` PASS on gorilla (212 vs 134 expressed found, P 0.325) but A119b held out FAIL on precision (609 vs 308 found, P 0.080 vs bar 0.116); not adopted. On A119b final.gtf (P 0.166) is more precise than StringTie (0.008) and FLAIR (0.004) on the same measure.
 - Multiple representatives per locus under the exon-sharing default (r1654 / r1655, 2026-11-12, `docs/PREREG_multirep_exon_share_2026-11-12.md`, `docs/PREREG_multirep_gorilla_2026-11-12.md`; user question: a way to call families that does not pick one representative). `locus_reps.py --disjoint` + piece_attach `--keep-all` onto the unchanged default families, damped track. A119b 0.896 / 0.820 vs 0.918 / 0.782 (+82 true, +55 false; FAIL on the precision bar), HG002 0.718 / 0.498 vs 0.703 / 0.355 (PASS all four); no default hit lost on either. 39 of A119b's 55 added false pairs are between unrelated genes (pieces attached to the wrong family), not older relatives. Gorilla transfer FAIL: the layer adds 18 (OR6737) and 14 (KB3781) copies and the registered symbol truth (88 / 68 pairs) barely moves; the class it repairs (genes with no locus of their own) is 1 missed pair per gorilla sample against 71 on A119b and 42 on HG002. Not adopted.
   Miss classes at the exon-sharing default (these replace the 2026-11-07 counts): A119b 476 missed = absorbed 71, split 205, unlinked 200; HG002 267 = 42 / 91 / 134; OR6737 70 = 1 / 5 / 64; KB3781 56 = 1 / 5 / 50. The unlinked class (no edge between the two loci) is the largest across samples and no representative rule reaches it.
   Gorilla truth caveat (r1655 amendment 1): with `DENOVO_GGO_ENS_MAP`, pairscore counts a pair of gorilla genes that best-hit the same human gene as false (OR6737 1,238 of 1,342 false pairs, KB3781 315 of 367), because the same-symbol exemption keys on names. Set aside, the default is 0.879 on OR6737 and 0.651 on KB3781. Do not quote the raw 0.359 / 0.209; pairscore is unchanged pending a registered exemption.
+- Empirical chain rules from the tool lessons (r1677, 2026-11-13, `docs/PREREG_chain_rules_2026-11-13.md`; user goal): read-derived chain features. Stable in every read stratum of OR6737, A119b and KB3781: 5' truncation (at least as many reads run through the chain and continue 5' as end with it; 0.04-0.08 correct at any depth), 3' truncation, retained intron. A score over all features beats the read-count curve across the two testis samples (+0.039 / +0.048 at 0.90 of correct) and FAILS frozen on KB3781 (+0.006); the plain 5' rule keeps 0.992 of correct there at +0.013 (bar +0.02). The 1-read superset swap had no GO. `final.gtf` already drops half the 5' class on the gorillas, a third on A119b; 3' truncation and retention hold in direction but gain nothing over a read cut as filters. Rules listed in the doc. Ported opt-in at the user's request (2026-11-13): driver stage `trunc5` -> `PREFIX.trunc5.gtf` (`bench/famcmp/trunc5.py`; chains with a full-chain read and at least as many reads continuing 5'; OR6737 through the driver: 5,743 chains dropped, 25,633 correct at 0.379 against 25,794 at 0.352, 37 s); never part of `all`.
+- Soft mask as the exclusion rule (r1690, 2026-11-13, `docs/PREREG_softmask_exclude_2026-11-13.md`; user goal): a family with most copies at exon lowercase >= 0.9 is satellite or transposon sequence; removing those loses no protein-coding truth pair on A119b, OR6737, KB3781 or HG002 (non-coding pairs are unjudged; 21 protein-coding genes, TBC1D3 among them, have a copy in a removed family) and covers 155 of the 157 chr13 hsat1A hotspot families, but misses the registered bars on A119b (satellite reach 0.888 against 0.90; 2.6% of assigned rows in LINE families the label does not cover). rRNA is reached only as mature rRNA under a RepeatMasker-made mask (CHM13: 5 of 6 such families; spacer families 1 of 9; gorilla mask covers 0.21 of rRNA; HG002 scaffold rDNA loci 0 of 103). The censat BED removes 365 transition-zone families that are not satellite. STOP as registered. Built opt-in at the user's request: `RUSTLE_EXCLUDE_SOFTMASK=0.9` on the assign stage (`tools/softmask_families.py`); A119b confirming run PASS (assigned rows on commonly kept families -0.46%, assign 601 s against 346 s with the censat BED, 5,788 assigned rows against 5,399 because the transition-zone families are kept).
+- rDNA sequence rule (r1691, 2026-11-13, `docs/PREREG_rdna_sequence_rule_2026-11-13.md`, `tools/sequence_families.py`): families with most copies covered by a human rDNA unit (45S with spacer + 5S, cut from CHM13) are the rDNA families on A119b (13-15 of 15), HG002 (17-20 families, all on unplaced scaffolds) and both gorilla runs, with no protein-coding pair lost anywhere; the frozen repeat-masked reference FAILS the HG002 loci reach bar (74 of 92; the unmasked one 92 of 92, post hoc). Standalone tool, not wired.
+  Wired opt-in the same day as `RUSTLE_EXCLUDE_FASTA=REF.fa` (assign skip list; `tools/data/rdna_human.fa`): A119b confirming run PASS, 18 families listed, common families identical, wall 373 s vs 675 s, largest single process 47.8 vs 107.7 GB against the soft mask alone. trunc5 (r1677) driver parity: A119b 36,762 and KB3781 3,505 chains dropped, as the prototype.
+
+## AUDIT: FUSIONS, READTHROUGHS, TANDEM COPIES (2026-11-14, register 1706, measurement only, no bar, no default changed)
+
+Tool `bench/annot_compare/fusion_audit.py ASSEMBLY.gtf REFSEQ.gtf OUT.tsv [FAM.copies.tsv]` (classifies one GTF at a time);
+outputs `/anvme/workspace/v138da13-rustle/fusion_audit_2026-11-14/`. Runs: A119b default of 2026-11-13 (`r1687_sdcut/D0`,
+whole genome; `x.gtf`, `x.families.gtf`, `x.final.gtf` each classified on its own) and the KB3781 three-chromosome panel
+(`r1701_verdicts/base`). Never pooled.
+
+**Definitions used.** A gene-joining transcript touches the exons of >= 2 coding RefSeq genes that share no exon base (same
+strand). `junc2` = it carries an annotated intron of two such genes (a splice-level join; the rest reach the second gene by
+>= 1 bp of exon overlap only, mostly a long end). Classes, first that applies: annotated readthrough (a RefSeq coding gene
+itself spans two of the joined genes); truth (a joined pair is a truth paralog pair); named (shared name stem such as ZNF or
+PRM: relatives by name, not proven copies); loc (both LOC: no evidence either way); other. Shared-exon clusters (PCDH,
+UGT1A) and nested genes are not joins. Fusion in the chimeric sense = supplementary alignments.
+
+**What the code does today.**
+| Rule | Default | Product it changes |
+|---|---|---|
+| F1 bridges, `--bridge-regroup f1v2` (`RUSTLE_BRIDGE_REGROUP`) | ON | tags bridge transcripts (`fusion_of`, `fusion_junction`, gene_id `.fusN`) in `PREFIX.gtf` and `final.gtf`; leaves them out of `PREFIX.families.gtf`; splits gene_ids |
+| `--bridge-units-list`, `f1units` | opt-in | replaces F1's own bridges (must include them) |
+| Catalog readthrough / mis-chain gates (`RUSTLE_KEEP_READTHROUGH=1` turns off) | ON | family catalog only |
+| assign readthrough certificate (`readthrough_certificate true` in params) | ON | `readthrough_into` column, `readthrough_explained` count |
+| `RUSTLE_READTHROUGH_JUNCTIONS` (R1-R3, list) | off | junction-level readthrough arms |
+| `RUSTLE_LOCUS_BRIDGE_CUT` | off | homology catalog path |
+| `readthrough_filter --max-secondary-frac` | off (1.0) | flags readthroughs resting on secondaries |
+| `RUSTLE_SEED_UNSPLICED=primary|support` | off | removes the unspliced array blobs |
+| Supplementary records | always excluded | assembly pool, placements, AS table |
+Wiring gaps: `readthrough_into` is written (186 of 286,032 rows in the current A119b assign: 40 `cut`, 146 a copy index) and
+read by no later stage, only summed; nothing detects or reports chimeric molecules.
+
+**A119b (20,090 coding genes), `x.gtf` (233,025 transcripts) / `final.gtf` (211,407).**
+| Class | Joining transcripts | junc2 | junc2 reads | junc2 F1-tagged | junc2 in final.gtf |
+|---|---|---|---|---|---|
+| annotated readthrough | 255 | 160 | 1,221 | 17 | 157 |
+| truth paralog pair | 35 (1 unspliced blob, 946 reads) | 12 | 49 | 1 | 12 |
+| named stem | 123 | 60 | 203 | 19 | 59 |
+| LOC stem | 20 (1 unspliced) | 18 | 142 | 0 | 18 |
+| other | 1,524 (3 unspliced) | 873 | 4,675 | 188 | 841 |
+- `x.gtf`: 1,957 joining transcripts (0.84%) in 771 loci; splice-level 1,123 in 407 loci. 726 of the 1,957 carry 1-2 reads
+  (`reads` includes pooled secondaries).
+- F1 tags 225 of the 1,123 splice-level joins; the families input still holds splice-level joins in 256 of the 407 loci.
+- `final.gtf` (classified directly): 1,915 joining transcripts in 719 loci, 1,087 splice-level in 407 loci, 1,122 F1-tagged
+  transcripts present; of the 5 unspliced joining models 1 remains (3 reads).
+- The known 544 fused loci (`merge_audit.py` on the families input): 537 hold a joining transcript, 221 a splice-level one,
+  7 are separate transcripts under one gene_id. 67 more loci with a joining transcript are `mixed` there.
+- Cost. Genes joined through a splice-level join and left without a model of their own: 68 in `x.gtf`, 72 in `final.gtf`
+  (annotated readthrough 10, truth 2, named 3, LOC 2, other 56; a gene can be in two classes). Counting any exon overlap:
+  215 of 1,517 joined genes in `x.gtf`, 170 of 1,396 in `final.gtf`; the extra ones may simply be unexpressed. The truth
+  class falls from 34 to 4 genes in `final.gtf` because the 31-gene unspliced blob is dropped there.
+- Families: 21 of 1,380 catalog families have a member locus holding a joining transcript (truth 6, named 5, LOC 3, other 11).
+- No joining transcript has an intron >= 500 kb: the assembly holds no long-range fusion model.
+- Supplementary records (chr16, chr5, chr19; records per primary record): 2.4-2.7%; other part on another chromosome
+  38-65%, same chromosome within 1 Mb 31-54%. All excluded before assembly; the primary part is used alone. Earlier notes
+  quote 0.1-0.3% under other denominators (junction support, share of placements).
+
+**KB3781 panel (7,363 transcripts, fibroblast).** 129 joining transcripts (1.75%), 81 splice-level in 22 loci, 8 F1-tagged;
+36 of 93 joined genes have no model of their own (16 through a splice-level join). The tandem class cannot be read here: no
+truth pairs loaded, and 35 of the 36 stem matches are LOC-LOC. Not comparable with A119b beyond the direction.
+
+**Closed levers (not re-opened).** r844 drop every readthrough (deletes PKD1P6-NPIPP1); chimera policy 2026-09-18 (changes
+no number); r1516 / r1517 tandem cut rules (5-6 of 69); r1518 / r1520 unspliced seeding (opt-in); r1571-1577 absorbed genes
+(best 31 of 71, opt-in decision open); r1623 correlation clustering (control 0.266); r1686 SD-held ceiling 28 of 69;
+r1687 blind SD cut (3 of 69). r1495 annotation-guided units remain the effective cutter.
+
+**Reading.** Most joins cost nothing measurable: 86% of joined genes keep their own model and only about 70 genes are
+swallowed by a splice-level join, mostly between unrelated neighbours. The tandem-copy part is small (12 splice-level
+transcripts on truth pairs, 6 families), in line with rows 1516/1517. F1 clears about a third of the splice-level loci from
+the families input. Unhandled: `readthrough_into` has no consumer, and chimeric molecules are dropped without a report.
+
+**Read support of the joins (same row, `bench/annot_compare/join_support.py`, A119b `x.gtf`).** For each joining transcript,
+the records carrying exactly its crossing intron (left exon on one gene, right exon on another; the weakest one when
+several). 1,294 of the 1,957 have such an intron (777 distinct); the other 663 join through a single exon or an unannotated
+exon and are not counted.
+| Group | n | primary only | primary majority | secondary majority | secondary only | primaries mostly MAPQ 0 |
+|---|---|---|---|---|---|---|
+| all | 1,294 | 1,210 | 36 | 43 | 5 | 19 |
+| splice-level (junc2) | 814 | 763 | 18 | 31 | 2 | 16 |
+| annotated readthrough | 188 | 188 | 0 | 0 | 0 | 0 |
+| truth paralog pair | 28 | 15 | 8 | 4 | 1 | 4 |
+| named stem | 96 | 89 | 4 | 3 | 0 | 0 |
+| LOC stem | 18 | 1 | 0 | 17 | 0 | 7 |
+| other | 964 | 917 | 24 | 19 | 4 | 8 |
+| F1-tagged | 230 | 228 | 0 | 2 | 0 | 1 |
+| untagged | 1,064 | 982 | 36 | 41 | 5 | 18 |
+93.5% rest on primary alignments alone and 96.3% on a primary majority; 48 (3.7%) rest mainly or only on secondaries. The
+borrowed-evidence joins concentrate where copies are near-identical: 17 of 18 LOC-stem joins and 5 of 28 truth-pair joins,
+against 23 of 964 between unrelated neighbours. This repeats §6n8 (7 of 124 secondary-majority) on today's default: the
+joins are real molecules placed by minimap2 with confidence, so secondary support cannot be the general cut signal.
+
+**Are the secondaries on those joins near-tied? (same row; `fusion_audit_2026-11-14/a119b.sec_join_ties.txt`).** The 48
+secondary-supported joins use 22 distinct crossing introns carrying 5,227 secondary records. Against each molecule's best AS:
+exact tie 96 (1.8%), >= 0.98 393 (7.5%), 0.9-0.98 735 (14.1%), < 0.9 4,003 (76.6%). Only 9.4% are in the assembler's pool.
+By intron: 10 of 22 have at least half their secondaries in the pool (SLX1A-SULT1A3 and its LOC twin on chr16:30.5 Mb,
+SMN2-SERF1B, RBMY and GAGE pairs: true near-ties between identical copies); 12 are echoes well below the best placement
+(NBPF1 2,581 of 2,807 under 0.9; ZNF525-ZNF845 109 of 109; GAGE1, POLR2J3-UPK3BL2, ZNF91-ZNF724, RBMY1D-RBMY1E), which the
+0.98 pool already ignores. Every one of the 22 keeps >= 2 pooled records (primaries + pooled secondaries), so none is an
+artefact of admitting weak secondaries: the model stands on its primaries or its near-ties.
+
+
+## JOIN RULES AGAINST ANNOTATION TRUTH (register 1707-1709, `docs/PREREG_join_rules_2026-11-14.md`)
+Every gene join (a transcript intron between two genes that share no exon; all RefSeq genes) was classed a (intron
+annotated in RefSeq or CAT), b (unannotated, >= 5 primary reads, canonical sites; b1 also seen in the other human sample),
+w (2-4 reads) or c (unsupported). A119b developed the bars, HG002 on CHM13 confirmed every verdict.
+- F1 `fusion_of` tag: too strict and too loose at once. 0.526 / 0.728 of tagged transcripts lie inside one annotated
+  gene, and 0.915 / 0.917 of class a + b1 joins carry no tag. The tag marks bundle bridges, not gene joins. No gene is
+  left without an untagged model.
+- final.gtf layers: fine for the real joins (remove 0.033 / 0.027 of a + b1), and they pass every class c join (20, 15).
+- Secondary-share flag (emulating the opt-in readthrough filter): too strict, 0.588 / 0.745 of what it flags is a or b1.
+- Annotated readthrough genes that are expressed: recall 0.759 / 0.766, under the 0.80 bar.
+- Tandem truth pairs, both expressed: a model each in 0.895 / 0.991 (both spliced and with no locus in common 0.849 / 0.918).
+- Class b is large: 1,158 crossing introns on A119b (298 recurring in HG002), 504 on HG002 (222 recurring). On 44-45%
+  the two sides lie in the span of a common CAT gene. The list is on the advisor share.
+- Chimeric reads (dropped by the assembler, now reported): 528 / 762 gene pairs seen in both samples; over half are
+  overlapping gene spans. Adjacent same-strand pairs 48 / 97, inter-chromosomal 23 / 36.
+Nothing was changed. Open for the user: what F1's tag should mean, and whether any chimeric class gets a model.
+
+Follow-up, register 1712: could the F1 tag mean gene joins instead? A rule on the assembly alone (a spliced model ending
+before a transcript's intron and another starting after it, no shared exon, truncated copies excluded) FAILED on both
+samples: 0.450 / 0.634 of its tags fall inside one annotated gene (bar 0.10) and 0.594 / 0.618 of real joins stay untagged
+(bar 0.50), while it tags 20 times more transcripts than today. It does reach half of the fused tandem junctions (30 of 60;
+the current tag 0). Alternative first and last exons of one gene look like two joined genes from the models alone.
+
+Follow-up, register 1713: the same question with read ends (reads from upstream ending at a site, then reads starting at a
+site, inside the intron). FAILED on both samples in every form: best form 0.380 / 0.566 of tags inside one annotated gene
+and 0.703 / 0.756 of real joins untagged. The signature is a general property of genes: at one read per site it is in 93-96%
+of real joins and also in about 100,000 transcripts inside one gene. F1 already uses this evidence, but only at introns
+that are the sole link of a locus: 230 of the 1,605 real joins, of which 147 pass both of its proofs. Families effect of the best form on A119b
+(13,202 transcripts cut into units): pair precision / recall 0.906 / 0.813 against 0.902 / 0.808, inside the 0.01 noise bar;
+fused loci 544 -> 404. Tandem pairs with a spliced model each in separate loci: 40 of 69, against 29 with F1's bridges
+as units and 28 by default; 38% of the cut transcripts are inside one annotated gene.
+
+## DIVERGED MEMBERS: ABSORB RECHECK, SPLICED ALL-VS-ALL, RELATIVE LINKS STAGE (2026-11-14, register 1735-1737)
+
+Three steps on one question from the user: what is still worth building for the family members the default misses.
+
+**Row 1735, absorb-loci under today's default: STOP.** `mcl_families --absorb-loci --absorb-ratio 0.1 --absorb-frac 0.5`
+(row 1476) with the shipped flags on the A119b default run, first-run table: 0.912 / 0.782 -> 0.927 / 0.774. False pairs
+165 -> 133 (-19.4%, bar -20%), recall -0.008 (bar -0.005). 29 of the 32 removed false pairs are `related`; the 20 lost
+hits are young duplicates (8 POTEC pairs, KRAB-ZNF, CNTNAP3/3B, TPTE/TPTE2). The +0.07 precision of row 1476 was measured
+at a 0.726 base and is +0.015 at today's. Route closed. `r1735_absorb/`.
+
+**Row 1736, spliced-sequence all-vs-all: STOP.** Locus representatives with their exons joined (74,562 loci), aligned
+spliced to spliced with `-x asm20` (S1), with no assembly preset `-k 15 -w 10` (S2), and spliced to genomic loci with
+`-x splice` (S3). New true / new false pairs against the shipped table, at coverage of the shorter spliced sequence
+>= 0.7 / 0.5 / 0.3:
+
+| arm | 0.7 | 0.5 | 0.3 |
+|---|---|---|---|
+| S1 | 32 / 233 | 80 / 716 | 129 / 1,443 |
+| S2 | 86 / 998 | 147 / 2,202 | 195 / 4,090 |
+| S3 | 105 / 1,371 | 137 / 2,150 | 146 / 3,254 |
+
+Bar: 40 new true at no more than 1 new false per new true. Every cell costs 7 or more. Neither the assembly preset nor
+the introns in the input are what loses the pairs: older relatives and domain-sharing genes align as well as the missed
+young pairs. Not tested: the exon-share rule (instead of a coverage threshold) on spliced records. `r1736_spliced/`.
+
+**Row 1737, relative links wired as an opt-in stage.** No new rule: the row 1676 model, frozen
+(`tools/data/relative_links_model.json`), applied to locus pairs without an annotation.
+`tools/rustle_pipeline.sh relatives` -> `PREFIX.fam.relatives.tsv`; details and the measured limits are in
+`PREREG_relative_tier_2026-11-13.md` (last section). The families and their figures are unchanged; a link means
+"related to", not "member of". `r1737_relative/`.
+
+## FAMILY GRAPH VIEW, SCORER DEFAULT, STATE OF THE DEFINITION, EARLY ENDS IN THE FAMILIES INPUT (2026-11-14, register 1595 stage, 1530 default, 1740)
+
+**Family graph view (opt-in stage `exonmap`).** Of the two proposed products never started, the family graph was built
+from the exon map (row 1595) instead of the Rust `family_gfa` stub: one GFA per family, nodes = exon columns labelled
+core / accessory / private. Details and checks: `PREREG_family_exon_map_2026-11-09.md`, last section. It shows the
+families; it does not define them.
+
+**Is the definition sound (recorded figures, no rerun).** Sound in what it groups, incomplete in members. A119b default
+path 0.902 / 0.808 pair precision / recall; member-level recall 0.44 (KB3781 0.34). Members are lost to: no read in the sample (about half of the annotated isoforms of family genes); no model built (the same members
+StringTie and FLAIR miss, about 40% modelled cleanly by no tool); absorbed into a neighbour or fused tandem copies (69
+fused tandem pairs); copies no read prefers (72 of the 150 members both tools miss); and, the only class the family rule
+owns, unlinked or split loci (of 497 non-absorbed misses 280 with no alignment path, 213 split by clustering: NBPF,
+GOLGA). False pairs are mostly older relatives (KRAB zinc fingers). Every lever on the rule-owned class is closed
+(rows 1662, 1674-1681, 1735-1736). Statement for the thesis: precise and coherent for expressed, separately modelled copies;
+completeness is bounded by expression and assembly, not by the grouping rule. The figure does not transfer at the
+same level (HG002 0.703 / 0.355, row 1593, before extra representatives).
+
+**Scoring artifacts and the scorer default.** Marks that already exist: same-symbol duplicate ids (row 1530), merged
+shared-exon genes (`DENOVO_SPLIT_REFSEQ`, row 1494, recall -0.005, opt-in), older relatives (`of_which_related`,
+`--wide-level`), non-coding pairs (ignored or `--noncoding`). They stay in the scorer and are not fed to the family
+rule (annotation knowledge in a de novo definition). Changed: the row 1530 set-aside is now the default of
+`pairscore.py` and `protedge_step0.py` (`PAIRSCORE_SAME_SYMBOL=count` restores; new last columns `precision_raw`,
+`recall_raw`). A119b, same tables:
+
+| table | set aside (default) | raw | pairs set aside |
+|---|---|---|---|
+| default path (extra representatives) | 0.902 / 0.808 | 0.814 / 0.809 | 214 |
+| first-run table | 0.912 / 0.782 | 0.820 / 0.782 | 214 |
+
+No quoted figure moves: they already had the switch on. Of the 192 remaining false pairs 122 are `related`. Only A119b
+was rescored.
+
+**Row 1740, early-end chains in the families input: PASS.** `earlyends` became the default last step of `all` as a
+side file (`ASSEMBLY_ENDS_2026-11-14.md`). Adding its chains to the families input changes nothing at three decimals
+(A119b 0.902 / 0.808, OR6737 0.514 / 0.200 on 35 pairs) and leaves the clusters tables byte-identical; one copy
+representative per sample is replaced by an early-end chain, and A119b gains 2 and loses 1 extra-representative row
+(6,636 -> 6,637). The merge into `PREFIX.gtf` is eligible and not done; `assign`
+was not run on the changed copy table. `PREREG_earlyends_families_2026-11-14.md`.

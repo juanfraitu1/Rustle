@@ -13,12 +13,16 @@ quoted on one cannot be compared with a tool arm run on the other.
 |---|---|
 | genomes | `~/data/chm13/chm13v2.0.fa`; `~/data/hg002/hg002.pat.fa` (HG002 T2T Q100 paternal, names 1..22,X,Y + JAKCWS); `~/work/jfim/rustle_data/genomes/GGO.fa` |
 | Iso-Seq BAMs | `~/work/jfim/rustle_data/reads/`: `A119b.t2t.bam` (human testis, CHM13), `GCA_029281585.2_flnc_mm.bam` (KB3781 gorilla fibroblast), `GGO_mm.bam` (OR6737 gorilla testis) |
-| HG002 Kinnex | `~/work/jfim/hg002_run/hg002.pat.bam` (aligned to the PATERNAL haplotype; 131 GB, 9 h to make, do not redo). `HG002_kinnex.t2t.bam` is CHM13-aligned and does not match the hg base run |
+| chimp reads (unaligned) | `/anvme/workspace/v138da13-rustle/reads/PTR/PTR_8720-2.IS-60db2294331f.bam`: PacBio CCS read BAM (Eichler lab SMRT Link read groups), 2.8 GB, no `@SQ` lines and no index: map it to a chimp genome before any stage can read it. Located 2026-11-14; no chimp reference checked on disk. |
+| HG002 Kinnex | `~/work/jfim/hg002_run/hg002.pat.bam` (aligned to the PATERNAL haplotype; 131 GB, 9 h to make, do not redo). `HG002_kinnex.t2t.bam` is CHM13-aligned and does not match the hg base run. Staged copy for `assign` since 2026-11-15: `/anvme/workspace/v138da13-rustle/stage/hg002.pat.bam` (+ `.bai`); the `~/work` copy stalled `assign` on its largest regions (row 1741) |
 | HG002 truth | `~/data/hg002/genes.gff3`, `~/data/hg002/xref.tsv` (`DENOVO_HG002_GFF`, `DENOVO_HG002_XREF`; Ensembl 2022_07) |
 | family truth | `~/data/denovo_eval/` (next-to-last section), CAT TSV `~/work/jfim/rustle_data/annotation/chm13v2.0_CAT_Liftoff.genes.tsv` |
 | base runs | `~/runs/human_A119b/a1.*`, `~/runs/gorilla_KB3781/kb.*`, `~/runs/gorilla_OR6737/or.*`, `~/runs/hg002_kinnex/hg.*` (first three symlink into `~/work/jfim/runs/`); driver `tools/rustle_pipeline.sh` |
 | PSV VCF report (register 1484) | `~/o2ties_real/psv/or.psv60.*` |
 | storage | big outputs under `$WORK` (`~/work`; group FILE quota full since 2026-10-31, so few big files), intermediates in node-local `$TMPDIR`, kept data on `$HPCVAULT`; `$HOME` 200 GB hard |
+
+Bringing a file from another server (run on Fritz, inside `tmux`; big files go to the workspace, not home):
+`rsync -avP user@other.server:/path/to/file.bam /anvme/workspace/v138da13-rustle/reads/` (`-P` resumes an interrupted transfer; no `-z` for BAM / gz).
 
 ## Reference genomes and annotations
 
@@ -199,8 +203,19 @@ families input). `PREFIX.final.gtf` is the assembly to look at and compare with 
 families input is unchanged (registers 1490 / 1491; `docs/archive/2026-11/PREREG_assembly_ends_2026-11-01.md`). `RUSTLE_ASSEMBLY_LAYERS=off` skips it.
 A fourth layer drops models whose intron chain is a strict sub-chain of another model (`--polish-subchain drop`, register 1498:
 contained share 10.1% -> 5.4% vs RefSeq, complete matches -0.44%); `RUSTLE_FINAL_SUBCHAIN=off` keeps them.
+Side files of `all` since 2026-11-14, read by no stage: `PREFIX.earlyends.gtf` (`PREFIX.gtf` plus nested early polyA ends, rows 1721 / 1722,
+`RUSTLE_EARLYENDS=0` off) and `PREFIX.capstarts.gtf` (`PREFIX.gtf` plus nested starts with a capped read cluster, rows 1717 / 1720,
+`RUSTLE_CAPSTARTS=0` off; not written for a library without cap G). `assemble` also runs `tools/check_reads.py`, a warnings-only check
+for untrimmed polyA tails and unoriented reads. Summary: `ASSEMBLY_ENDS_2026-11-14.md`.
+Opt-in family graph view (2026-11-14): `tools/rustle_pipeline.sh exonmap --out PREFIX` after `families` writes
+`PREFIX.fam.exonmap.{columns,map}.tsv` and `PREFIX.fam.exonmap.gfa/<family>.gfa` + `<family>.colours.csv` (one GFA 1.0 per
+family: segment = exon column tagged `CL:Z:core|accessory|private` and `NC:i:` loci, one path per member locus; no sequence).
+It is a view of the families, read by no stage (row 1595, `LEDGER_O1.md` last section).
 
 ## Scoring any species (2026-11-02)
+Scorer default since 2026-11-14: pairs of two annotation ids of one gene (same symbol, row 1530) are set aside
+(`ignored_same_symbol`) in `pairscore.py` and `protedge_step0.py` without a switch; `PAIRSCORE_SAME_SYMBOL=count` restores the old
+counting, and the last two columns `precision_raw` / `recall_raw` always give it.
 `famtruth.py`, `pairscore.py`, `seqscore.py` load genes through `famtruth.load_genes`: `--species human` = CHM13 CAT (`DENOVO_CAT_GFF/TSV`);
 presets `gorilla` (`DENOVO_GGO_GFF`) and `hg002` (`DENOVO_HG002_GFF` + `DENOVO_HG002_XREF`); any other name needs
 `--annotation GTF|GFF3[.gz]` (format sniffed: GTF, Ensembl GFF3, RefSeq-style GFF3). `--ids symbol` (default) maps genes to human

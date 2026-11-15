@@ -6,6 +6,7 @@ Compact version (2026-11-01). The verbatim ledger is `docs/archive/2026-11/LEDGE
 
 - **Scope (user, 2026-11-03):** O2 is only for reads minimap2 could not place. The contested set = molecules whose runner-up is within 10 on `ms` (the score minimap2 ranks by), any AS, minus the K = 0 wall (same scores, same shape, same chromosome: nothing to decide). The AS-gap class (spliced primary vs unspliced higher-AS rival, ms margin > 10) is OUT (r1403/1404: primary right 99.6%). Sizes: A119b 283,924 molecules (wall 27%), HG002 197,872 (22%), OR6737 15,964 (25%), KB3781 52,061 (17%) (r1508 census, post hoc amendment).
 - **Default `copy_assign`:** exact AS ties with the PSV certificate (`as_margin` 0), unchanged. **Opt-in:** `--tie-ms W` (ms gate; ms columns only under the flag; never fires on ms 0; needs an indexed BAM), `--primary-on-family` (r1514), `--tie-structure`, `--certify-all-records`, `--union-certificate` (r1481 FAIL), `RUSTLE_PSV_BLOCKS=1`, candidates stage.
+- **rDNA exclusion on HG002 (row 1741, 2026-11-15; `PREREG_rdna_sequence_rule_2026-11-13.md` Amendment 2):** confirming run through the driver, INCOMPLETE as registered: the default arm was OOM-killed (239.8 GB), the arm with `RUSTLE_EXCLUDE_FASTA=tools/data/rdna_human.fa` finished in 1,631 s at 31.5 GB with 2,898 assigned rows. Not a held-out test; row 1691 stays FAIL. On the older completed default run the listed families hold 0 of 17,960 assigned rows (descriptive). Still opt-in; open = a completed default arm on today's binaries (1 TB node), then the user's decision.
 - **Truth:** KB3781 fibroblast = Jim = the mGorGor1 individual; `bench/o2_truth/haplotype_truth.py` aligns reads and copies to his mat/pat haplotypes; `bench/o2_contested/strict_truth.py` reads it at slack 0 (unique best hit; copy loci need a near-perfect best per haplotype; `STRICT_LOCI=best2` = the old rule). Rows whose best hits sit on >= 2 loci are UNVERIFIABLE (the other-allele trap of r1413), never successes.
 - **Proof status (r1509, r1510, r1514):** on the 40-family panel `--tie-ms 10` assigns 16x more than the default gate and at slack 0 is right on 284 of 286 vs the primary's 280 (r1509, post hoc truth; FAIL as registered). Held-out 454 families FAIL (r1510): O2 = primary (143/161 vs 147/157) because 77% of held-out assignments were molecules whose PRIMARY lies on no catalog copy (uncatalogued parent genes; MCL148 3,283, MCL13 148), pulled in by a secondary within 10 ms. `--primary-on-family` removes all of them (r1514: held-out assigned 4,529 -> 1,109; decidable 129/22 vs primary 125/26; panel keeps all 1,275 and gains 159; FAIL as registered on two side bars). On 151 decidable held-out molecules O2 beats the primary on 5 and loses on 1: the near-tie set's errors are shared with the aligner; this round's gain is correctness (no assignments to reads from outside the catalog), not precision.
 - **Secondaries (r1511/1512):** useful fraction by ms ratio: <0.5 4.8%, 0.5-0.8 6.9%, 0.8-0.9 16%, 0.9-0.95 15%, 0.95-0.99 33%, >= 0.99 71%; the informative set is ratio >= 0.5 (minimap2's `-p 0.8` would drop 23% of useful secondaries; `-p 0.1 -N 50` was right). A gene-level graph from multimappers FAILS as family discovery (pair precision <= 0.032 vs O1 0.341; silent members not found).
@@ -13,6 +14,8 @@ Compact version (2026-11-01). The verbatim ledger is `docs/archive/2026-11/LEDGE
 - **r1542 (2026-11-05, PASS, adopted):** the primary-on-family guard is ON under `--tie-ms` (`--no-primary-on-family` = r1510's gate); byte-identical to r1514 / r1510 on KB3781; human A119b panel removes 8.7% of unguarded assignments, all guarded assignments have a primary in the region windows. `--tie-ms` itself stays opt-in. Closed 2026-11-05: shape guard vacuous after the primary-on-family guard (r1540, 0 rows); within-sample allele-site guard FAIL (r1541: fixes 4, costs 12 held-out); the MCL183 haplotype-aware version needs assemblies and is unregistered.
 
 - **2026-11-10:** the assign router (r1600: one BAM read, schedule from exact counts) FAILED as registered (583 s vs 553 s; 58.5 vs 36.4 GB; tables identical) and is dropped; branch `r1600-router` kept. Molecules O2 cannot decide (AS within 0.98 of best on several loci) are now reported as tie groups: one model per locus, one count per group (register 1603-1611, see LEDGER_O1 update 2026-11-10).
+
+- **2026-11-13, rows not carried above (r1685, r1696):** an O2 guard that abstains when the assigned copy shares an SD pair with a sibling copy STOP (at fracMatch 0.99 it removes 25 of 26 wrong rows and 237 of 393 right ones; every assigned copy shares an SD). Per-bubble vote on the family graphs of r1649 STOP at step 0 (565 assigned, 553 right / 12 wrong, but 8 vote-only molecules vs bar 30): containment, k-mers and the vote agree on these families; population-haplotype paths are the only untried graph use.
 
 ## Contents
 
@@ -323,6 +326,7 @@ Pre-registrations in `archive/2026-11/`: `PREREG_o2_contested_census_2026-11-03.
 - r1509 PROOF (panel 40 families): identity PASS; MS10 contested 40,524 vs BASE 24,095 molecules, assigned 1,265 vs 78; registered truth (NM + 2 slack) FAIL (35 decidable, 2 wrong = primary); slack 0 post hoc: 284 right / 2 wrong of 286 vs primary 280 / 6; 648 unverifiable.
 - r1510 HELD-OUT: FAIL (see current state); 131 of 161 wrong in MCL13 where both O2 and the primary sit on copy 0 and the reads come from an uncatalogued parent (NC_073230.2:52.6 Mb, MAPQ 60).
 - r1511 REPORT bound = ms ratio 0.5; r1512 FAIL (graph); r1514 guard (see current state). Dumps: `o2mstie/*.strict_dump.tsv`, `~/o2contested/r1510_strict.txt`, `r1514_strict.txt`.
+- 2026-11-10, correlation clustering in the assignment layer (opt-in measurements, no default change): r1624 allele vs paralog STOP without a run (the distinguishing quantity is the r1541 allele-site guard; class with truth = 12 reads, MCL183); r1625 pooling a family's unassigned reads with `copy_phasing run --semi --guard` (r1483 arm A, KB3781, strict haplotype truth): 120 calls on the 1,113 abstained decidable rows of the r1514 arm, 115 right / 5 wrong against the primary's 118 / 2 on the same rows, 7 calls in held-out families; FAIL on the aligner bar, closed. `PREREG_cc_readthrough_allele_2026-11-10.md`, `PREREG_pooled_family_reads_2026-11-10.md`.
 
 ## Placement without the aligner's primary: exon space, k-mers, graph (2026-11-12, register 1642-1650)
 User question: is there a method other than minimap2's spliced genome alignment that places multi-mapping long reads
@@ -339,7 +343,7 @@ Tools: `bench/o2_contested/{exon_place,multi_iso_ref,kallisto_place,oarfish_plac
   36), negatives 0.587.
 - r1644 FAIL: the post hoc unspliced-primary split of r1643 on HG002: 11 vs 43 (4 vs 214 before the scoring fix).
   Exon-space re-alignment WITH minimap2 is closed, both references, both classes.
-- r1647 INVALID as registered (validity gate 0.80 on pseudoaligned reads; got 0.41 / 0.70), OPEN: kallisto long mode
+- r1647 INVALID as registered (validity gate 0.80 on pseudoaligned reads; got 0.41 / 0.70), OPEN at the time, since CLOSED by r1651 (HG002 on CHM13: reach 0.043, 8.3% wrong, FAIL; the rule works on the reference individual only): kallisto long mode
   (`-k 63`, `bus --long --threshold 0.8`), reference = per-copy sequences + every other assembly transcript as OTHER,
   assign iff the compatibility class is one locus. On its molecules 919 right / 18 wrong (KB3781) and 678 / 6 (HG002);
   tool right / primary wrong vs reverse 15 vs 2 and 59 vs 2 (after the primary-overlap correction); where O2 abstains it
@@ -376,7 +380,24 @@ by its leftmost position: recheck with the record's overlap (`EXON_PLACE_PRIMARY
   SOLE-CANDIDATE rows (contested molecule, one candidate copy, no deciding site; register 787's class). Held out: 19
   right / 15 wrong and 13 / 71, against 953 / 48 and 997 / 70 for other rows; dropping them takes the wrong rate 6.1% ->
   4.8% and 12.3% -> 6.6%. They are 13% of the A119b default-gate assignments. Existing flag `--no-sole-candidate`.
-  OPEN FOR THE USER: 787 ruled such reads are never assigned, the shipped default still assigns them.
+  USER RULING 2026-11-13 ("Make it default"): under `--tie-ms` a single-candidate molecule is now `tied` unless
+  `--sole-candidate` (`copy_assign`, `sole_on`). Replay of the r1657 HG002 own-haplotype panel (workspace
+  `sole_default_2026-11-13`): new default byte-identical to `--no-sole-candidate`; 758 vs 812 assigned rows; slack 0
+  140 right / 16 wrong (10.3%) vs 160 / 26 (14.0%) with `--sole-candidate`. Figures of rows 1509-1657 run under
+  `--tie-ms` need `--sole-candidate` to reproduce. `--union-certificate` is affected too: same panel 754 assigned
+  rows under the new default vs 803 with `--sole-candidate` (803 = the r1657 run; union table unchanged, 8,916 rows),
+  so r1657's union figures (170 / 14) included sole rows; the union arm was not re-scored under the new default.
+  SECOND RULING 2026-11-13 ("Extend to the default gate"): the promotion is now opt-in everywhere (`copy_assign
+  --sole-candidate`; driver `RUSTLE_SOLE_CANDIDATE=1`); `--no-sole-candidate` is accepted and does nothing. Evidence:
+  r1695 (HG002 own haplotype, default gate) sole rows 17 right / 4 wrong, other rows 5 / 0: thin, one sample; r1656 had
+  found sole rows clean on the reference individual (KB3781 33 / 0, 8 / 0), so this ruling trades reach for safety away
+  from the reference individual. Cost on A119b (soft mask + rDNA lists, same binary, `sole_default_2026-11-13/asg_mr`
+  vs `asg_mrkeep`): assigned rows 5,784 -> 3,555; the only rows that change are the 2,229 sole rows (assigned -> tied);
+  assigned molecules 4,109 -> 3,322. Plain default run: 5,399 held 2,159 sole rows (about 3,240 left; not rerun).
+  A certificate-rejected single candidate keeps its `ambiguous` verdict (a first build relabelled 31,447 of them
+  `tied`; fixed before this record). Not re-measured: `quant.tsv` (differs, sole rows no longer count 1) and the flag
+  scan, which reads the assignments table. Earlier figures need the switch to reproduce.
+  Kept parked by the user the same day: `family_gfa`, pending item 1b (E7 on HG002), the inverted-copies simulation.
 - r1656 follow-up: KB3781 held-out sole rows 8 right / 0 wrong (clean and rare on the reference individual). 787 was
   shipped only as `tie_outside_catalog` (partner on no family's unit); a partner on ANOTHER family's unit still leaves a
   sole candidate, and that is 46 of 71 and 12 of 15 of the wrong sole rows. Lever: cross-family tied placements as
@@ -402,3 +423,63 @@ minimap2 (1642-1644), abundance EM (1648), graph path compatibility (1649), exac
     `semisec` and the assembler's loaders; dropping them saves nothing. Secondaries are set by `-N 50 -p 0.1`; r1511
     stands (useful share 71% at ms ratio >= 0.99, under 7% below 0.8; `-p 0.8` loses 23% of the useful ones). Decision:
     keep the alignment line, thin by ms ratio AFTER alignment when a smaller BAM is wanted; never re-align stricter.
+
+## O2 AUDIT AGAINST THE ASSEMBLY GOAL (2026-11-13, register 1699, measurement only)
+
+Goal audited (user, 2026-11-13): on AS or ms near ties the primary is a coin toss; O2 should re-pick it on PSVs or
+shrink the pool of secondaries, and that should help assembly. State audited: working tree of 2026-11-13 (sole rows
+tied under `--tie-ms`, uncommitted); A119b default products `r1690_softmask/asg_bed` (exact-AS gate, famreps, censat
+skip list); KB3781 default `r1662_edgemiss/kb_all`; truth sets r1642 (KB3781), r1653 hgpat / hg13 (hg13 with the r1659
+correction), all `--tie-ms 10`. Tool `bench/o2_contested/o2_funnel.py`; outputs
+`/anvme/workspace/v138da13-rustle/o2_audit_2026-11-13/`. No default changed, no assemble run.
+
+1. **Three near-tie definitions.** A119b molecules: seeding pool (second AS >= 0.98 x best) 532,876; goal scope
+   (ms within 10) 306,295; shipped O2 gate (exact AS tie) 111,796. `copy_assignment_definition.md` states all three
+   (header 10 AS, current state 10 ms, shipped exact). The default gate sees 21% of the pool's molecules.
+2. **Scope.** Of the 111,796 exact ties 64,157 never reach the assign table: 51,129 in families on the skip list
+   (satellite / rDNA, intended), 10,863 with primary and rival outside every family copy, 2,165 other.
+3. **What O2 says.** Contested rows, A119b: origin-rejected 148,260 (72%), tied 44,793 (22%), other ambiguous 8,523,
+   assigned 5,293 (2.6%, 2,159 of them sole candidates with no PSV; row 1695). KB3781: 49% / 50% / 0.6% / 138 rows.
+   `ambiguous` is the origin certificate in 95-99% of rows.
+4. **Premise, per sample (never pooled; the two HG002 sets are the same reads on two references).** Exact tie on AS
+   and ms, decidable rows: primary right 0.42 on KB3781 (n 147); O2 assigns 1 of them on PSVs. HG002 gives 0.27
+   (hgpat, 532) and 0.37 (hg13, 383), but with the leftmost-position rule that under-counts the primary there: not
+   quoted as rates. Truth-free check on A119b exact ties: O2's PSV pick is the primary's locus in 953 of 2,903.
+   AS tie with ms 1-10 (nearest to the shipped gate): KB3781 primary right 0.55 (n 22), O2 6 right / 7 wrong;
+   hgpat 32 / 0; hg13 21 / 0. AS 1-10 and ms 1-10: KB3781 primary right 0.93, O2 right where the primary is wrong
+   9, the reverse 2; hgpat 37 / 8; hg13 43 / 10. The primary is a coin toss only on exact ties, and there no site
+   separates the copies (the K = 0 wall); where O2 has sites the primary is mostly right already.
+5. **Output object.** One copy or abstention per (molecule, family). The pairwise certificates exist in the code and
+   are not written, so no placement can be marked excluded while the molecule stays undecided (rows with >= 3
+   candidates: tied 19,173, ambiguous with >= 2 decisive sites 24,184).
+6. **No path into assembly.** `assemble` runs before `assign`; nothing reads the assignments. A pool secondary counts
+   as a read where it lands (r1518: USP17L 3,567 "reads" over 130 primaries), so a corrected primary adds no support
+   at its destination; it can only remove support elsewhere. Seeding new loci is not reachable through O2: its
+   candidates are loci already assembled (r1523 0 of 3; r1671-1673).
+7. **The shipped gate picks the stratum with the least evidence.** Through `copy_assign` as shipped, PSV-assigned
+   molecules are 2,995 = 0.56% of pool molecules (96 families; 2,719 of 3,240 rows in 10 families; 428 of 771 copies
+   could lose half their reads or fall under 2 in the worst case). The pairwise certificate over the whole pool
+   (2026-10-12 population study, same 532,876 molecules, script `s1_o2.py` not `copy_assign`, no family catalog)
+   gave confirmed 62.5%, moved 2.8% (14,945), identical 10.6%, undecided 24.2%; on true ties 3.2 / 1.6 / 48.1 /
+   47.1%. So on about two thirds of the pool a certificate exists and it mostly confirms the primary: the reachable
+   product is a smaller pool (the certified-losing secondaries of ~333,000 molecules), not many new primaries.
+   KB3781 whole sample under `--tie-ms 10` without the primary-on-family guard (`o2mstie/all10`): 53,132 ms-near-tie
+   molecules, 4,237 PSV-assigned (8.0%), tied 46%, ambiguous 25%, not in the table 21%; the guard later removed
+   about three quarters of held-out assignments (r1514).
+8. **Origin-rejected reads stay in the pool.** The origin certificate rejects 68% (KB3781) / 72% (hgpat) / 74% (hg13)
+   of reads whose origin is outside the catalog and 10% / 41% / 34% of reads whose true copy is in it. On KB3781 the
+   primary is wrong on 35% of the in-catalog rejected (57 of 164). These reads count at every near-tied placement.
+Direct tests of the end claim so far: the 2026-10-12 pruned good-pool arm (gene-level rule: gorilla stratum precision
+up, human lost every S1 match and 91 S2 matches) and the SMN showcase (FAIL, O2 moves 8 reads against 616 in truth).
+Read-level removal of certified-losing records has not been run. The moved reads of the population study mostly land
+where the tools already assemble the gene (25 / 44 genes with >= 2 moved reads and no StringTie or FLAIR model).
+Conflict for the user: "choose a new primary" against the standing prohibition (never claim O2 places better than
+minimap2) and the 2026-11-03 statement that nothing decides exact ties. Items 4 and 7 give the numbers.
+Proposed, each needing a PREREG: (a) O2's gate = the pool (AS >= 0.98 x best, one definition for pool, gate and tie
+groups), with per-placement verdicts (keep / excluded / undecided) as the output; (b) panel assemble arm on KB3781
+with the excluded records removed from the pool, scored on new against lost chains; (c) the same for origin-rejected
+reads, separately.
+
+Follow-up rows (2026-11-14): pool reduction by placement verdicts passed the KB3781 panel (register 1701) and FAILED held out
+on HG002 (register 1704: in the band AS >= 0.98 x best, 4.1% of exclusions remove the true placement, bar 2%); not
+ported. Planted-case simulation (register 1705): the only planted class that failed is a converted allele.

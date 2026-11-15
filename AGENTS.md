@@ -23,6 +23,9 @@ delete them without the user's confirmation.
    `--candidates`, since its first acceptance failed (`docs/archive/2026-10/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md`; the re-run passed: A13, `docs/archive/2026-10/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md`) and Amendment 14's no-deletion
    control failed: `docs/archive/2026-10/O3_CANDIDATES_CONTROL_A14_2026-10-03.md`), with a default-on
    intermediate cache in `PREFIX.cache/` and `--inspect` for analyst dumps; `merged` is the genome-wide entry point (assemble + families + assign on the families copy table, byte-identical, resumable; `bench/MERGED_PIPELINE.md`).
+   Since November 2026 the driver also has opt-in stages (`guided`, `siblings`, `flairlike`, `altends`, `trunc5`,
+   `shiftdrop`, `repeatloci`, `exonmap`, `relatives`) and two default side files of `all` (`earlyends`, `capstarts`):
+   `README.md`, "Stages added in November 2026".
 4. `docs/NEGATIVE_RESULTS_REGISTER.md` — every refuted idea; check it before proposing anything.
 5. `docs/MODULE_STATUS.md` — what each Rust module is (shipped, opt-in, other binary); a test keeps it in sync.
 6. `bench/README.md` — the analysis scripts and the old-name → new-command table.

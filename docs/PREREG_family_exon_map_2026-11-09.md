@@ -101,3 +101,16 @@ Caveat: triangles are counted over exon triples, so large families of near-ident
 Closure was not registered by family size and is not reported by size here.
 
 Per column: `r1595/em.columns.tsv`. Per family: `r1595/em.map.tsv`.
+
+## Stage wired (2026-11-14, user: family graph with nodes labelled core / accessory / private)
+
+No new rule. `tools/rustle_pipeline.sh exonmap --out PREFIX` runs `exonmap.py` on the `families` output and then
+`exonmap.py gfa`, which writes one GFA 1.0 file per family from the column table: a segment per exon column (`LN:i:` median
+exon length, `CL:Z:` class, `NC:i:` loci in the column, no sequence), a link per consecutive pair of columns on some member,
+and a path per member locus walked 5' to 3'. `<family>.colours.csv` colours the classes in Bandage. Class as in this row:
+core = every member locus, accessory = some, private = one.
+
+Check: A119b (`port1593/Ab`) 1,395 families in 16 s, column table byte-identical to `r1595/em.columns.tsv`; OR6737 446
+families in 4 s; `gfatools` accepts every file. 24 A119b families and 1 OR6737 family hold a two-way link between two
+columns (exon order differs between members), not investigated. The graphs were not opened in Bandage. The Rust
+`family_gfa` module is still a stub and is not used. Driver test `exonmap_needs_the_families_output_and_then_writes_table_and_graphs`.
