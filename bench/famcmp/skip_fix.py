@@ -210,10 +210,17 @@ if __name__ == '__main__':
     elif mode == 'score':
         units = [u for u in read_units(sys.argv[2]) if u[8]]
         print('arm\tfired units, annotation has only the exon form: chains with the skip intron\tchains with the exon\tall fired units: with the skip intron\twith the exon')
-        for name, p in (a.split('=', 1) for a in sys.argv[3:]):
+        args = [a.split('=', 1) for a in sys.argv[3:]]; ref_p = dict(args).pop('ref', None); got = {}
+        for name, p in (a for a in args if a[0] != 'ref'):
             ivs, prs = collections.Counter(), collections.Counter()
             for (c, s), d in load(p).items():
                 for ch in d:
                     ivs.update((c, *iv) for iv in ch); prs.update((c, d0, x, y, a) for (d0, x), (y, a) in zip(ch, ch[1:]))
             f = lambda us: f"{sum(ivs[c, d, a] for c, d, a in {(u[0], u[1], u[4]) for u in us})}\t{sum(prs[u[:5]] for u in us)}"
             print(f"{name}\t{f([u for u in units if u[5] == 'incl'])}\t{f(units)}")
+            got[name] = {(c, s, ch) for (c, s), d in load(p).items() for ch in d}
+        if ref_p and len(got) == 2:      # row 1754's S2: a lost correct chain counts unless it is the skip form of a unit with both forms annotated
+            ref = {(c, s, ch) for (c, s), d in load(ref_p).items() for ch in d}; base, fix = got.values()
+            both = {(u[0], u[1], u[4]) for u in units if u[5] == 'both'}; lost = (base - fix) & ref
+            skipform = sum(any((c, *iv) in both for iv in ch) for c, s, ch in lost)
+            print(f'new correct chains\t{len((fix - base) & ref)}\tlost correct chains\t{len(lost)}\tof them skip forms at units with both forms annotated\t{skipform}\tother\t{len(lost) - skipform}')

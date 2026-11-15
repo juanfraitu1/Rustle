@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PREREG row 1754: find the exon of <= 15 bp a read skipped by searching the intron for the extra bases the read carries.
 
-  skip_search.py search REF_GTF BAM FASTA OUT_PREFIX THREADS R1746_TSV R1751_UNITS   |   skip_search.py --selftest
+  skip_search.py search REF_GTF BAM FASTA OUT_PREFIX THREADS R1746_TSV R1751_UNITS [MIN_READS]   |   skip_search.py --selftest
 A read's intron (d, a) with L = 3..15 extra read bases in the junction window (row 1751's window) is searched for exons of
 L bp with the intron's own splice signals around them and >= MININ bp of intron on each side. The search is used only when
 (number of such sites) x 4^-L <= EMAX, and a site is taken only when it is the single one whose sequence is in the read and
@@ -70,13 +70,14 @@ if __name__ == '__main__':
     if sys.argv[1] == '--selftest': selftest(); sys.exit()
     import pysam
     ref_p, bam, fa, out, thr, prior, junc = sys.argv[2:9]; klass = annot(ref_p); rows, st = {}, collections.Counter()
+    floor = int(sys.argv[9]) if len(sys.argv) > 9 else 1          # reads a found exon needs (row 1757: 2)
     with multiprocessing.Pool(int(thr)) as pool:
         for r, s in pool.imap_unordered(scan, [(bam, fa, c) for c in pysam.AlignmentFile(bam).references]):
             st.update(s); rows.update({x[:5]: x[5:] for x in r})
-    jfired = {u[:5] for u in read_units(junc) if u[8]}; sfound = {k for k, v in rows.items() if v[2]}
+    jfired = {u[:5] for u in read_units(junc) if u[8]}; sfound = {k for k, v in rows.items() if v[2] >= floor}
     # one table for the rewrite: reads_fixed = reads the search placed, or row 1751's count for a unit only it fired on
     old = {u[:5]: u[8] for u in read_units(junc)}
-    write_units(sorted((*k, klass(*k), v[0], v[1], v[2] or old.get(k, 0)) for k, v in rows.items()), out)
+    write_units(sorted((*k, klass(*k), v[0], v[1], v[2] if k in sfound else old.get(k, 0)) for k, v in rows.items() if k in sfound or k in old), out)
     print('exon length\treads with that many extra bases at a junction\tintron too large for the length\texon found\tfound in the reversed intron (decoy)')
     for L in range(3, MAXEX + 1): print(f'{L}\t' + '\t'.join(str(st[L, k]) for k in ('tested', 'weak', 'found', 'decoy')))
     f, d = (sum(v for (L, k), v in st.items() if k == x) for x in ('found', 'decoy'))
@@ -84,6 +85,7 @@ if __name__ == '__main__':
     print('annotation of the unit\tunits found by the search\tof them not fired by row 1751\treads placed')
     for k in ('incl', 'both', 'skip', 'neither', 'all'):
         u = [x for x in sfound if k in (klass(*x), 'all')]; print(f'{k}\t{len(u)}\t{len(set(u) - jfired)}\t{sum(rows[x][2] for x in u)}')
+    print(f'found exons under the floor of {floor} reads (left out)\t{sum(0 < v[2] < floor for v in rows.values())}')
     short = collections.defaultdict(set)                    # annotated intron pair around an exon of <= 15 bp, by its outer ends
     from alt_events import load
     for (c, s), dd in load(ref_p).items():
