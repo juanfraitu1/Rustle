@@ -483,3 +483,17 @@ reads, separately.
 Follow-up rows (2026-11-14): pool reduction by placement verdicts passed the KB3781 panel (register 1701) and FAILED held out
 on HG002 (register 1704: in the band AS >= 0.98 x best, 4.1% of exclusions remove the true placement, bar 2%); not
 ported. Planted-case simulation (register 1705): the only planted class that failed is a converted allele.
+
+## ASSIGN SKIP LISTS: SATELLITE-ONLY BED, SIDECAR, rDNA ON HG002 (2026-11-15..16, register 1750, 1758)
+
+The censat BED was replaced by a satellite-only list in the assign route (register 1750; `docs/LEDGER_O1.md`, last section):
+families in the transition regions (NBPF, POTE, GOLGA, TSPY) are assigned again, A119b 5,399 -> 6,707 assigned rows. `assign`
+reads `FASTA.exclude.bed` when `RUSTLE_EXCLUDE_BED` is unset (empty = off); CHM13 has that sidecar. Older assign figures used
+the full BED.
+
+rDNA skip (`RUSTLE_EXCLUDE_FASTA=tools/data/rdna_human.fa`) as a default: NOT switched (register 1758, Amendment 3 of
+`PREREG_rdna_sequence_rule_2026-11-13.md`). HG002 on its paternal assembly, both arms on one 1 TB node: list identical to the
+tool's (20 families), other families 2,898 against 2,898 assigned rows, wall 1,811 s against 3,557 s, largest process 30.4 GB
+against 417.7 GB. One bar failed: the listed families hold 51 of the default's 2,949 assigned rows (1.73%, bar 1%), 50 of them
+in one 249-copy rDNA array family. Whether rows inside rDNA arrays are a product is the user's ruling.
+

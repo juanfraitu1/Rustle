@@ -146,3 +146,32 @@ and the rows of the listed families are counted in its assignments. It scores no
 defaults, sole-candidate promotion on, so assigned rows are overstated); the verdict stays INCOMPLETE.
 Result of the descriptive addition: on the 2026-10-31 run the rule lists 14 families; they hold 45,589 of 247,796
 assignment rows (18%) and **0 of 17,960 assigned rows**. On that run the exclusion would have removed no assignment.
+
+## Amendment 3 (2026-11-15 evening, written before the run; user: "yes lets do that" to "run the HG002 check for the rDNA skip and make it default if it passes")
+Correction of what I told the user: I called the gap "one registered rerun with the unmasked reference". The loci reach of the
+unmasked reference on HG002 is already known post hoc (92 of 92), so rerunning it would decide nothing. The measurement that
+is missing is Amendment 2's comparison arm (bars B2-B4), lost to the out-of-memory kill. This amendment reruns it; like
+Amendment 2 it is **not a held-out test of the rule** (row 1691 stays FAIL as registered on the masked reference).
+
+Run: as Amendment 2 (same families products `r1741_rdna_hg/r/hg.fam.*`, same pinned binaries `r1741_rdna_hg/bin`, 72 threads,
+3 h limit per arm), but both arms on one `spr1tb` node (1 TB), arm R first again, in new directories `r3/` and `d3/`; the driver
+is a snapshot of today's `tools/` taken at submission (`snap/`), so later driver edits cannot reach the job.
+
+Bars unchanged: B1 list identical to the tool's; B2 families skipped in neither arm, assigned rows within 1% in total; B3 the
+listed families hold at most 1% of arm D's assigned rows; B4 wall of R at most 1.10 x D; B5 no failed table check on R.
+
+Decision (the user's, given beforehand): **all five PASS -> `RUSTLE_EXCLUDE_FASTA` defaults to `tools/data/rdna_human.fa` in
+`assign` (empty value = off).** Any bar FAIL -> stays opt-in. Arm D killed or over the limit again -> INCOMPLETE; no switch is
+made, and the fact that the default cannot finish HG002 on a 1 TB node is put to the user.
+
+### Amendment 3 outcome (2026-11-16; register row 1758; job 4473464 on spr1tb, workspace `r1741_rdna_hg/{r3,d3}`)
+**VERDICT: FAIL on B3; the switch is not made (the registered decision).** Both arms completed.
+| bar | result |
+|---|---|
+| B1 driver list = tool's list | PASS: identical, 20 families |
+| B2 families skipped in neither arm, assigned rows within 1% | PASS: 2,898 vs 2,898, no family differs (rows 213,987 in both) |
+| B3 listed families hold <= 1% of D's assigned rows | **FAIL: 51 of 2,949 = 1.73%** (MCL0 50, MCL6 1: the 249- and 114-copy rDNA array families on unplaced scaffolds); they hold 45,921 of D's 259,908 rows |
+| B4 wall R <= 1.10 x D | PASS: 1,811 s vs 3,557 s (0.51) |
+| B5 no failed table check on R | PASS (one informational line) |
+Largest process: R 30.4 GB, D 417.7 GB. So the default arm does finish HG002, on a 1 TB node only; Amendment 2's kill at 239.8 GB
+was the node's limit. Not a held-out test.

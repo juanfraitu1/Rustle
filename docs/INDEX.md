@@ -27,7 +27,12 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 
 | file | title | last commit | cited by |
 |---|---|---|---|
+| [`APE_SAMPLES_2026-11-15.md`](APE_SAMPLES_2026-11-15.md) | Chimp, bonobo and two orangutan samples: references, assemblies, frozen rules, sister-species truth | 2026-11-15 | — |
 | [`ASSEMBLY_ENDS_2026-11-14.md`](ASSEMBLY_ENDS_2026-11-14.md) | Transcript ends, read checks and the fraction rule: state on 2026-11-14 | 2026-11-15 | — |
+| [`PREREG_families_darklist_2026-11-15.md`](PREREG_families_darklist_2026-11-15.md) | PREREG row 1749: full censat BED as a darklist before the families stage (FAIL, recall 0.809 -> 0.464) | 2026-11-15 | register ×1, memory ×1 |
+| [`PREREG_satellite_only_darklist_2026-11-15.md`](PREREG_satellite_only_darklist_2026-11-15.md) | PREREG row 1750: satellite-only list in place of the censat BED (adopted for assign by the user) | 2026-11-15 | register ×1, memory ×1 |
+| [`PREREG_sd_fit_2026-11-15.md`](PREREG_sd_fit_2026-11-15.md) | PREREG row 1755: do SDs fit multi-copy families beyond sequence similarity; exon correspondence through the SEDEF CIGAR vs the span rule (FAIL as a link rule) | 2026-11-15 | register ×1, memory ×1 |
+| [`PREREG_sd_core_label_2026-11-15.md`](PREREG_sd_core_label_2026-11-15.md) | PREREG row 1756: `sd_core` label on family pairs, stage `sdcore` (FAIL on its 0.90 bar; default side table by the user) | 2026-11-15 | register ×1, memory ×1 |
 | [`PREREG_alt_events_2026-11-14.md`](PREREG_alt_events_2026-11-14.md) | PREREG row 1714 (2026-11-14): are alternative TSS / TES and shifted ends of internal exons modelled? | 2026-11-15 | register ×1, memory ×1 |
 | [`PREREG_alt_rules_2026-11-14.md`](PREREG_alt_rules_2026-11-14.md) | PREREG rows 1719-1721 (2026-11-14): rules for lost alternative isoforms, applied and measured through the output | 2026-11-15 | register ×5, memory ×1 |
 | [`PREREG_blind_join_tag_2026-11-14.md`](PREREG_blind_join_tag_2026-11-14.md) | PREREG row 1712: a blind gene-join tag in place of F1's bundle-bridge tag (steps 1 and 2 only) | 2026-11-15 | register ×1 |

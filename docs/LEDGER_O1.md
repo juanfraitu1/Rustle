@@ -12,7 +12,7 @@ Compacted 2026-11-01. One short entry per section, in the original order; every 
 
 **Opt-in family tools (all failed or unvalidated as defaults):** `--compat-support`, `--direct-transfrags[-union]`, `--fold-split-bridges` (r1435/1436), lift edges U1 and variants (r1437-1441, r1453-1457, r1467-1469), `--shared-exon-columns`, `--chain-gate[-union]` (r1475), `--representative reads-x-junctions` (r1473), dispersion (r1470), SKETCHFAM (r1471), semi-guided (`semisec` + `semifam`, PASS both held-outs r1472, auditor first), LOCUS-ABSORB (r1476 PASS by equality), FAMASM (r1479 FAIL).
 
-**Comparisons:** IsoCon WORSE in both classes (r1478); SQANTI single-copy chr20: ours FSM+ISM 30.2% / artifact 5.0%, StringTie, FLAIR, IsoCon worse (r1482); multi-sample pooling A119b + HG002 more sensitive, not more precise (r1503).
+**Comparisons:** IsoCon WORSE in both classes (r1478); `isoseq cluster2` replaces IsoCon as the reference-free comparator (r1759, OR6737: 0.745 x our correct chains at matched count, multi-copy 23 vs ours 27 vs IsoCon 20; its 1,321 own correct chains are ours by reads, nothing to port; `docs/PREREG_isoseq_cluster2_2026-11-16.md`); SQANTI single-copy chr20: ours FSM+ISM 30.2% / artifact 5.0%, StringTie, FLAIR, IsoCon worse (r1482); multi-sample pooling A119b + HG002 more sensitive, not more precise (r1503).
 
 **Open:** families GTF from pre-layer transcripts is done (the SPLIT); a fresh long-read RNA sample for any new family rule (KB3781, OR6737, A119b, HG002 are spent); the one run directory with stage hatches (`all --to / --from`) is done; FAMASM only with a stricter certificate on A119b (conditional idea, not registered, not run). Checked 2026-11-14: no registered row of this ledger is pending.
 
@@ -49,7 +49,18 @@ One line per topic; figures are the register rows'. Rows of the same range alrea
 - **`trunc5` on a fourth sample (r1692):** HG002 +0.015 precision at equal correct chains vs bar +0.02; stays opt-in.
 - **Soft mask at the edge level (r1693):** STOP, 2 of 103 false links rest on masked exon bases; not a precision lever on protein-coding pairs.
 - **Alternative events (r1714-1716, measured):** shifted exon ends and alternative first / last exons are modelled like ordinary splicing and ahead of both tools; nested alternative starts / ends about half. The loss is the default ISM collapse (`--polish-ism-ratio 0.7`); no read-end signature recovers the annotated ones (r1715), and not-emitted nested starts are mostly not real by CAGE (1.6 x background, r1716). The rule stands; stated limit.
-- **Opt-in driver stages added 2026-11-10 to 2026-11-15 (defaults unchanged unless said):** `guided` (`assemble --guide`), `siblings`, `flairlike`, `altends`, `trunc5`, `shiftdrop`, `repeatloci`, `exonmap`, `relatives`. Default side files of `all` since 2026-11-14: `capstarts` (`RUSTLE_CAPSTARTS=0` off), `earlyends` (`RUSTLE_EARLYENDS=0` off). `famreps` is default in families and assign since 2026-11-13 (`RUSTLE_FAMREPS=0` off).
+- **Opt-in driver stages added 2026-11-10 to 2026-11-15 (defaults unchanged unless said):** `guided` (`assemble --guide`), `siblings`, `flairlike`, `altends`, `trunc5`, `shiftdrop`, `repeatloci`, `exonmap`, `relatives`. Default side files of `all` since 2026-11-14: `capstarts` (`RUSTLE_CAPSTARTS=0` off), `earlyends` (`RUSTLE_EARLYENDS=0` off). `famreps` is default in families and assign since 2026-11-13 (`RUSTLE_FAMREPS=0` off). `sdcore` (register 1756) is the last step of `families` whenever a SEDEF BED is set, since 2026-11-15 (`RUSTLE_SDCORE=0` off). Opt-in since 2026-11-15: `RUSTLE_FAMILIES_EXCLUDE_BED` (register 1749, FAIL with the full censat BED).
+
+## Update 2026-11-15: four new ape samples (register 1747, 1748, 1750-1752)
+Chimp PTR, bonobo PPA (testis), orangutans PPY / PAB (tissue not confirmed): T2T references, alignments, default assemblies. Summary
+`docs/APE_SAMPLES_2026-11-15.md`; tests `docs/PREREG_ptr_ppa_frozen_rules_2026-11-15.md`.
+- r1677 chain classes hold on eight samples; frozen score passes all four new samples (fibroblast KB3781 failed); `trunc5`
+  clears +0.02 on five of eight; `shiftdrop` passes five of six. Defaults unchanged, stages stay opt-in.
+- Orangutan chain precision 0.19 / 0.23: unannotated introns are real (0.90-0.91 spliced by the sister species'
+  reads, row 1750); the 5' shortened part is unexplained (row 1752).
+- Sister-species reads are a truth for intron structure only: chain-level confirmation fails its gate for end
+  questions (row 1751). 1-read class is noise by that truth; the 2-read floor stays.
+- The four samples are spent for every existing rule.
 
 ## Contents
 
@@ -1084,3 +1095,53 @@ side file (`ASSEMBLY_ENDS_2026-11-14.md`). Adding its chains to the families inp
 representative per sample is replaced by an early-end chain, and A119b gains 2 and loses 1 extra-representative row
 (6,636 -> 6,637). The merge into `PREFIX.gtf` is eligible and not done; `assign`
 was not run on the changed copy table. `PREREG_earlyends_families_2026-11-14.md`.
+
+## DARK FAMILIES, DARKLISTS, AND SDs AGAIN (2026-11-15..16, register 1749, 1750, 1755, 1756)
+
+**Ambiguity report (no row, descriptive).** `tools/family_ambiguity.py` counts, per family and per copy, the molecules whose
+primary has MAPQ < 10, an exact AS tie, or a rival within 10 AS, from two tables the pipeline already writes. A119b: 1,804,054
+molecules on family copies, 19.7% MAPQ < 10, 14.5% exact tie, 23.0% within 10; 131 of 1,526 families are dark (>= 10 molecules,
+>= 0.9 MAPQ < 10). Families mostly inside the censat BED are 41.7% dark, the others 8.9%.
+
+**Row 1749, darklist before the families stage: FAIL.** Dropping loci mostly inside the full T2T censat v2.1 BED
+(`RUSTLE_FAMILIES_EXCLUDE_BED`, `tools/gtf_exclude_bed.py`) moves A119b from 0.907 / 0.809 to 0.897 / 0.464: 753 true pairs
+lost. The BED is not a satellite list. Its `ct` rows hold NBPF, POTE, GOLGA and SPDYE, its `censat` rows the TSPY and RBMY
+arrays; the families `assign` skipped with that BED held 682 of 1,765 true pairs.
+
+**Row 1750, satellite-only list: adopted for assign (user).** Rows other than `ct` and `censat` (1,005 rows, 231.6 Mb). Before
+families: 0.908 / 0.808, 2 pairs lost (BPY2-BPY2B), 7,477 loci dropped. In assign: 236 families skipped, all 151 chr13 hotspot
+families among them, wall 467 s against 346 s with the full BED; 392 families the full BED skipped are now assigned (5,399 ->
+6,707 assigned rows). One bar failed as registered (rows on commonly kept families +1.44% against 1%). Since 2026-11-15
+`assign` reads `FASTA.exclude.bed` when `RUSTLE_EXCLUDE_BED` is unset; CHM13's list is linked that way, and a run with nothing
+set reproduces this arm exactly. Assign figures made before 2026-11-15 used the full BED.
+
+**Row 1755, why SDs carry the young families, annotation level.** CHM13 CAT protein-coding genes, 5,241 young Compara pairs
+(human to Simiiformes), native SEDEF with CIGARs, no Rustle loci.
+- Not chance: 0.805 of genes with a young paralog sit in an SD against 0.136 mean and 0.215 maximum over 100 circular shifts
+  of the SD intervals.
+- Not gene similarity alone: where the SD aligns the two genes exon onto exon, it extends a median 11.5 kb beyond the gene on
+  both copies (0.78 of pairs >= 5 kb; post hoc restriction). The registered figure, 139 kb over all span-linked pairs, mostly
+  measures the rest of the gene cluster.
+- Outside: 0.794 span-linked, 0.125 partial (same SD pair, span rule fails), 0.077 one-sided, 23 pairs touch no SD.
+- Exon correspondence through the SEDEF CIGAR as a link rule: FAIL (precision 0.693 against 0.648 for the span rule, 2,277
+  young pairs against 4,159). The SD alignment pairs a gene with its positional counterpart (0.83 of genes have one); the
+  other true pairs of a family sit elsewhere in the two copies. Components of the exon links give 0.539 / 0.908 over all
+  protein-coding genes, not comparable with pipeline pair scores.
+Soto 2025 has the same shape: exon sharing groups, a second signal cuts (their famCN, our MCL with SD damping), and "only a
+small portion of the gene duplicated" is their stated singleton class, our partial class.
+
+**Row 1756, `sd_core` label: FAIL on its precision bar, default side table by the user.** A pair of copies of one family is
+`sd_core` when one SEDEF pair holds both (span rule) and aligns exon onto exon for >= 0.5 of the smaller copy
+(`bench/denovo_eval/sdcore.py`, stage `sdcore`, `PREFIX.fam.sdcore.tsv`).
+
+| sample | flagged pairs | true | other family pairs | true |
+|---|---|---|---|---|
+| HG002 (deciding, own genome and SEDEF) | 151 | 0.795 (bar 0.90) | 102 | 0.627 |
+| A119b | 925 | 0.910 | 1,020 | 0.905 |
+| gorilla OR6737 | 26 | 0.615 | 9 | 0.222 |
+| gorilla KB3781 | 18 | 0.722 | 4 | 0.000 |
+
+The label enriches for true pairs where the families are imprecise and separates nothing where they are at 0.9. It is not a
+certificate. Ruled in by the user after the verdict as a side table of `families` whenever a SEDEF BED with CIGARs is set
+(`RUSTLE_SDCORE=0` off, 9 s on A119b). Only protein-coding pairs are scored. SD damping stays the one SD rule that changes
+families.

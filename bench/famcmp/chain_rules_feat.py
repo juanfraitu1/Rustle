@@ -95,10 +95,11 @@ def work(job):
         c5n, c3n = (cl[c], cr[c]) if strand == '+' else (cr[c], cl[c])
         rows.append((contig, strand, in_ref, int(dreads > 0), reads, dreads, len(c), sum(b - a for a, b in e), full, part[c], c5n, c3n,
                      mi, round(mi / max(1, gir[gene]), 4), round(reads / gtop[gene], 4), gn[gene], wob, ret,
-                     round(c3, 3), round(c5, 3), pas, arich, round(mq0[c] / full, 3) if full else 0, round(de[c] / full, 5) if full else 0))
+                     round(c3, 3), round(c5, 3), pas, arich, round(mq0[c] / full, 3) if full else 0, round(de[c] / full, 5) if full else 0,
+                     ','.join(f'{x}-{y}' for x, y in c)))
     return rows
 
-COLS = 'chrom strand in_ref in_default reads default_reads n_introns length full partial cont5 cont3 min_isup min_isup_rel locus_frac locus_chains wobble retention end3_conc end5_conc pas a_rich mq0_share de'.split()
+COLS = 'chrom strand in_ref in_default reads default_reads n_introns length full partial cont5 cont3 min_isup min_isup_rel locus_frac locus_chains wobble retention end3_conc end5_conc pas a_rich mq0_share de key'.split()  # key = the intron chain, 0-based half-open (joins other tables)
 if __name__ == '__main__':
     ref_p, def_p, fl_p, bam, fa_p, out = sys.argv[1:7]
     thr = int(sys.argv[7]) if len(sys.argv) > 7 else 16; only = set(sys.argv[8].split(',')) if len(sys.argv) > 8 else None

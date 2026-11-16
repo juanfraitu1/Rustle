@@ -526,6 +526,36 @@ fn relatives_needs_the_families_output_and_a_sedef_bed() {
     assert_eq!(std::fs::read_to_string(format!("{}.fam.relatives.tsv", out.display())).unwrap(), "links\n");
 }
 
+/// Opt-in `sdcore` (register 1756): refuses without the copies table or without a SEDEF BED, then writes the label table.
+#[test]
+fn sdcore_needs_the_copies_table_and_a_sedef_bed() {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("pipeline_driver_dispatch").join("sdcore");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("create scratch dir");
+    let (out, py, fa) = (dir.join("run"), dir.join("py.sh"), dir.join("g.fa"));
+    // stand-in for sdcore.py COPIES SEDEF OUT
+    std::fs::write(&py, "#!/bin/bash\necho labels > \"$4\"; echo done\n").unwrap();
+    let script = format!(
+        "set -euo pipefail\nexport RUSTLE_PYTHON='bash {py}'\nOUT={out}; FASTA={fa}; RP_DRIVER_DIR=tools\nsay() {{ :; }}\n{}\nstage_sdcore\n",
+        function_block("stage_sdcore"),
+        py = py.display(),
+        out = out.display(),
+        fa = fa.display()
+    );
+    let run = || std::process::Command::new("bash").arg("-c").arg(&script).output().expect("run bash");
+    let o = run();
+    assert_eq!(o.status.code(), Some(2), "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("sdcore needs"));
+    std::fs::write(format!("{}.fam.copies.tsv", out.display()), "x\n").unwrap();
+    let o = run();
+    assert_eq!(o.status.code(), Some(2), "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("SEDEF BED"));
+    std::fs::write(format!("{}.sedef.bed", fa.display()), "x\n").unwrap();
+    let o = run();
+    assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!(std::fs::read_to_string(format!("{}.fam.sdcore.tsv", out.display())).unwrap(), "labels\n");
+}
+
 /// Opt-in `exonmap` (register 1595): refuses without the families output, then runs the table and the graph view.
 #[test]
 fn exonmap_needs_the_families_output_and_then_writes_table_and_graphs() {

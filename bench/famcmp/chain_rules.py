@@ -8,9 +8,9 @@ import sys, csv, math, bisect
 import numpy as np
 
 def load(path):
-    R = list(csv.DictReader(open(path), delimiter='\t')); d = {k: np.array([r[k] for r in R]) for k in ('chrom',)}
+    R = list(csv.DictReader(open(path), delimiter='\t')); d = {k: np.array([r[k] for r in R]) for k in ('chrom', 'key') if k in R[0]}
     for k in R[0]:
-        if k not in ('chrom', 'strand'): d[k] = np.array([float(r[k]) for r in R])
+        if k not in ('chrom', 'strand', 'key'): d[k] = np.array([float(r[k]) for r in R])
     return d
 
 LOGS = 'full partial cont5 cont3 min_isup locus_chains n_introns length'.split()

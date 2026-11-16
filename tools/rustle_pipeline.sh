@@ -82,6 +82,11 @@
 #     Set RUSTLE_EXCLUDE_BED (the satellite BED assign uses): without it 3 of 4 links on A119b are satellite loci.
 #     Needs a SEDEF BED (RUSTLE_SEDEF_BED or FASTA.sedef.bed). Measured only on protein-coding gene pairs: precision 0.830 on
 #     two gorilla samples (its own bar 0.85 not passed), ~1/6 of the picks young duplicates; other locus pairs are unscored.
+#   tools/rustle_pipeline.sh sdcore --bam B --fasta G --out PREFIX   (register 1755 / 1756; also the last step of `families` when the genome
+#     has a SEDEF BED, RUSTLE_SDCORE=0 = off; default since 2026-11-15, user): PREFIX.fam.sdcore.tsv = pairs of copies of
+#     one family that one SEDEF pair holds (the --sd-damp span rule) and aligns exon onto exon (sd_core = 1). A label; the families
+#     are unchanged. Needs a SEDEF BED with CIGARs (RUSTLE_SEDEF_BED or FASTA.sedef.bed). HG002 held out: flagged protein-coding
+#     pairs 0.795 true against 0.627 for the other family pairs (its own bar 0.90 not passed); non-coding pairs are unscored.
 #   tools/rustle_pipeline.sh trunc5 --bam B --fasta G --out PREFIX [--threads N]   OPT-IN (register 1677): PREFIX.trunc5.gtf = PREFIX.gtf without
 #                              multi-exon chains that at least as many primary reads run through and continue 5' of as end with
 #   tools/rustle_pipeline.sh capstarts --bam B --fasta G --out PREFIX [--threads N]   (register 1717 / 1720; also a last step of `all`, RUSTLE_CAPSTARTS=0 = off; writes nothing on a library without cap G): PREFIX.capstarts.gtf = PREFIX.gtf plus
@@ -174,6 +179,9 @@
 #   RUSTLE_EXCLUDE_SOFTMASK=0.9 (opt-in, register 1690): assign skips families whose copies are mostly soft-masked (>= that
 #     share of exon bases lowercase in --fasta): satellite and transposon-class families, on any masked genome, no BED needed.
 #     Does not catch rRNA reliably. May be set together with RUSTLE_EXCLUDE_BED (the lists are joined).
+#   RUSTLE_EXCLUDE_BED=BED (rows 1559 / 1749 / 1750): assign skips families whose copies mostly lie in the BED's intervals (a
+#     satellite-only list; docs/DATA.md). Unset: FASTA.exclude.bed when that sidecar exists (CHM13 has one since 2026-11-15, user);
+#     empty: off.
 #   RUSTLE_SOLE_CANDIDATE=1 (opt-in): assign reports a contested molecule with one candidate copy as `assigned`
 #     (sole_candidate = 1), the default before 2026-11-13. Default now: such a molecule is `tied` (user ruling, registers
 #     787 / 1656 / 1695); on A119b that is about 40% of the earlier assigned rows.
@@ -861,7 +869,7 @@ stage_famreps() {
   local py=${RUSTLE_PYTHON:-python3} d="$RP_DRIVER_DIR" r="$OUT.famreps" e   # the four helpers sit beside the driver, like annotated_families.py
   $py "$d/locus_reps.py" "$FAM_GTF" "$r.families.gtf" --disjoint > "$OUT.famreps.log" 2>&1 \
     || { echo "[rustle_pipeline] famreps failed (see $OUT.famreps.log); $A.tsv is unaffected" >&2; exit 1; }
-  ( RUSTLE_FAMREPS=0; FAM_GTF=$r.families.gtf; OUT=$r; stage_families ) || exit 1
+  ( RUSTLE_FAMREPS=0; RUSTLE_SDCORE=0; FAM_GTF=$r.families.gtf; OUT=$r; stage_families ) || exit 1
   { $py "$d/piece_merge.py" "$r" "$r.merged.copies.tsv" \
       && $py "$d/piece_attach.py" "$A.tsv" "$r" "$r.merged.copies.tsv" "$r.attached.tsv" --keep-all --direct \
       && $py "$d/reps_table.py" "$A" "$r.fam.copies" "$r.merged.copies.tsv" "$r.attached.tsv" "$r.table"; } >> "$OUT.famreps.log" 2>&1 \
@@ -934,6 +942,16 @@ stage_relatives() {
     || { echo "[rustle_pipeline] relatives failed (see $OUT.fam.relatives.log); the families output is unaffected" >&2; exit 1; }
   say "relatives: $(tail -1 "$OUT.fam.relatives.log") (table $OUT.fam.relatives.tsv; links, not members)"
 }
+# sdcore: register 1755 / 1756; `families` runs it last when a SEDEF BED is set (default since 2026-11-15, user; RUSTLE_SDCORE=0 = off).
+# Reads PREFIX.fam.copies.tsv; changes nothing.
+stage_sdcore() {
+  local s="$RP_DRIVER_DIR/../bench/denovo_eval/sdcore.py" bed=${RUSTLE_SEDEF_BED:-$FASTA.sedef.bed}
+  [ -s "$OUT.fam.copies.tsv" ] || { echo "[rustle_pipeline] sdcore needs $OUT.fam.copies.tsv (run families first)" >&2; exit 2; }
+  [ -s "$bed" ] || { echo "[rustle_pipeline] sdcore needs a SEDEF BED of this genome (RUSTLE_SEDEF_BED or $FASTA.sedef.bed)" >&2; exit 2; }
+  ${RUSTLE_PYTHON:-python3} "$s" "$OUT.fam.copies.tsv" "$bed" "$OUT.fam.sdcore.tsv" > "$OUT.fam.sdcore.log" 2>&1 \
+    || { echo "[rustle_pipeline] sdcore failed (see $OUT.fam.sdcore.log); the families output is unaffected" >&2; exit 1; }
+  say "sdcore: $(tail -1 "$OUT.fam.sdcore.log") (table $OUT.fam.sdcore.tsv; a label, the families are unchanged)"
+}
 # exonmap: OPT-IN, named only (register 1595, never part of `all`). A view of the families stage output; changes none of it.
 stage_exonmap() {
   local f s="$RP_DRIVER_DIR/../bench/denovo_eval/exonmap.py"
@@ -984,6 +1002,17 @@ stage_guided() {
 stage_families() {
   fam_gtf_guard families
   famreps_py_guard
+  # RUSTLE_FAMILIES_EXCLUDE_BED=BED (OPT-IN, register 1749; unset = the same command as before): loci whose exon bases lie mostly
+  # inside an element of the BED (T2T censat satellites / rDNA) are left out of the families input, so they never become family
+  # nodes (assign's RUSTLE_EXCLUDE_BED skips such families after they are built). The filtered input is PREFIX.fam.input.gtf;
+  # the dropped loci are in PREFIX.fam.input.gtf.excluded.txt. `local`: famreps, called below, reads the same filtered input.
+  if [ -n "${RUSTLE_FAMILIES_EXCLUDE_BED:-}" ]; then
+    [ -s "$RUSTLE_FAMILIES_EXCLUDE_BED" ] || { echo "[rustle_pipeline] RUSTLE_FAMILIES_EXCLUDE_BED=$RUSTLE_FAMILIES_EXCLUDE_BED: no such non-empty file" >&2; exit 2; }
+    "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/gtf_exclude_bed.py" "$FAM_GTF" "$RUSTLE_FAMILIES_EXCLUDE_BED" "$OUT.fam.input.gtf" 2> "$OUT.fam.input.log" \
+      || { echo "[rustle_pipeline] families: gtf_exclude_bed.py failed (see $OUT.fam.input.log)" >&2; exit 1; }
+    say "families: exclude-bed: $(cat "$OUT.fam.input.log")"
+    local FAM_GTF=$OUT.fam.input.gtf
+  fi
   say "families: gene families on the de novo loci of $FAM_GTF"
   local copies=() help
   help=$("$BIN/mcl_families" --help 2>&1 || true)
@@ -1069,6 +1098,12 @@ stage_families() {
   fi
   # extra representatives for genes with no locus of their own (stage_famreps; default since 2026-11-13, RUSTLE_FAMREPS=0 = off)
   if [ "${RUSTLE_FAMREPS:-1}" != 0 ] && [ -s "$OUT.fam.copies.tsv" ] && [ -s "$OUT.fam.copies.fa" ]; then stage_famreps; fi
+  # sd_core label on the final copy table (stage_sdcore; default since 2026-11-15, user, whenever the genome has a SEDEF BED;
+  # RUSTLE_SDCORE=0 = off). A side table: a failure is reported and leaves the families output complete.
+  # Row 1756: flagged pairs are enriched for true pairs, NOT confirmed (HG002 0.795 true against its 0.90 bar).
+  if [ "${RUSTLE_SDCORE:-1}" != 0 ] && [ -n "${RUSTLE_SEDEF_BED:-}" ] && [ -s "$OUT.fam.copies.tsv" ] && command -v "${RUSTLE_PYTHON:-python3}" > /dev/null; then
+    ( stage_sdcore ) || say "families: sdcore wrote no $OUT.fam.sdcore.tsv (see $OUT.fam.sdcore.log); every other product is complete"
+  fi
 }
 # catalog: LEGACY (2026-09-25). gw_family_catalog's copy catalog (primaries only, span-aware POA collapse, exon-sum k11
 # edges, gamma-quasi-clique) was the O2 roster before the families stage wrote its own copy table; kept runnable for
@@ -1288,8 +1323,17 @@ stage_assign() {
   fi
   # RUSTLE_EXCLUDE_BED=BED (opt-in, row 1559): families whose copies mostly lie in a confounding element (T2T censat
   # satellites: the chr13 HSat1A array is 618 of A119b's 1,565 families and the assign wall) join the skip list.
+  # Use a SATELLITE-ONLY list (user decision 2026-11-15, rows 1749 / 1750): the whole censat v2.1 BED also holds `ct`
+  # transition rows (NBPF, POTE, GOLGA) and generic `censat` rows (the TSPY / RBMY arrays), and the families it names held
+  # 682 of A119b's 1,765 true pairs. docs/DATA.md has the list (hsat / hor / dhor / mon / bsat / gsat / rDNA rows) and its command.
+  # The genome's own list as a sidecar, FASTA.exclude.bed, is used when RUSTLE_EXCLUDE_BED is unset (user 2026-11-15, as the
+  # SEDEF sidecar of `families`); RUSTLE_EXCLUDE_BED= (empty) turns it off. CHM13's satellite-only list is linked that way.
+  if [ -z "${RUSTLE_EXCLUDE_BED+x}" ] && [ -s "$FASTA.exclude.bed" ]; then RUSTLE_EXCLUDE_BED=$FASTA.exclude.bed; fi
   rm -f "$OUT.assign.excluded.txt"
   if [ -n "${RUSTLE_EXCLUDE_BED:-}" ]; then
+    if awk -F'\t' '$4 ~ /^ct_/ {f=1; exit} END{exit !f}' "$RUSTLE_EXCLUDE_BED" 2>/dev/null; then
+      say "assign: WARNING $RUSTLE_EXCLUDE_BED has centromeric-transition (ct_) rows: gene families there (NBPF, POTE, GOLGA) will not be assigned; use the satellite-only list (docs/DATA.md)"
+    fi
     # judged on the first run's copies when famreps added representatives: a family must not fall under the rule because of
     # them (row 1662: MCL215, 8 -> 26 copies, lost its 129 assigned rows that way)
     local excl_tbl="$OUT.fam.copies.tsv"; [ -s "$OUT.fam.base.copies.tsv" ] && excl_tbl="$OUT.fam.base.copies.tsv"
@@ -1362,6 +1406,7 @@ merged_env() {
   if [ -n "$CONTIG" ]; then printf 'contig=%s\n' "$CONTIG"; fi
   # the SEDEF sidecar the families stage picks up when RUSTLE_SEDEF_BED is unset (round-4 audit)
   if [ -z "${RUSTLE_SEDEF_BED+x}" ] && [ -s "$FASTA.sedef.bed" ]; then stat -L -c "sedef_sidecar %s %Y" "$FASTA.sedef.bed"; fi
+  if [ -z "${RUSTLE_EXCLUDE_BED+x}" ] && [ -s "$FASTA.exclude.bed" ]; then stat -L -c "exclude_sidecar %s %Y" "$FASTA.exclude.bed"; fi
   # every RUSTLE_* knob changes some stage's products: a resume must not skip a stage run with other values (audit 2026-11-07)
   env | grep '^RUSTLE_' | LC_ALL=C sort || true
   # and the binaries: a rebuild must rerun the stages it changes, not replay the old products (audit 2026-11-07, second pass)
@@ -1483,6 +1528,7 @@ stage_all() {
   # row 1662: so do families' extra representatives (inline, as stage_all is also run on its own by the dispatch tests)
   [ "${RUSTLE_FAMREPS:-1}" = 0 ] || command -v "${RUSTLE_PYTHON:-python3}" > /dev/null \
     || { echo "[rustle_pipeline] no ${RUSTLE_PYTHON:-python3} on PATH (families adds extra locus representatives with it); set RUSTLE_PYTHON or PATH, or RUSTLE_FAMREPS=0" >&2; exit 2; }
+  if [ -z "${RUSTLE_EXCLUDE_BED+x}" ] && [ -s "$FASTA.exclude.bed" ]; then export RUSTLE_EXCLUDE_BED=$FASTA.exclude.bed; fi   # the sidecar, as assign resolves it
   local v; for v in RUSTLE_EXCLUDE_BED RUSTLE_EXCLUDE_SOFTMASK RUSTLE_EXCLUDE_FASTA RUSTLE_ANNOTATED_ONLY; do
     if [ -n "${!v:-}" ] && ! command -v "${RUSTLE_PYTHON:-python3}" > /dev/null; then
       echo "[rustle_pipeline] no ${RUSTLE_PYTHON:-python3} on PATH ($v needs it for assign's skip list); set RUSTLE_PYTHON or PATH, or unset $v" >&2; exit 2
@@ -1629,7 +1675,7 @@ stage_all() {
 }
 case "$STAGE" in
   merged) stage_merged;;
-  assemble) stage_assemble; if [ -n "${GUIDE:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_guided; fi;; guided) stage_guided;; siblings) stage_siblings;; flairlike) stage_flairlike;; altends) stage_altends;; trunc5) stage_trunc5;; shiftdrop) stage_shiftdrop;; shortexons) stage_shortexons;; capstarts) stage_capstarts;; earlyends) stage_earlyends;; repeatloci) stage_repeatloci;; exonmap) stage_exonmap;; relatives) stage_relatives;; famreps) stage_famreps;; families) stage_families;; candidates) stage_candidates;; catalog) stage_catalog;;
+  assemble) stage_assemble; if [ -n "${GUIDE:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_guided; fi;; guided) stage_guided;; siblings) stage_siblings;; flairlike) stage_flairlike;; altends) stage_altends;; trunc5) stage_trunc5;; shiftdrop) stage_shiftdrop;; shortexons) stage_shortexons;; capstarts) stage_capstarts;; earlyends) stage_earlyends;; repeatloci) stage_repeatloci;; exonmap) stage_exonmap;; relatives) stage_relatives;; sdcore) stage_sdcore;; famreps) stage_famreps;; families) stage_families;; candidates) stage_candidates;; catalog) stage_catalog;;
   assign) stage_assign;; flag) stage_flag;; flag_scan) stage_flag_scan;; index) stage_index;;
   # `all`'s background flag stage: the scan, then align + verdict, whose wall goes to PREFIX.flag.time
   flag_bg) stage_flag_scan; export RP_FLAG_SCAN_DONE=1; fb0=$SECONDS; stage_flag; printf 'wall_s\t%s\n' "$(( SECONDS - fb0 ))" > "$OUT.flag.time.tmp";;
