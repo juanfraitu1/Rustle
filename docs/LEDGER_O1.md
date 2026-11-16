@@ -62,6 +62,16 @@ Chimp PTR, bonobo PPA (testis), orangutans PPY / PAB (tissue not confirmed): T2T
   questions (row 1751). 1-read class is noise by that truth; the 2-read floor stays.
 - The four samples are spent for every existing rule.
 
+## Update 2026-11-16: alternative splicing classes and the `shortexons` stage (register 1742-1746, 1753, 1754, 1757)
+Summary `docs/SHORT_EXONS_2026-11-16.md`.
+- Event classes (r1744): cassette, mutually exclusive and 16-30 bp exons at the control; gaps = retained introns and exons <= 15 bp.
+- Retained introns (r1745): the retained-intron filter is the cause; relaxing it fails the cost bar. Stays at 10 (user 11-15);
+  `RUSTLE_POLISH_RETAINED_RATIO` opt-in.
+- Exons <= 15 bp (r1746): minimap2 drops them. Junction rule r1753 FAIL on reach, intron search r1754 FAIL on precision,
+  2-read floor r1757 NOT TESTABLE; together reach 0.70-0.89, false skip chains at reached exons nearly vanish, precision
+  no consistent sign on eight samples. Opt-in stage `shortexons` (user 11-16); promotion needs a rule for its wrong new chains.
+- `trunc5` vs CAGE (r1742 INVALID, r1743): drops a CAGE-supported minority; tag, not drop. `capstarts` on gorilla: primer trimming.
+
 ## Contents
 
 Merged 2026-10-24 from 46 dated docs (originals in `docs/archive/2026-10/MERGED_REMOVED.md` (directory removed 2026-11-08; verbatim in `docs/archive/2026-11/LEDGER_*.md`)); later sections appended directly. Each `## <file>.md` heading below is the wrapper for one merged doc; the section(s) after it are that doc. (full: archive/2026-11/LEDGER_O1.md:6)

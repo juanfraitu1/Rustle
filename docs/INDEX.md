@@ -1,4 +1,4 @@
-# docs/ index — every document, one line each (generated 2026-11-15)
+# docs/ index — every document, one line each (generated 2026-11-16)
 
 Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or archiving a document. Archived files keep their names; only the directory changed, so grepping a filename still finds it. Verdicts of archived studies are in the register rows that cite them; pre-registrations are kept verbatim (the commit that introduced each one is the proof it preceded the result).
 
@@ -8,31 +8,42 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 |---|---|---|---|
 | [`ADVISOR_QUESTIONS.md`](ADVISOR_QUESTIONS.md) | The advisor's standing questions — and what the codebase can answer | 2026-11-08 | — |
 | [`AUDIT_ROUNDS_2026-11.md`](AUDIT_ROUNDS_2026-11.md) | Audit rounds, November 2026 (ponytail-audit, goal: 100 rounds) | 2026-11-15 | memory ×3 |
-| [`DATA.md`](DATA.md) | Datasets — what they are, where they came from, how to rebuild them | 2026-11-15 | memory ×5 |
+| [`DATA.md`](DATA.md) | Datasets — what they are, where they came from, how to rebuild them | 2026-11-16 | register ×1, memory ×6 |
 | [`LEDGER_GENERAL.md`](LEDGER_GENERAL.md) | Ledger: general (handoffs, pending lists, register drafts, overviews) | 2026-11-15 | — |
-| [`LEDGER_O1.md`](LEDGER_O1.md) | Ledger: O1 (family definition, assembler, locus units) | 2026-11-15 | register ×1, memory ×3 |
-| [`LEDGER_O2.md`](LEDGER_O2.md) | Ledger: O2 (copy assignment of tied reads) | 2026-11-15 | register ×1, memory ×4 |
+| [`LEDGER_O1.md`](LEDGER_O1.md) | Ledger: O1 (family definition, assembler, locus units) | 2026-11-16 | register ×1, memory ×3 |
+| [`LEDGER_O2.md`](LEDGER_O2.md) | Ledger: O2 (copy assignment of tied reads) | 2026-11-16 | register ×1, memory ×4 |
 | [`LEDGER_O3.md`](LEDGER_O3.md) | Ledger: O3 (copies the reference lacks) | 2026-11-15 | — |
-| [`MODULE_STATUS.md`](MODULE_STATUS.md) | Module status — what is SHIPPED vs what was TRIED | 2026-11-08 | — |
-| [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) | REGISTER OF NEGATIVE RESULTS (full: archive/2026-11/NEGATIVE_RESULTS_REGISTER.md:1) | 2026-11-15 | — |
+| [`MODULE_STATUS.md`](MODULE_STATUS.md) | Module status — what is SHIPPED vs what was TRIED | 2026-11-15 | — |
+| [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) | REGISTER OF NEGATIVE RESULTS (full: archive/2026-11/NEGATIVE_RESULTS_REGISTER.md:1) | 2026-11-16 | — |
 | [`PERFORMANCE.md`](PERFORMANCE.md) | Pipeline performance: where the time goes and the switches that change it | 2026-11-15 | memory ×1 |
 | [`README.md`](README.md) | docs/ — what is where | 2026-11-15 | memory ×1 |
 | [`REFERENCE.md`](REFERENCE.md) | REFERENCE — glossary, data locations, and a worked example | 2026-11-07 | — |
-| [`SCRIPT_INVENTORY.md`](SCRIPT_INVENTORY.md) | Script inventory (2026-11-02) | 2026-11-15 | — |
+| [`SCRIPT_INVENTORY.md`](SCRIPT_INVENTORY.md) | Script inventory (2026-11-02) | 2026-11-16 | — |
 | [`THESIS_OBJECTIVES.md`](THESIS_OBJECTIVES.md) | Thesis objectives — the current three | 2026-11-15 | — |
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-05 | memory ×1 |
 | [`seeded_family_definition.md`](seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-08 | — |
 
-## Open studies and current handoff (175)
+## Open studies and current handoff (191)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
-| [`APE_SAMPLES_2026-11-15.md`](APE_SAMPLES_2026-11-15.md) | Chimp, bonobo and two orangutan samples: references, assemblies, frozen rules, sister-species truth | 2026-11-15 | — |
+| [`PREREG_isoseq_cluster2_2026-11-16.md`](PREREG_isoseq_cluster2_2026-11-16.md) | PREREG ISOSEQ-CLUSTER2 (2026-11-16, register 1759, written before any run) | 2026-11-16 | register ×1, memory ×1 |
+| [`PREREG_skip_search_floor_2026-11-16.md`](PREREG_skip_search_floor_2026-11-16.md) | PREREG row 1757 (2026-11-16): short-exon intron search with a floor of 2 reads, on four unseen samples | 2026-11-16 | register ×1 |
+| [`SHORT_EXONS_2026-11-16.md`](SHORT_EXONS_2026-11-16.md) | Alternative splicing classes, retained introns and short exons: what was measured and the `shortexons` stage, state on 2 | uncommitted | — |
+| [`APE_SAMPLES_2026-11-15.md`](APE_SAMPLES_2026-11-15.md) | Four new ape samples: chimp, bonobo, two orangutans (2026-11-15) | 2026-11-16 | memory ×2 |
+| [`PREREG_alt_events_missing_classes_2026-11-15.md`](PREREG_alt_events_missing_classes_2026-11-15.md) | PREREG row 1744 (2026-11-15): the event classes row 1714 did not measure, and whether alignment loses short exons | 2026-11-15 | register ×1 |
+| [`PREREG_families_darklist_2026-11-15.md`](PREREG_families_darklist_2026-11-15.md) | PREREG row 1749 (2026-11-15): a satellite / rDNA darklist BEFORE the families stage | 2026-11-16 | register ×1, memory ×1 |
+| [`PREREG_ptr_ppa_frozen_rules_2026-11-15.md`](PREREG_ptr_ppa_frozen_rules_2026-11-15.md) | PREREG: frozen assembly rules on two unseen samples, chimp PTR and bonobo PPA (2026-11-15) | 2026-11-16 | register ×5, memory ×2 |
+| [`PREREG_retained_intron_rule_2026-11-15.md`](PREREG_retained_intron_rule_2026-11-15.md) | PREREG row 1745 (2026-11-15): is the retained-intron filter what loses the annotated retained-intron isoforms, and what  | 2026-11-15 | register ×1 |
+| [`PREREG_satellite_only_darklist_2026-11-15.md`](PREREG_satellite_only_darklist_2026-11-15.md) | PREREG row 1750 (2026-11-15): a satellite-only darklist, for families and for assign | 2026-11-16 | register ×1, memory ×1 |
+| [`PREREG_sd_core_label_2026-11-15.md`](PREREG_sd_core_label_2026-11-15.md) | PREREG row 1756: `sd_core` label on family pairs (SD-held and exon-matched through the SD alignment), opt-in (2026-11-15 | 2026-11-16 | register ×1 |
+| [`PREREG_sd_fit_2026-11-15.md`](PREREG_sd_fit_2026-11-15.md) | PREREG row 1755: do segmental duplications fit multi-copy gene families, and does exon correspondence fit better than th | 2026-11-16 | register ×1 |
+| [`PREREG_skip_fix_realign_2026-11-15.md`](PREREG_skip_fix_realign_2026-11-15.md) | PREREG row 1751 (2026-11-15): de novo local realignment of reads that skip an exon of <= 15 bp | 2026-11-15 | register ×1 |
+| [`PREREG_skip_intron_search_2026-11-15.md`](PREREG_skip_intron_search_2026-11-15.md) | PREREG row 1754 (2026-11-15): find a skipped exon of <= 15 bp by searching the intron for the read's extra bases | 2026-11-16 | register ×1 |
+| [`PREREG_skip_reads_realign_2026-11-15.md`](PREREG_skip_reads_realign_2026-11-15.md) | PREREG row 1746 (2026-11-15): do the reads that skip a very short exon carry its bases? (the one graph candidate of row  | 2026-11-15 | register ×1 |
+| [`PREREG_trunc5_cage_2026-11-15.md`](PREREG_trunc5_cage_2026-11-15.md) | PREREG row 1742 (2026-11-15): are the chains `trunc5` drops real transcript starts? CAGE support on the two human sample | 2026-11-15 | register ×1 |
+| [`PREREG_trunc5_cage_background_2026-11-15.md`](PREREG_trunc5_cage_background_2026-11-15.md) | PREREG row 1743 (2026-11-15): row 1742 rerun with a background outside the promoter | 2026-11-15 | register ×1 |
 | [`ASSEMBLY_ENDS_2026-11-14.md`](ASSEMBLY_ENDS_2026-11-14.md) | Transcript ends, read checks and the fraction rule: state on 2026-11-14 | 2026-11-15 | — |
-| [`PREREG_families_darklist_2026-11-15.md`](PREREG_families_darklist_2026-11-15.md) | PREREG row 1749: full censat BED as a darklist before the families stage (FAIL, recall 0.809 -> 0.464) | 2026-11-15 | register ×1, memory ×1 |
-| [`PREREG_satellite_only_darklist_2026-11-15.md`](PREREG_satellite_only_darklist_2026-11-15.md) | PREREG row 1750: satellite-only list in place of the censat BED (adopted for assign by the user) | 2026-11-15 | register ×1, memory ×1 |
-| [`PREREG_sd_fit_2026-11-15.md`](PREREG_sd_fit_2026-11-15.md) | PREREG row 1755: do SDs fit multi-copy families beyond sequence similarity; exon correspondence through the SEDEF CIGAR vs the span rule (FAIL as a link rule) | 2026-11-15 | register ×1, memory ×1 |
-| [`PREREG_sd_core_label_2026-11-15.md`](PREREG_sd_core_label_2026-11-15.md) | PREREG row 1756: `sd_core` label on family pairs, stage `sdcore` (FAIL on its 0.90 bar; default side table by the user) | 2026-11-15 | register ×1, memory ×1 |
 | [`PREREG_alt_events_2026-11-14.md`](PREREG_alt_events_2026-11-14.md) | PREREG row 1714 (2026-11-14): are alternative TSS / TES and shifted ends of internal exons modelled? | 2026-11-15 | register ×1, memory ×1 |
 | [`PREREG_alt_rules_2026-11-14.md`](PREREG_alt_rules_2026-11-14.md) | PREREG rows 1719-1721 (2026-11-14): rules for lost alternative isoforms, applied and measured through the output | 2026-11-15 | register ×5, memory ×1 |
 | [`PREREG_blind_join_tag_2026-11-14.md`](PREREG_blind_join_tag_2026-11-14.md) | PREREG row 1712: a blind gene-join tag in place of F1's bundle-bridge tag (steps 1 and 2 only) | 2026-11-15 | register ×1 |
@@ -70,7 +81,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_o3_spdye1_2026-11-13.md`](PREREG_o3_spdye1_2026-11-13.md) | PREREG row 1700 (2026-11-13): SPDYE1's hidden copy in HG002, descriptive, one locus | 2026-11-15 | register ×1 |
 | [`PREREG_placement_verdicts_2026-11-13.md`](PREREG_placement_verdicts_2026-11-13.md) | PREREG PLACEMENT VERDICTS AND A REDUCED SEEDING POOL (register 1701, 2026-11-13) | 2026-11-15 | register ×3, memory ×1 |
 | [`PREREG_quant_parity_rerun_2026-11-13.md`](PREREG_quant_parity_rerun_2026-11-13.md) | PREREG row 1697 (2026-11-13): quantification parity, re-measured on today's default assembly | 2026-11-15 | register ×1 |
-| [`PREREG_rdna_sequence_rule_2026-11-13.md`](PREREG_rdna_sequence_rule_2026-11-13.md) | PREREG r1691: a sequence rule for rRNA / rDNA families, the part the soft mask cannot do (2026-11-13) | 2026-11-15 | register ×2, memory ×1 |
+| [`PREREG_rdna_sequence_rule_2026-11-13.md`](PREREG_rdna_sequence_rule_2026-11-13.md) | PREREG r1691: a sequence rule for rRNA / rDNA families, the part the soft mask cannot do (2026-11-13) | 2026-11-16 | register ×3, memory ×1 |
 | [`PREREG_relative_tier_2026-11-13.md`](PREREG_relative_tier_2026-11-13.md) | Row 1676 — a second tier of "relative" links between loci, families unchanged (2026-11-13) | 2026-11-15 | register ×1, memory ×1 |
 | [`PREREG_sd_cut_rule_2026-11-13.md`](PREREG_sd_cut_rule_2026-11-13.md) | Row 1687 — SD cut rule for models fused across tandem duplicates (2026-11-13) | 2026-11-15 | register ×1 |
 | [`PREREG_sd_identity_cell_2026-11-13.md`](PREREG_sd_identity_cell_2026-11-13.md) | Row 1682 — step 0: the SD pair's own identity inside the SD-held, low-SHARE cell (2026-11-13) | 2026-11-15 | register ×1 |
@@ -281,7 +292,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md`](archive/2026-10/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md) | `o3_candidates` re-run on the 53-family held-out (Amendment 13 + 13b-13e): A13-1 PASSES, A13-2 PASSES, A13-3 PASSES — de | 2026-10-07 | — |
 | [`NPIP_READ_SUPPORT_2026-10-03.md`](archive/2026-10/NPIP_READ_SUPPORT_2026-10-03.md) | Do the reads at an NPIP copy support its transcript? Junction-level check of the A119b primaries at the 25 CAT/Liftoff c | 2026-10-07 | — |
 | [`YAG_CHAIN_GORILLA_2026-10-02.md`](archive/2026-10/YAG_CHAIN_GORILLA_2026-10-02.md) | The reference-absent-copy chain on the Y ampliconic genes — HELD-OUT: gorilla OR6737 testis on mGorGor1 `_pri`, 2026-10- | 2026-10-07 | — |
-| [`VAULT_METHODS_AUDIT_2026-10-02.md`](archive/2026-10/VAULT_METHODS_AUDIT_2026-10-02.md) | ThesisVault methods audit, addendum — 2026-10-02 | 2026-10-07 | — |
+| [`VAULT_METHODS_AUDIT_2026-10-02.md`](archive/2026-10/VAULT_METHODS_AUDIT_2026-10-02.md) | ThesisVault methods audit, addendum — 2026-10-02 | 2026-10-07 | memory ×2 |
 | [`RNA_ALLELE_INHOUSE_CONSENSUS_2026-10-02.md`](archive/2026-10/RNA_ALLELE_INHOUSE_CONSENSUS_2026-10-02.md) | The in-house consensus in place of IsoCon (Amendment 11): FAILS, and why — 2026-10-02 | 2026-10-07 | — |
 | [`O3_CANDIDATES_ACCEPTANCE_2026-10-02.md`](archive/2026-10/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md) | `o3_candidates` on the 53-family held-out (Amendment 12): A12-1 FAILS, A12-2 FAILS, A12-3 PASSES — 2026-10-02 | 2026-10-07 | — |
 | [`FAMSIM_DESIGN_2026-10-02.md`](archive/2026-10/FAMSIM_DESIGN_2026-10-02.md) | famsim — controlled gene-family simulations that prove the condition they test | 2026-10-07 | — |
