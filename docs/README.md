@@ -16,6 +16,7 @@ Compacted 2026-11-01 and merged 2026-11-03: fourteen living documents stay here,
 | [`ASSEMBLY_ENDS_2026-11-14.md`](ASSEMBLY_ENDS_2026-11-14.md) | Transcript starts and ends: the two default side files (`capstarts`, `earlyends`), the read pre-flight check, polyA / orientation state of the reads, and the closed fraction-rule exemption (rows 1717-1724, 1731, 1733) |
 | [`SHIFTED_EXON_ENDS_2026-11-14.md`](SHIFTED_EXON_ENDS_2026-11-14.md) | Shifted ends of internal exons: the class, the rules tried (rows 1725-1739), the opt-in `shiftdrop` stage, what is not known |
 | [`SHORT_EXONS_2026-11-16.md`](SHORT_EXONS_2026-11-16.md) | Alternative splicing classes against the annotation, the retained-intron filter, exons of <= 15 bp that minimap2 drops (rows 1742-1746, 1753, 1754, 1757), the opt-in `shortexons` stage, what is not done |
+| [`FAMILY_WISE_REVIEW_2026-11-16.md`](FAMILY_WISE_REVIEW_2026-11-16.md) | Where primary-only tools lose copies of a family, and the opt-in reporting stages `names`, `eqclasses` (tie classes and count ranges) and `psi` (per-intron PSI with tie ranges, within a sample and across the copies of a family) |
 | [`PERFORMANCE.md`](PERFORMANCE.md) | Where pipeline time goes and the speed switches, with measured effect and whether products stay identical |
 | [`REFERENCE.md`](REFERENCE.md) | Glossary, the working set (binaries, driver, bench, cleanup audit), the DAZ worked example |
 | [`MODULE_STATUS.md`](MODULE_STATUS.md) | Which Rust modules exist and their state (checked by a test in `src/lib.rs`) |

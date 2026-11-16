@@ -106,3 +106,98 @@ BAMs are linked into `reads/HSA`, `reads/GGO` (`GGO_KB3781_fib_mm.bam` = `GCA_02
   (`PPA_PR00251_fib_all_mm.bam`, 17.40M reads): 107,007 chains, 22,084 exact, 0.206: +1,285 correct for +9,263 chains. Keep the UW-only
   BAM as the bonobo sample. PSU alone scores 0.330 at 2.64M reads, a depth effect. Not measured: absorbing truncated chains.
 - **Not run on these samples:** families, assign, any rule.
+
+## Other tools on every ape sample, de novo and guided (2026-11-16, register 1763, report only)
+
+User request: StringTie, FLAIR, IsoQuant and IsoCon on the ape samples that lacked them, guided and unguided. Workspace `apetools/`
+(= `r1763_apetools`), one directory per sample; `job.sbatch` (`sbatch -J TAG job.sbatch STEM [REGION]`) runs every arm on one node and
+ends with the tables below. Recipes are those of `benchmark_collapse` (unguided), r1622 and r1646 (guided): StringTie 3.0.3 `-L [-G]`,
+FLAIR 3.0.1 `bam2bed` + `collapse` (guided: `correct` + `collapse -f`), IsoQuant 4.1.0 `-d pacbio_ccs [--genedb]`, ours
+`assemble --guide` with today's defaults. One guide per sample for every guided arm: RefSeq with 5/16 of the transcripts hidden
+(`guide_proto.py split`, `GUIDE_HIDE=tx`). All nine jobs ended with every arm non-empty.
+
+De novo, exact intron chains against the full RefSeq, correct chains / precision. Raw operating points, not matched counts.
+
+| Sample | ours.final.gtf | ours.gtf | StringTie | FLAIR | IsoQuant |
+|---|---|---|---|---|---|
+| PTR testis | 20,993 / 0.462 | 21,904 / 0.384 | 21,532 / 0.350 | 19,730 / 0.273 | 15,761 / 0.441 |
+| PPA testis | 17,501 / 0.359 | 18,545 / 0.315 | 17,288 / 0.281 | 15,934 / 0.229 | 13,109 / 0.369 |
+| PPY testis | 20,639 / 0.239 | 21,347 / 0.189 | 20,561 / 0.167 | 19,881 / 0.109 | 14,094 / 0.245 |
+| PAB testis | 16,436 / 0.294 | 16,930 / 0.225 | 16,981 / 0.234 | 16,513 / 0.149 | 12,866 / 0.309 |
+| PPY fib AG05252 | 23,405 / 0.368 | 24,366 / 0.302 | 20,787 / 0.314 | 23,246 / 0.101 | 14,803 / 0.351 |
+| PAB fib AG06213 | 23,661 / 0.398 | 25,253 / 0.346 | 21,510 / 0.388 | 23,993 / 0.131 | 15,667 / 0.426 |
+| PPA fib PR00251 | 21,592 / 0.280 | 22,151 / 0.217 | 18,780 / 0.195 | 21,171 / 0.063 | 13,139 / 0.217 |
+| PTR lcl AG18354 | 29,200 / 0.382 | 31,155 / 0.337 | 25,433 / 0.366 | 30,658 / 0.130 | 16,579 / 0.404 |
+| GGO fib KB3781 | 24,383 / 0.397 | 26,315 / 0.354 | 22,087 / 0.380 | 24,734 / 0.125 | 15,785 / 0.427 |
+
+`ours.gtf` has the most correct chains on every sample but PAB testis (StringTie +51). IsoQuant is more precise than `ours.final.gtf`
+on five of nine samples at 55-75% of our correct chains. FLAIR de novo emits very large sets on the deep samples (337,026 chains on
+PPA fib).
+
+Guided, hidden chains found / precision of the non-guide chains (`guide_proto.py score`; whole-set guided precision is inflated by the
+guide and is not the comparison).
+
+| Sample | ours guided | StringTie -G | FLAIR | IsoQuant |
+|---|---|---|---|---|
+| PTR testis | 3,979 / 0.446 | 3,554 / 0.295 | 4,473 / 0.180 | 4,223 / 0.179 |
+| PPA testis | 3,516 / 0.318 | 3,231 / 0.225 | 3,198 / 0.155 | 3,486 / 0.139 |
+| PPY testis | 4,047 / 0.174 | 3,543 / 0.145 | 3,464 / 0.061 | 3,898 / 0.085 |
+| PAB testis | 3,111 / 0.191 | 2,887 / 0.165 | 2,667 / 0.090 | 3,644 / 0.116 |
+| PPY fib | 5,432 / 0.290 | 4,136 / 0.258 | 4,403 / 0.076 | 4,010 / 0.133 |
+| PAB fib | 5,715 / 0.302 | 4,296 / 0.306 | 4,571 / 0.102 | 4,297 / 0.176 |
+| PPA fib | 4,527 / 0.210 | 3,577 / 0.152 | 3,847 / 0.050 | 3,535 / 0.071 |
+| PTR lcl | 7,031 / 0.313 | 4,658 / 0.285 | 7,329 / 0.101 | 4,392 / 0.158 |
+| GGO KB3781 | 6,206 / 0.301 | 4,555 / 0.304 | 4,874 / 0.095 | 4,334 / 0.177 |
+
+Ours finds the most hidden chains on six of nine samples (FLAIR on PTR testis and PTR lcl, IsoQuant on PAB testis); StringTie finds the
+most guide chains everywhere. Our de novo assembly finds more hidden chains than our guided one (e.g. 5,787 vs 3,516 on PPA testis):
+the guided mode's 3-read floor on non-guide chains.
+
+Reference-free arm. IsoCon has no guided mode and runs on read pools of a target panel (row 1478), so it was run only where a panel
+exists: KB3781 with the OR6737 gorilla panel (`apetools/GGO_KB3781_isocon`, `isocon_kb.sbatch`; the panel was chosen for OR6737 testis
+expression, 53 of 75 annotated copies are expressed here). Copies modelled / junction precision / spliced transcripts: ours 50 / 0.74 /
+233, StringTie 49 / 0.70 / 287, FLAIR 47 / 0.63 / 365, IsoCon 44 / 0.79 / 663, IsoQuant 42 / 0.71 / 149. For the four testis samples
+the row 1759 replacement `isoseq cluster2` ran on the same FLNC reads (`apetools/TAG_cluster2/cluster2.gtf`, `cluster2.sbatch`):
+PTR 62,932 chains / 17,417 correct / 0.277; PPA 59,301 / 15,339 / 0.259; PPY 144,851 / 17,737 / 0.122; PAB 89,523 / 13,773 / 0.154.
+The cell lines have no reference-free arm (SRA FASTQ, `cluster2` untried on it); IsoCon on chimp, bonobo and orangutan needs a
+per-species panel (`isocon_targets.py select`).
+
+Not done: matched-count curves on the nine samples above. The A119b and OR6737 tool tables were redone with today's defaults on
+2026-11-16 (next section); their StringTie arm is still 3.0.1. Guided IsoQuant spends about 2.5 h converting the guide GTF (single thread).
+
+Follow-up, register 1764 (`docs/PREREG_isocon_junctions_2026-11-16.md`): IsoCon's higher junction precision on the gorilla panel is its
+operating point. With our junctions cut by read support to IsoCon's count per copy, ours is ahead on both samples (KB3781 0.926 vs
+0.893; OR6737 0.894 vs 0.878, RefSeq intron truth); alignment slips are 2-4 junctions per sample in either tool. Nothing to port.
+
+## A119b and OR6737 with today's defaults, IsoQuant added (2026-11-16, register 1765)
+
+Rerun of the two base samples after the transfrag-extension and chain-score defaults, for the assembler artifact
+(claude.ai/artifact/BKZMLTF4aqfVPD3yYjcYfd, rebuilt by `build.py human.json` in workspace `artifact_refresh_2026-11-16`; runs
+`{g,h}.{def,pri}`, scorer `score.py` = `curve.load` over any number of GTFs, which reproduces the 10 Nov figures on the old files).
+`--seed-pool primary`, exact intron chains against the full RefSeq: distinct multi-exon chains / correct / precision. StringTie 3.0.1
+and FLAIR 3.0.1 are the `benchmark_collapse` files; IsoQuant 4.1.0 is row 1646's `-d pacbio_ccs --polya_trimmed all` arm.
+
+| Sample | ours.gtf | ours.final.gtf | StringTie | FLAIR | IsoQuant |
+|---|---|---|---|---|---|
+| A119b | 224,494 / 39,823 / 0.177 | 175,447 / 38,543 / 0.220 | 211,865 / 31,781 / 0.150 | 626,983 / 39,230 / 0.063 | 84,539 / 18,903 / 0.224 |
+| OR6737 | 75,018 / 26,263 / 0.350 | 60,442 / 24,930 / 0.413 | 67,491 / 23,248 / 0.345 | 138,125 / 24,293 / 0.176 | 37,089 / 16,677 / 0.450 |
+
+Default pool (tied secondary alignments in): `ours.gtf` 236,301 / 40,086 / 0.170 and 76,139 / 26,424 / 0.347; `ours.final.gtf`
+182,771 / 38,873 / 0.213 and 61,337 / 25,049 / 0.408. Against the 10 Nov runs the primary-pool `ours.gtf` gains 1,385 correct chains
+on A119b (0.185 -> 0.177) and 629 on OR6737 (0.355 -> 0.350). The chain-score cut was fixed on these two samples, so their
+`final.gtf` figures are in-sample.
+
+IsoQuant's precision is its operating point (register 1765, `docs/PREREG_isoquant_junctions_2026-11-16.md`,
+`bench/denovo_eval/isoquant_junc.py`, workspace `r1765_isoquant_junc`), at both levels:
+- Chains: ours cut by reads to IsoQuant's correct count, 0.540 vs 0.450 (OR6737, >= 6 reads) and 0.414 vs 0.224 (A119b, >= 12
+  reads); `final.gtf` 0.567 and 0.504.
+- Junctions, RefSeq genes with a spliced model in both tools (gffcompare tmap), ours cut by read support to IsoQuant's count per
+  gene, RefSeq intron truth: 0.925 vs 0.910 (OR6737, 14,037 genes) and 0.818 vs 0.731 (A119b, 20,444 genes).
+- IsoQuant keeps almost no slips (8 / 14 against our 192 / 311: a wrong junction within 10 bp of an annotated one at <= 0.2 of its
+  reads), under 2% of our wrong junctions at the cut. It keeps junctions that are neither GT-AG nor GC-AG / AT-AC (803 / 5,751;
+  ours 0). Nothing to port.
+
+Not done: the loci counts of the artifact's tabs 2 and 3 (434 / 1,928 new loci) were not recounted on the new runs; our slips were
+not checked against `shiftdrop`; no IsoCon panel for A119b; KB3781 is outside row 1765 (no primary-pool run, other IsoQuant arm).
+A `tools/` snapshot made for a job needs `bench` linked beside it, or the chain score step warns and leaves `final.gtf` unfiltered.
+

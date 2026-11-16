@@ -6,31 +6,38 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 
 | file | title | last commit | cited by |
 |---|---|---|---|
-| [`ADVISOR_QUESTIONS.md`](ADVISOR_QUESTIONS.md) | The advisor's standing questions — and what the codebase can answer | 2026-11-08 | — |
+| [`ADVISOR_QUESTIONS.md`](ADVISOR_QUESTIONS.md) | The advisor's standing questions — and what the codebase can answer | 2026-11-08 | memory ×1 |
 | [`AUDIT_ROUNDS_2026-11.md`](AUDIT_ROUNDS_2026-11.md) | Audit rounds, November 2026 (ponytail-audit, goal: 100 rounds) | 2026-11-15 | memory ×3 |
 | [`DATA.md`](DATA.md) | Datasets — what they are, where they came from, how to rebuild them | 2026-11-16 | register ×1, memory ×6 |
-| [`LEDGER_GENERAL.md`](LEDGER_GENERAL.md) | Ledger: general (handoffs, pending lists, register drafts, overviews) | 2026-11-15 | — |
+| [`LEDGER_GENERAL.md`](LEDGER_GENERAL.md) | Ledger: general (handoffs, pending lists, register drafts, overviews) | 2026-11-16 | — |
 | [`LEDGER_O1.md`](LEDGER_O1.md) | Ledger: O1 (family definition, assembler, locus units) | 2026-11-16 | register ×1, memory ×3 |
 | [`LEDGER_O2.md`](LEDGER_O2.md) | Ledger: O2 (copy assignment of tied reads) | 2026-11-16 | register ×1, memory ×4 |
 | [`LEDGER_O3.md`](LEDGER_O3.md) | Ledger: O3 (copies the reference lacks) | 2026-11-15 | — |
 | [`MODULE_STATUS.md`](MODULE_STATUS.md) | Module status — what is SHIPPED vs what was TRIED | 2026-11-15 | — |
-| [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) | REGISTER OF NEGATIVE RESULTS (full: archive/2026-11/NEGATIVE_RESULTS_REGISTER.md:1) | 2026-11-16 | — |
+| [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) | REGISTER OF NEGATIVE RESULTS (full: archive/2026-11/NEGATIVE_RESULTS_REGISTER.md:1) | 2026-11-16 | memory ×1 |
 | [`PERFORMANCE.md`](PERFORMANCE.md) | Pipeline performance: where the time goes and the switches that change it | 2026-11-15 | memory ×1 |
-| [`README.md`](README.md) | docs/ — what is where | 2026-11-15 | memory ×1 |
+| [`README.md`](README.md) | docs/ — what is where | 2026-11-16 | memory ×2 |
 | [`REFERENCE.md`](REFERENCE.md) | REFERENCE — glossary, data locations, and a worked example | 2026-11-07 | — |
 | [`SCRIPT_INVENTORY.md`](SCRIPT_INVENTORY.md) | Script inventory (2026-11-02) | 2026-11-16 | — |
-| [`THESIS_OBJECTIVES.md`](THESIS_OBJECTIVES.md) | Thesis objectives — the current three | 2026-11-15 | — |
+| [`THESIS_OBJECTIVES.md`](THESIS_OBJECTIVES.md) | Thesis objectives — the current three | 2026-11-16 | — |
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-05 | memory ×1 |
 | [`seeded_family_definition.md`](seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-08 | — |
 
-## Open studies and current handoff (191)
+## Open studies and current handoff (198)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
+| [`FAMILY_WISE_REVIEW_2026-11-16.md`](FAMILY_WISE_REVIEW_2026-11-16.md) | Family-wise assembly review, and the `names` / `eqclasses` / `psi` stages (2026-11-16) | uncommitted | memory ×3 |
+| [`PREREG_bundle_jaccard_2026-11-16.md`](PREREG_bundle_jaccard_2026-11-16.md) | PREREG row 1762: read-set Jaccard between de novo bundles as the family rule (2026-11-16) | uncommitted | register ×1, memory ×1 |
+| [`PREREG_cellline_opt_ins_2026-11-16.md`](PREREG_cellline_opt_ins_2026-11-16.md) | PREREG: three assembly opt-ins on four unseen cell-line samples, with a promotion rule (2026-11-16, register 1760) | 2026-11-16 | register ×1, memory ×1 |
+| [`PREREG_chainscore_filter_2026-11-16.md`](PREREG_chainscore_filter_2026-11-16.md) | PREREG: the frozen r1677 chain score as a filter with a fixed cut, opt-in stage `chainscore` (2026-11-16, register 1761) | 2026-11-16 | register ×1 |
+| [`PREREG_frame_rules_2026-11-16.md`](PREREG_frame_rules_2026-11-16.md) | PREREG, register 1766: reading-frame rules for chains every tool misses (2026-11-16) | uncommitted | register ×1, memory ×1 |
+| [`PREREG_isocon_junctions_2026-11-16.md`](PREREG_isocon_junctions_2026-11-16.md) | PREREG r1764: is IsoCon's junction precision an operating point or a consensus effect? (2026-11-16) | uncommitted | register ×1, memory ×1 |
+| [`PREREG_isoquant_junctions_2026-11-16.md`](PREREG_isoquant_junctions_2026-11-16.md) | PREREG r1765: is IsoQuant's junction precision an operating point or a mechanism? (2026-11-16) | uncommitted | register ×1, memory ×1 |
 | [`PREREG_isoseq_cluster2_2026-11-16.md`](PREREG_isoseq_cluster2_2026-11-16.md) | PREREG ISOSEQ-CLUSTER2 (2026-11-16, register 1759, written before any run) | 2026-11-16 | register ×1, memory ×1 |
 | [`PREREG_skip_search_floor_2026-11-16.md`](PREREG_skip_search_floor_2026-11-16.md) | PREREG row 1757 (2026-11-16): short-exon intron search with a floor of 2 reads, on four unseen samples | 2026-11-16 | register ×1 |
-| [`SHORT_EXONS_2026-11-16.md`](SHORT_EXONS_2026-11-16.md) | Alternative splicing classes, retained introns and short exons: what was measured and the `shortexons` stage, state on 2 | uncommitted | — |
-| [`APE_SAMPLES_2026-11-15.md`](APE_SAMPLES_2026-11-15.md) | Four new ape samples: chimp, bonobo, two orangutans (2026-11-15) | 2026-11-16 | memory ×2 |
+| [`SHORT_EXONS_2026-11-16.md`](SHORT_EXONS_2026-11-16.md) | Alternative splicing classes, retained introns and short exons: what was measured and the `shortexons` stage, state on 2 | 2026-11-16 | memory ×1 |
+| [`APE_SAMPLES_2026-11-15.md`](APE_SAMPLES_2026-11-15.md) | Four new ape samples: chimp, bonobo, two orangutans (2026-11-15) | 2026-11-16 | register ×1, memory ×3 |
 | [`PREREG_alt_events_missing_classes_2026-11-15.md`](PREREG_alt_events_missing_classes_2026-11-15.md) | PREREG row 1744 (2026-11-15): the event classes row 1714 did not measure, and whether alignment loses short exons | 2026-11-15 | register ×1 |
 | [`PREREG_families_darklist_2026-11-15.md`](PREREG_families_darklist_2026-11-15.md) | PREREG row 1749 (2026-11-15): a satellite / rDNA darklist BEFORE the families stage | 2026-11-16 | register ×1, memory ×1 |
 | [`PREREG_ptr_ppa_frozen_rules_2026-11-15.md`](PREREG_ptr_ppa_frozen_rules_2026-11-15.md) | PREREG: frozen assembly rules on two unseen samples, chimp PTR and bonobo PPA (2026-11-15) | 2026-11-16 | register ×5, memory ×2 |
@@ -263,14 +270,14 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_sqanti_single_copy_2026-11-01.md`](archive/2026-11/PREREG_sqanti_single_copy_2026-11-01.md) | Pre-registration: SQANTI3 on single-copy genes, our plain assembly vs StringTie, FLAIR and IsoCon (A119b chr20, 2026-11- | 2026-11-03 | — |
 | [`PREREG_assembly_ends_2026-11-01.md`](archive/2026-11/PREREG_assembly_ends_2026-11-01.md) | PREREG ASSEMBLY ENDS (2026-11-01, register 1485 / 1486) | 2026-11-03 | register ×3, memory ×1 |
 | [`O3_STATUS.md`](archive/2026-11/O3_STATUS.md) | O3 — reference-absent copies: the evidence, and what it does and does not support | 2026-11-01 | — |
-| [`NEGATIVE_RESULTS_REGISTER.md`](archive/2026-11/NEGATIVE_RESULTS_REGISTER.md) | REGISTER OF NEGATIVE RESULTS | 2026-11-01 | register ×1720 |
+| [`NEGATIVE_RESULTS_REGISTER.md`](archive/2026-11/NEGATIVE_RESULTS_REGISTER.md) | REGISTER OF NEGATIVE RESULTS | 2026-11-01 | register ×1720, memory ×1 |
 | [`MEMORY_DIGEST.md`](archive/2026-11/MEMORY_DIGEST.md) | Memory digest — the long form of the memory index | 2026-11-01 | — |
 | [`LEDGER_O3.md`](archive/2026-11/LEDGER_O3.md) | Ledger: O3 (copies the reference lacks) | 2026-11-01 | — |
 | [`LEDGER_O2.md`](archive/2026-11/LEDGER_O2.md) | Ledger: O2 (copy assignment of tied reads) | 2026-11-01 | register ×1, memory ×4 |
 | [`LEDGER_O1.md`](archive/2026-11/LEDGER_O1.md) | Ledger: O1 (family definition, assembler, locus units) | 2026-11-01 | register ×1, memory ×3 |
 | [`LEDGER_GENERAL.md`](archive/2026-11/LEDGER_GENERAL.md) | Ledger: general (handoffs, pending lists, register drafts, overviews) | 2026-11-01 | — |
 | [`CHAPTER_O1_O2_COMPOSITION_DRAFT.md`](archive/2026-11/CHAPTER_O1_O2_COMPOSITION_DRAFT.md) | O1 → O2 by composition: families of transcribed loci, and assignment among exactly those loci (draft, 2026-09-05) | 2026-11-01 | — |
-| [`ADVISOR_QUESTIONS.md`](archive/2026-11/ADVISOR_QUESTIONS.md) | The advisor's standing questions — and what the codebase can answer | 2026-11-01 | — |
+| [`ADVISOR_QUESTIONS.md`](archive/2026-11/ADVISOR_QUESTIONS.md) | The advisor's standing questions — and what the codebase can answer | 2026-11-01 | memory ×1 |
 | [`ACTIVE_WORKING_SET.md`](archive/2026-11/ACTIVE_WORKING_SET.md) | Active working set — what is actually in use (2026-09-19; wave 4 applied 2026-09-23) | 2026-11-01 | — |
 | [`STATUS_O2_O3_2026-10-24.md`](archive/2026-11/STATUS_O2_O3_2026-10-24.md) | O2 / O3 status, 2026-10-24 (main; o3-fast merged) | 2026-11-01 | — |
 

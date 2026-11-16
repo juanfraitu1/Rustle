@@ -1156,3 +1156,27 @@ The label enriches for true pairs where the families are imprecise and separates
 certificate. Ruled in by the user after the verdict as a side table of `families` whenever a SEDEF BED with CIGARs is set
 (`RUSTLE_SDCORE=0` off, 9 s on A119b). Only protein-coding pairs are scored. SD damping stays the one SD rule that changes
 families.
+
+## Update 2026-11-16 (late): rows 1762-1766, and the `names` / `eqclasses` / `psi` / `oneread` stages
+- **Bundles + read-set Jaccard as the family rule (r1762, advisor's suggestion):** FAIL on A119b against the default
+  0.907 / 0.809 (pair precision / recall): components at J 0.30 0.464 / 0.834, MCL on the J graph 0.479 / 0.795, SEDEF gate +
+  MCL 0.812 / 0.765 the closest; bundlenode arms precision 0.000. `docs/PREREG_bundle_jaccard_2026-11-16.md`.
+- **Other tools on all nine ape samples (r1763, report only):** `ours.gtf` has the most correct chains de novo on 8 of 9;
+  IsoQuant is more precise than `ours.final.gtf` on 5 of 9 at 55-75% of our correct chains; ours finds the most hidden
+  chains guided on 6 of 9. Tables in `docs/APE_SAMPLES_2026-11-15.md` (last section). No matched-count curves.
+- **IsoCon and IsoQuant junction precision (r1764, r1765):** an operating point in both. At the other tool's junction
+  count ours is ahead (IsoCon panel: KB3781 0.926 vs 0.893, OR6737 0.894 vs 0.878; IsoQuant per gene: OR6737 0.925 vs
+  0.910, A119b 0.818 vs 0.731). Nothing to port.
+- **Reading-frame rules (r1766, PTR development, PPA held out):** the early-stop drop P1 and the one-read admits S1, S2,
+  S3, S3b pass on PPA; majority agreement of reads fails (0.077). P1 loses about half the correct non-coding chains, so
+  it ships as the `ptc` / `orf_len` attributes of `PREFIX.final.gtf` (user; `RUSTLE_PTC=0` off). S2 needs a sister
+  species and is not ported (user). S3b is the opt-in stage `oneread`; its default test on three orangutan samples
+  FAILS as registered (yield 1.0-1.6% of the default's correct chains against 2% on all three; PAB testis also misses
+  the precision bar by 0.007). `docs/PREREG_frame_rules_2026-11-16.md`.
+- **Reporting stages, no register rows (`docs/FAMILY_WISE_REVIEW_2026-11-16.md`):** `names` (annotation names as GTF
+  attributes), `eqclasses` (tie classes on minimap2's `ms`, per-locus [placed, max] and an EM count, exact and within-10
+  bands), `psi` (per-intron PSI in donor / acceptor bunches with tie ranges; OR6737: 0.224 of the bunches at multi-copy
+  family loci are not measurable against 0.0025 elsewhere; between copies 212 of 505 shared junction keys differ).
+  None is part of `all`; nothing reads their tables.
+- Family-wise review of the assembly: no copy-specific rule to borrow; short introns, non-canonical junctions and
+  junction repair closed by counts.

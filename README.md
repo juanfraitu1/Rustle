@@ -80,9 +80,16 @@ the default products untouched:
 | `shiftdrop` | `PREFIX.shiftdrop.gtf` | 1728-1739 |
 | `chainscore` | `PREFIX.chainscore.gtf` (`PREFIX.gtf` without multi-exon chains below the fixed cut of the frozen chain score; default since 2026-11-16: the same chains are also removed from `PREFIX.final.gtf`, `RUSTLE_CHAINSCORE=0` = off) | 1677, 1760, 1761 |
 | `shortexons` | `PREFIX.shortexons.gtf` (default reassembly after reads that skip an exon of <= 15 bp are rewritten through it; needs room for a second copy of the BAM while it runs) | 1746, 1753, 1754, 1757 |
+| `oneread` | `PREFIX.oneread.gtf` (one-read chains with every junction in another read and a clean reading frame; `RUSTLE_ONEREAD=1` appends them to `PREFIX.final.gtf`; default test failed its yield bar) | 1766 |
+| `assemble --names ANNOT` / `names` | `PREFIX.named.gtf`, `PREFIX.final.named.gtf` (the same models with the annotation's gene and transcript names as attributes; independent of `--guide`) | none |
+| `eqclasses` | `PREFIX.eq.classes.tsv`, `PREFIX.eq.loci.tsv` (sets of loci the alignment score does not separate; per locus the reads placed only there, the maximum with every tied read, an EM count between the two) | none |
+| `psi` | `PREFIX.psi.tsv` (PSI of each intron among the introns sharing its donor or acceptor, with the range tied reads allow); after `exonmap` also `PREFIX.fam.psi.tsv` (the same junction across the copies of a family) | none |
 | `repeatloci` | `PREFIX.repeat_loci.tsv` | 1698, 1702 |
 | `exonmap` | `PREFIX.fam.exonmap.columns.tsv` + one GFA per family | 1595 |
 | `relatives` | `PREFIX.fam.relatives.tsv` | 1676, 1737 |
+
+Since 2026-11-16 the transcript lines of `PREFIX.final.gtf` also carry `orf_len` and `ptc` (`ptc "1"` = the longest ORF
+stops more than 50 nt before the last junction; a tag, nothing is dropped; `RUSTLE_PTC=0` off; register 1766).
 
 The header of `tools/rustle_pipeline.sh` has each stage's inputs and switches; `docs/LEDGER_O1.md` (update 2026-11-15)
 has the verdicts. Several of these stages run Python scripts under `bench/` and `tools/` and need `python3` with pysam.

@@ -63,8 +63,28 @@
 #        [--candidates | --no-candidates] [--delta D] [--cand-max-reads N] [--legacy-catalog]
 #        [--guide ANNOT.gtf]   assemble / all also write PREFIX.guided.gtf (stage `guided` alone rewrites it from PREFIX.gtf;
 #                              the de novo PREFIX.gtf and every later stage are unchanged; register 1622)
+#        [--names ANNOT.gff3|gtf[.gz]]   assemble / all also write PREFIX.named.gtf (and PREFIX.final.named.gtf): the same
+#                              transcripts with ref_gene_name / ref_gene_id / ref_transcript_id / ref_match attributes from the
+#                              annotation (tools/gtf_names.py; exact intron chain, else the gene sharing most exon bases on the
+#                              strand). Names only: independent of --guide, no product or stage reads the named files, ids and
+#                              models are unchanged. Stage `names --names ANNOT --out PREFIX` alone rewrites them.
+#   tools/rustle_pipeline.sh psi --bam B --fasta G --out PREFIX [--threads N]   OPT-IN, named only: PREFIX.psi.tsv = PSI of each
+#     intron within its bunches (introns sharing a donor, or an acceptor; MntJULiP's unit) counted from the alignments, with the
+#     range [psi_lo, psi_hi] that reads tied between placements allow, in eqclasses' two bands (tools/psi_bunches.py; needs
+#     PREFIX.gtf and the score table). A report of one sample: no test between samples, intron retention not seen, nothing reads it.
+#     After stage `exonmap` it also writes PREFIX.fam.psi.tsv: the psi rows keyed by exon columns, so one junction is read across
+#     the copies of a family (tools/psi_family.py; `differs` = copies whose tie ranges do not overlap, a count, not a test).
+#   tools/rustle_pipeline.sh eqclasses --bam B --fasta G --out PREFIX [--names ANNOT] [--threads N]   OPT-IN, named only:
+#     PREFIX.eq.classes.tsv (sets of loci minimap2's ms score does not separate, with their read count) and PREFIX.eq.loci.tsv (per
+#     locus of the assembly: reads placed only there, the maximum with every tied read, a counts-only EM estimate between the
+#     two, and its tie group). Quantification and reporting only: no read is assigned and no other product changes
+#     (tools/eq_classes.py). Two bands side by side: exact score ties, and (columns _w) scores within RUSTLE_EQ_WINDOW of the
+#     best (default 10 ms; or >= RUSTLE_EQ_RATIO x the best when that is set); neither is validated, so read where they disagree. Loci mostly
+#     inside the exclude BED (RUSTLE_EXCLUDE_BED or FASTA.exclude.bed) are labelled repeat and join no group.
 #   tools/rustle_pipeline.sh siblings --bam B --fasta G --out PREFIX   OPT-IN (register 1628): PREFIX.sibling.gtf = PREFIX.gtf +
 #                              one-read chains a family sibling's model confirms; after assemble and families
+#   tools/rustle_pipeline.sh oneread --bam B --fasta G --out PREFIX [--threads N]   OPT-IN (register 1766; RUSTLE_ONEREAD=1 = also appended to PREFIX.final.gtf by assemble): PREFIX.oneread.gtf =
+#                              one-read chains with every junction in another read and a clean reading frame (tools/oneread.py); after assemble
 #   tools/rustle_pipeline.sh flairlike --bam B --fasta G --out PREFIX [--threads N]   OPT-IN (register 1640): PREFIX.flairlike.gtf =
 #                              FLAIR collapse's chain set (second minimap2 pass; lower precision than PREFIX.gtf)
 #   tools/rustle_pipeline.sh famreps --bam B --fasta G --out PREFIX   the second half of `families` alone (register 1662):
@@ -253,7 +273,7 @@ case "$STAGE" in
        fi
      done;;
 esac
-BAM=""; FASTA=""; OUT=""; INDEX=""; GFF=""; GUIDE=""; THREADS=4; THREADS_SET=0; BIN="$RP_DRIVER_DIR/../target/release"; CONFIRM=(); FOREIGN=(); SEED_POOL=${RUSTLE_SEED_POOL:-good}; SEED_RATIO=${RUSTLE_SEED_AS_RATIO:-0.98}; SEED_RATIO_FLAG=0; AS_TABLE=""; CONTIG=""; CONTIG_FLAG=0; CACHE=1; INSPECT=0
+BAM=""; FASTA=""; OUT=""; INDEX=""; GFF=""; GUIDE=""; NAMES=""; THREADS=4; THREADS_SET=0; BIN="$RP_DRIVER_DIR/../target/release"; CONFIRM=(); FOREIGN=(); SEED_POOL=${RUSTLE_SEED_POOL:-good}; SEED_RATIO=${RUSTLE_SEED_AS_RATIO:-0.98}; SEED_RATIO_FLAG=0; AS_TABLE=""; CONTIG=""; CONTIG_FLAG=0; CACHE=1; INSPECT=0
 PIECEWISE=0; MAX_PIECES=0; BUDGET_S=0; PIECE_RECORDS=0; PIECE=""
 LEGACY_CATALOG=0; CANDIDATES=0; DELTA=0.00958; CAND_MAX=1000
 # `all --to STAGE` stops after STAGE (the escape hatch: `--to families` = the loci and their copy table before any read is
@@ -264,6 +284,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --bam) BAM=$2; shift 2;; --fasta) FASTA=$2; shift 2;; --out) OUT=$2; shift 2;; --index) INDEX=$2; shift 2;;
     --guide) GUIDE=$2; shift 2;;
+    --names) NAMES=$2; shift 2;;
     --gff) GFF=$2; shift 2;; --threads) THREADS=$2; THREADS_SET=1; shift 2;; --bin) BIN=$2; shift 2;;
     --confirm) CONFIRM+=(--confirm "$2"); shift 2;; --foreign) FOREIGN+=(--foreign "$2"); shift 2;;
     --seed-pool) SEED_POOL=$2; shift 2;; --seed-as-ratio) SEED_RATIO=$2; SEED_RATIO_FLAG=1; shift 2;; --as-table) AS_TABLE=$2; shift 2;;
@@ -379,6 +400,8 @@ case "$STAGE" in
 esac
 if [ "$STAGE" = index ]; then
   [ -n "$FASTA" ] && [ -n "$OUT" ] || { echo "index needs --fasta and --out" >&2; exit 2; }
+elif [ "$STAGE" = names ]; then
+  [ -n "$OUT" ] || { echo "names needs --names ANNOT and --out" >&2; exit 2; }
 else
   [ -n "$BAM" ] && [ -n "$FASTA" ] && [ -n "$OUT" ] || { echo "need --bam, --fasta, --out" >&2; exit 2; }
 fi
@@ -826,10 +849,41 @@ final_chainscore() {
     say "assemble: WARNING the chain score filter failed (see $OUT.chainscore.log); $OUT.final.gtf is the unfiltered layered assembly"
   fi
 }
+# oneread: OPT-IN (register 1766, rule S3b; RUSTLE_ONEREAD=1 also appends its models to $OUT.final.gtf at the end of assemble).
+# $OUT.oneread.gtf = one-read chains the default lacks that pass tools/oneread.py: every junction also in another read, > 0.05 of the
+# reads on each junction colinear, no longer read, ORF >= 900 nt with no early stop. Costs a second assemble at a 1-read floor
+# ($OUT.oneread.d/) and one BAM pass. $OUT.gtf and the families input are untouched.
+stage_oneread() {
+  [ -s "$OUT.gtf" ] && [ -s "$BAM" ] && [ -s "$FASTA" ] || { echo "[rustle_pipeline] oneread needs $OUT.gtf (run assemble first), --bam and --fasta" >&2; return 2; }
+  mkdir -p "$OUT.oneread.d"
+  { RUSTLE_MIN_CHAIN_READS=1 RUSTLE_ASSEMBLY_LAYERS=off RUSTLE_ONEREAD=0 bash "$RP_DRIVER_DIR/rustle_pipeline.sh" assemble --bam "$BAM" --fasta "$FASTA" \
+      --out "$OUT.oneread.d/f1" --threads "$THREADS" ${BIN:+--bin "$BIN"} ${CONTIG:+--contig "$CONTIG"} \
+      && ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/oneread.py" "$OUT.gtf" "$OUT.oneread.d/f1.gtf" "$BAM" "$FASTA" "$OUT.oneread.gtf.tmp"; } > "$OUT.oneread.log" 2>&1 \
+    || { echo "[rustle_pipeline] oneread failed (see $OUT.oneread.log); $OUT.gtf is unaffected" >&2; rm -f "$OUT.oneread.gtf.tmp"; return 1; }
+  mv -f "$OUT.oneread.gtf.tmp" "$OUT.oneread.gtf"
+  say "oneread: $(tail -1 "$OUT.oneread.log") -> $OUT.oneread.gtf"
+}
+final_oneread() {
+  [ "${RUSTLE_ONEREAD:-0}" = 1 ] || return 0
+  if stage_oneread; then cat "$OUT.oneread.gtf" >> "$OUT.final.gtf"; say "assemble: one-read models appended to $OUT.final.gtf"
+  else say "assemble: WARNING the one-read step failed; $OUT.final.gtf has no one-read models"; fi
+}
+# Register 1766 (user 2026-11-16): transcript lines of $OUT.final.gtf get orf_len and ptc attributes (tools/gtf_ptc.py; ptc "1" = the
+# longest ORF stops > 50 nt before the last junction). A tag only, nothing is dropped; RUSTLE_PTC=0 = off; a failure leaves the file as it was.
+final_ptc() {
+  [ "${RUSTLE_PTC:-1}" != 0 ] || return 0
+  if ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/gtf_ptc.py" "$OUT.final.gtf" "$FASTA" "$OUT.final.gtf.ptc.tmp" > "$OUT.ptc.log" 2>&1 && [ -s "$OUT.final.gtf.ptc.tmp" ]; then
+    mv -f "$OUT.final.gtf.ptc.tmp" "$OUT.final.gtf"; say "assemble: $(tail -1 "$OUT.ptc.log") in $OUT.final.gtf"
+  else
+    rm -f "$OUT.final.gtf.ptc.tmp"; say "assemble: WARNING the ptc tag failed (see $OUT.ptc.log); $OUT.final.gtf has no ptc attribute"
+  fi
+}
 layered_report() {
   if [ -s "$OUT.final.gtf" ]; then
     say "assemble: $(awk -F'\t' '$3=="transcript"' "$OUT.final.gtf" | wc -l) transcripts in the layered assembly $OUT.final.gtf (log $OUT.final.log)"
     final_chainscore
+    final_oneread
+    final_ptc
   else
     say "assemble: WARNING the layered assembly failed (see $OUT.final.log); $OUT.gtf and the families input are unaffected"
   fi
@@ -1017,6 +1071,55 @@ stage_altends() {
     || { echo "[rustle_pipeline] altends failed (see $OUT.altends.log); $OUT.gtf is unaffected" >&2; rm -f "$OUT.altends.gtf.tmp"; exit 1; }
   mv -f "$OUT.altends.gtf.tmp" "$OUT.altends.gtf"
   say "altends: $(tail -1 "$OUT.altends.log") -> $OUT.altends.gtf"
+}
+# psi: OPT-IN, named only (2026-11-16). One BAM pass; $OUT.psi.tsv = per-intron PSI within bunches with tie ranges; nothing reads it.
+stage_psi() {
+  local tab=$OUT.molecules.tsv
+  [ -s "$OUT.gtf" ] || { echo "[rustle_pipeline] psi needs $OUT.gtf (run assemble first)" >&2; exit 2; }
+  [ -s "$tab" ] || tab=$BAM.as_table.tsv
+  [ -s "$tab" ] || { echo "[rustle_pipeline] psi needs the score table $OUT.molecules.tsv or $BAM.as_table.tsv (assemble writes it)" >&2; exit 2; }
+  ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/psi_bunches.py" "$OUT.gtf" "$BAM" "$tab" "$OUT.psi.tsv" --window "${RUSTLE_EQ_WINDOW:-10}" ${RUSTLE_EQ_RATIO:+--ratio "$RUSTLE_EQ_RATIO"} --threads "$JOB_THREADS" > "$OUT.psi.log" 2>&1 \
+    || { echo "[rustle_pipeline] psi failed (see $OUT.psi.log); no other product is affected" >&2; rm -f "$OUT.psi.tsv.tmp"; exit 1; }
+  say "psi: $(tr '\n' ' ' < "$OUT.psi.log")-> $OUT.psi.tsv"
+  # the same junction across the copies of a family, when stage `exonmap` has written its columns (else skipped)
+  if [ -s "$OUT.fam.exonmap.columns.tsv" ] && [ -s "$OUT.fam.loci.gff3" ]; then
+    ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/psi_family.py" "$OUT.psi.tsv" "$OUT.fam.exonmap.columns.tsv" "$OUT.fam.loci.gff3" "$OUT.fam.psi.tsv" > "$OUT.fam.psi.log" 2>&1 \
+      || { echo "[rustle_pipeline] psi: the family view failed (see $OUT.fam.psi.log); $OUT.psi.tsv is complete" >&2; rm -f "$OUT.fam.psi.tsv.tmp"; exit 1; }
+    say "psi: $(tail -1 "$OUT.fam.psi.log") -> $OUT.fam.psi.tsv"
+  else
+    say "psi: no $OUT.fam.exonmap.columns.tsv (stage exonmap), family view skipped"
+  fi
+}
+# eqclasses: OPT-IN, named only (2026-11-16). One BAM pass over the loci `families` reads; nothing reads its tables.
+# Ties are read on minimap2's ms (not AS, which ties spliced genes with processed pseudogenes); the score table needs its ms columns.
+stage_eqclasses() {
+  fam_gtf_guard eqclasses
+  local tab=$OUT.molecules.tsv gtf=$FAM_GTF bed=${RUSTLE_EXCLUDE_BED:-$FASTA.exclude.bed}
+  [ -s "$tab" ] || tab=$BAM.as_table.tsv
+  [ -s "$tab" ] || { echo "[rustle_pipeline] eqclasses needs the score table $OUT.molecules.tsv or $BAM.as_table.tsv (assemble writes it)" >&2; exit 2; }
+  if [ -n "${NAMES:-}" ]; then
+    ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/gtf_names.py" "$NAMES" "$FAM_GTF" "$OUT.eq.named.gtf" > "$OUT.eq.log" 2>&1 \
+      || { echo "[rustle_pipeline] eqclasses: naming failed (see $OUT.eq.log)" >&2; exit 1; }
+    gtf=$OUT.eq.named.gtf
+  fi
+  ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/eq_classes.py" "$gtf" "$BAM" "$tab" "$OUT.eq.tmp" --window "${RUSTLE_EQ_WINDOW:-10}" ${RUSTLE_EQ_RATIO:+--ratio "$RUSTLE_EQ_RATIO"} --threads "$JOB_THREADS" \
+    $([ -s "$bed" ] && printf -- '--exclude %s' "$bed") >> "$OUT.eq.log" 2>&1 \
+    || { echo "[rustle_pipeline] eqclasses failed (see $OUT.eq.log); no other product is affected" >&2; rm -f "$OUT.eq.tmp".*; exit 1; }
+  mv -f "$OUT.eq.tmp.loci.tsv" "$OUT.eq.loci.tsv"; mv -f "$OUT.eq.tmp.classes.tsv" "$OUT.eq.classes.tsv"
+  say "eqclasses: $(tail -2 "$OUT.eq.log" | tr '\n' ' ')-> $OUT.eq.loci.tsv, $OUT.eq.classes.tsv"
+}
+# names: --names ANNOT (opt-in). Copies of the assemblies with the annotation's names as extra attributes; nothing reads them.
+stage_names() {
+  [ -s "$NAMES" ] || { echo "[rustle_pipeline] names needs --names ANNOT.gff3|gtf" >&2; exit 2; }
+  [ -s "$OUT.gtf" ] || { echo "[rustle_pipeline] names needs $OUT.gtf (run assemble first)" >&2; exit 2; }
+  local g
+  for g in "$OUT" "$OUT.final"; do
+    [ -s "$g.gtf" ] || continue
+    ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/gtf_names.py" "$NAMES" "$g.gtf" "$g.named.gtf.tmp" > "$OUT.names.log" 2>&1 \
+      || { echo "[rustle_pipeline] names failed (see $OUT.names.log); $g.gtf is unaffected" >&2; rm -f "$g.named.gtf.tmp"; exit 1; }
+    mv -f "$g.named.gtf.tmp" "$g.named.gtf"
+    say "names: $(tail -1 "$OUT.names.log") -> $g.named.gtf"
+  done
 }
 stage_guided() {
   [ -n "$GUIDE" ] || { echo "[rustle_pipeline] guided needs --guide GTF" >&2; exit 2; }
@@ -1553,6 +1656,8 @@ stage_all() {
   elif [ "$CANDIDATES" = 1 ]; then plan+=(candidates:"$OUT.cand.candidates.tsv"); fi
   plan+=(assign:"$OUT.assign.assignments.tsv")
   local env_now ran=0 st prod args=("${ORIG_ARGS[@]}")
+  # GNU time: the system's, else one on PATH or pixi's (`pixi global install time`; compute nodes have no /usr/bin/time)
+  local gtime=/usr/bin/time; [ -x "$gtime" ] || gtime=$(PATH="$PATH:$HOME/.pixi/bin" type -P time || true)
   export RP_ALL=1   # the stage calls below are part of `all`: assemble leaves the guided assembly to this loop
   # families, assign, index and flag all run minimap2: a missing one fails at start, not after the assembly (round-13 audit)
   command -v "${RUSTLE_MINIMAP2:-minimap2}" > /dev/null || { echo "[rustle_pipeline] no ${RUSTLE_MINIMAP2:-minimap2} on PATH (families, assign and flag run it); set RUSTLE_MINIMAP2 or PATH" >&2; exit 2; }
@@ -1580,7 +1685,7 @@ stage_all() {
   if [[ " ${plan[*]} " == *" index:"* ]] && [ -z "$FROM_STAGE$TO_STAGE" ] \
      && ! { [ -s "$INDEX" ] && [ "$(cat "$INDEX.key" 2>/dev/null)" = "$(index_key)" ]; }; then
     (
-      if [ -x /usr/bin/time ]; then /usr/bin/time -f $'wall_s\t%e\npeak_rss_kb\t%M' -o "$OUT.index.time.tmp" bash "$0" index "${args[@]}"
+      if [ -n "$gtime" ]; then "$gtime" -f $'wall_s\t%e\npeak_rss_kb\t%M' -o "$OUT.index.time.tmp" bash "$0" index "${args[@]}"
       else st0=$SECONDS; rc=0; bash "$0" index "${args[@]}" || rc=$?; printf 'wall_s\t%s\n' "$(( SECONDS - st0 ))" > "$OUT.index.time.tmp"; exit "$rc"; fi
     ) 2> "$OUT.index.bg.err" &
     idx_pid=$!
@@ -1613,6 +1718,14 @@ stage_all() {
   # assembly, outside the plan (nothing reads it, so it never makes a stage rerun) and written last so no other product waits
   # for its BAM pass. RUSTLE_EARLYENDS=0 turns it off. A failure is reported and leaves every other product complete.
   # shortcut: runs after the last stage (A119b +168 s at 72 threads); move it beside families if that wall matters
+  # --names: named copies of PREFIX.gtf / PREFIX.final.gtf, outside the plan like the side assemblies (nothing reads them)
+  all_names() {
+    [ -n "${NAMES:-}" ] && [ -s "$OUT.gtf" ] || return 0   # :- as the dispatch tests run stage_all on its own
+    if [ ! -s "$OUT.named.gtf" ] || [ "$OUT.named.gtf" -ot "$OUT.gtf" ] || [ "$OUT.named.gtf" -ot "$NAMES" ] || { [ -s "$OUT.final.gtf" ] && [ ! "$OUT.final.named.gtf" -nt "$OUT.final.gtf" ]; }; then
+      say "all: names"
+      bash "$0" names "${args[@]}" || say "all: names FAILED (see $OUT.names.log); every other product is complete"
+    fi
+  }
   all_earlyends() {
     [ "${RUSTLE_EARLYENDS:-1}" != 0 ] && [ -s "$OUT.gtf" ] || return 0
     if [ ! -s "$OUT.earlyends.gtf" ] || [ "$OUT.earlyends.gtf" -ot "$OUT.gtf" ]; then
@@ -1666,8 +1779,8 @@ stage_all() {
     rm -f "$OUT.$st.env" "$OUT.all.env"   # all.env: the single record of builds before 2026-11-07
     say "all: $st"
     local rc=0
-    if [ -x /usr/bin/time ]; then
-      /usr/bin/time -f $'wall_s\t%e\npeak_rss_kb\t%M' -o "$OUT.$st.time.tmp" bash "$0" "$st" "${args[@]}" || rc=$?
+    if [ -n "$gtime" ]; then
+      "$gtime" -f $'wall_s\t%e\npeak_rss_kb\t%M' -o "$OUT.$st.time.tmp" bash "$0" "$st" "${args[@]}" || rc=$?
     else
       # compute nodes without GNU time (r1543 e2e, 2026-11-06): wall only, no peak RSS
       local st0=$SECONDS; bash "$0" "$st" "${args[@]}" || rc=$?; printf 'wall_s\t%s\n' "$(( SECONDS - st0 ))" > "$OUT.$st.time.tmp"
@@ -1694,9 +1807,10 @@ stage_all() {
         say "all: flag scan running in the background"
       fi
     fi
-    if [ -n "$TO_STAGE" ] && [ "$st" = "$TO_STAGE" ]; then [ "$guided_due" = 0 ] || all_guided; all_layers_wait; all_earlyends; all_capstarts; say "all: stopped after $st (--to $TO_STAGE); product $prod"; return 0; fi
+    if [ -n "$TO_STAGE" ] && [ "$st" = "$TO_STAGE" ]; then [ "$guided_due" = 0 ] || all_guided; all_layers_wait; all_names; all_earlyends; all_capstarts; say "all: stopped after $st (--to $TO_STAGE); product $prod"; return 0; fi
   done
   all_layers_wait
+  all_names
   all_earlyends
   all_capstarts
   say "all: done. stage, wall, peak memory:"
@@ -1707,7 +1821,7 @@ stage_all() {
 }
 case "$STAGE" in
   merged) stage_merged;;
-  assemble) stage_assemble; if [ -n "${GUIDE:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_guided; fi;; guided) stage_guided;; siblings) stage_siblings;; flairlike) stage_flairlike;; altends) stage_altends;; trunc5) stage_trunc5;; chainscore) stage_chainscore;; shiftdrop) stage_shiftdrop;; shortexons) stage_shortexons;; capstarts) stage_capstarts;; earlyends) stage_earlyends;; repeatloci) stage_repeatloci;; exonmap) stage_exonmap;; relatives) stage_relatives;; sdcore) stage_sdcore;; famreps) stage_famreps;; families) stage_families;; candidates) stage_candidates;; catalog) stage_catalog;;
+  assemble) stage_assemble; if [ -n "${GUIDE:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_guided; fi; if [ -n "${NAMES:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_names; fi;; guided) stage_guided;; names) stage_names;; eqclasses) stage_eqclasses;; psi) stage_psi;; siblings) stage_siblings;; oneread) stage_oneread || exit $?;; flairlike) stage_flairlike;; altends) stage_altends;; trunc5) stage_trunc5;; chainscore) stage_chainscore;; shiftdrop) stage_shiftdrop;; shortexons) stage_shortexons;; capstarts) stage_capstarts;; earlyends) stage_earlyends;; repeatloci) stage_repeatloci;; exonmap) stage_exonmap;; relatives) stage_relatives;; sdcore) stage_sdcore;; famreps) stage_famreps;; families) stage_families;; candidates) stage_candidates;; catalog) stage_catalog;;
   assign) stage_assign;; flag) stage_flag;; flag_scan) stage_flag_scan;; index) stage_index;;
   # `all`'s background flag stage: the scan, then align + verdict, whose wall goes to PREFIX.flag.time
   flag_bg) stage_flag_scan; export RP_FLAG_SCAN_DONE=1; fb0=$SECONDS; stage_flag; printf 'wall_s\t%s\n' "$(( SECONDS - fb0 ))" > "$OUT.flag.time.tmp";;
