@@ -640,6 +640,34 @@ fn trunc5_needs_the_assembly_and_then_writes_the_trunc5_gtf() {
     assert_eq!(std::fs::read_to_string(&gtf).unwrap(), "model\n");
 }
 
+/// Opt-in `chainscore` (register 1761): refuses without the assembly, then writes PREFIX.chainscore.gtf and leaves PREFIX.gtf alone.
+#[test]
+fn chainscore_needs_the_assembly_and_then_writes_the_chainscore_gtf() {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("pipeline_driver_dispatch").join("chainscore");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("create scratch dir");
+    let (out, py, inp) = (dir.join("run"), dir.join("py.sh"), dir.join("in"));
+    std::fs::write(&py, "#!/bin/bash\necho annotated > \"$7\"\necho done\n").unwrap();
+    std::fs::write(&inp, "x\n").unwrap();
+    let script = format!(
+        "set -euo pipefail\nexport RUSTLE_PYTHON='bash {py}'\nOUT={out}; BAM={inp}; FASTA={inp}; THREADS=2; RP_DRIVER_DIR=tools\nsay() {{ :; }}\n{}\nstage_chainscore\n",
+        function_block("stage_chainscore"),
+        py = py.display(),
+        out = out.display(),
+        inp = inp.display()
+    );
+    let run = || std::process::Command::new("bash").arg("-c").arg(&script).output().expect("run bash");
+    let o = run();
+    assert_eq!(o.status.code(), Some(2), "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("chainscore needs"));
+    let gtf = format!("{}.gtf", out.display());
+    std::fs::write(&gtf, "model\n").unwrap();
+    let o = run();
+    assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!(std::fs::read_to_string(format!("{}.chainscore.gtf", out.display())).unwrap(), "annotated\n");
+    assert_eq!(std::fs::read_to_string(&gtf).unwrap(), "model\n");
+}
+
 /// Opt-in `shortexons` (register 1753 / 1754 / 1757): refuses without the reads, then rewrites them, assembles the rewritten BAM through the
 /// driver itself and leaves PREFIX.gtf alone; the rewritten BAM is removed.
 #[test]
@@ -700,4 +728,35 @@ fn shiftdrop_needs_the_assembly_and_then_writes_the_shiftdrop_gtf() {
     assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stderr));
     assert_eq!(std::fs::read_to_string(format!("{}.shiftdrop.gtf", out.display())).unwrap(), "annotated\n");
     assert_eq!(std::fs::read_to_string(&gtf).unwrap(), "model\n");
+}
+
+/// Register 1761, default since 2026-11-16: the layered assembly is filtered by the chain score; RUSTLE_CHAINSCORE=0 turns it
+/// off, and a failing filter leaves PREFIX.final.gtf as the layered run wrote it.
+#[test]
+fn the_final_gtf_is_filtered_by_the_chain_score_unless_switched_off_or_failing() {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("pipeline_driver_dispatch").join("final_chainscore");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("create scratch dir");
+    let (out, py) = (dir.join("run"), dir.join("py.sh"));
+    // stand-in for chainscore.py apply MODEL GTF BAM FASTA OUT THREADS GTF2 OUT2
+    std::fs::write(&py, "#!/bin/bash\n[ -z \"${FAIL:-}\" ] || exit 1\necho scored > \"$7\"; echo filtered > \"${10}\"; echo 'x: dropped 1'\n").unwrap();
+    let fin = format!("{}.final.gtf", out.display());
+    let run = |env: &str| {
+        std::fs::write(&fin, "layered\n").unwrap();
+        let script = format!(
+            "set -euo pipefail\nexport RUSTLE_PYTHON='bash {py}' {env}\nOUT={out}; BAM=b; FASTA=f; THREADS=2; RP_DRIVER_DIR=tools\nsay() {{ echo \"$*\"; }}\n{}\nfinal_chainscore\n",
+            function_block("final_chainscore"),
+            py = py.display(),
+            out = out.display()
+        );
+        let o = std::process::Command::new("bash").arg("-c").arg(&script).output().expect("run bash");
+        assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stderr));
+        (std::fs::read_to_string(&fin).unwrap(), String::from_utf8_lossy(&o.stdout).into_owned())
+    };
+    assert_eq!(run("").0, "filtered\n");
+    assert_eq!(std::fs::read_to_string(format!("{}.chainscore.gtf", out.display())).unwrap(), "scored\n");
+    assert_eq!(run("RUSTLE_CHAINSCORE=0").0, "layered\n");
+    let (kept, said) = run("FAIL=1");
+    assert_eq!(kept, "layered\n");
+    assert!(said.contains("WARNING the chain score filter failed"), "{said}");
 }

@@ -78,6 +78,7 @@ the default products untouched:
 | `altends` | `PREFIX.altends.gtf` | 1660 |
 | `trunc5` | `PREFIX.trunc5.gtf` | 1677, 1692 |
 | `shiftdrop` | `PREFIX.shiftdrop.gtf` | 1728-1739 |
+| `chainscore` | `PREFIX.chainscore.gtf` (`PREFIX.gtf` without multi-exon chains below the fixed cut of the frozen chain score; default since 2026-11-16: the same chains are also removed from `PREFIX.final.gtf`, `RUSTLE_CHAINSCORE=0` = off) | 1677, 1760, 1761 |
 | `shortexons` | `PREFIX.shortexons.gtf` (default reassembly after reads that skip an exon of <= 15 bp are rewritten through it; needs room for a second copy of the BAM while it runs) | 1746, 1753, 1754, 1757 |
 | `repeatloci` | `PREFIX.repeat_loci.tsv` | 1698, 1702 |
 | `exonmap` | `PREFIX.fam.exonmap.columns.tsv` + one GFA per family | 1595 |

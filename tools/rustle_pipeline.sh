@@ -89,6 +89,8 @@
 #     pairs 0.795 true against 0.627 for the other family pairs (its own bar 0.90 not passed); non-coding pairs are unscored.
 #   tools/rustle_pipeline.sh trunc5 --bam B --fasta G --out PREFIX [--threads N]   OPT-IN (register 1677): PREFIX.trunc5.gtf = PREFIX.gtf without
 #                              multi-exon chains that at least as many primary reads run through and continue 5' of as end with
+#   tools/rustle_pipeline.sh chainscore --bam B --fasta G --out PREFIX [--threads N]   (register 1761; applied to PREFIX.final.gtf by default since 2026-11-16, RUSTLE_CHAINSCORE=0 = off): PREFIX.chainscore.gtf = PREFIX.gtf without
+#                              multi-exon chains whose frozen r1677 score is below the fixed cut (tools/data/chainscore_r1677.json)
 #   tools/rustle_pipeline.sh capstarts --bam B --fasta G --out PREFIX [--threads N]   (register 1717 / 1720; also a last step of `all`, RUSTLE_CAPSTARTS=0 = off; writes nothing on a library without cap G): PREFIX.capstarts.gtf = PREFIX.gtf plus
 #                              nested starts backed by >= 3 capped reads (non-templated 5' G); refuses libraries without a usable cap G
 #   tools/rustle_pipeline.sh shiftdrop --bam B --fasta G --out PREFIX [--threads N]   OPT-IN (register 1728-1730 / 1732 / 1734 / 1738 / 1739): PREFIX.shiftdrop.gtf = PREFIX.gtf without
@@ -534,7 +536,9 @@ esac
 #                                  fall under it (r1524: rescues 2-read family chains; genome-wide too broad, 68,749 chains at 1% CAT match)
 #   RUSTLE_CHECK_SPLICE=1          copy_assign --check-splice (FLAIR --check_splice on each spliced read)
 #   RUSTLE_TERMINAL_EXON_ANCHOR=N  copy_assign --terminal-exon-anchor N (bp; FLAIR --stringent's end rule is 25)
-#   RUSTLE_EXTEND_TRANSFRAGS=1     copy_assign --extend-transfrags (StringTie-style greedy extension, no flow)
+#   RUSTLE_EXTEND_TRANSFRAGS=0     DEFAULT ON since 2026-11-16 (user; register 1760: its new chains beat the default's 2-read chains
+#                                  on four unseen cell-line samples, +580 to +1,352 correct chains for -0.001 to -0.004 precision):
+#                                  copy_assign --extend-transfrags (StringTie-style greedy extension, no flow); 0 = off
 #   RUSTLE_TRANSFER_ENDS=1         copy_assign --transfer-ends (ends from reads sharing the first / last junctions)
 #   RUSTLE_READ_ISOFORM_K=K        copy_assign --read-isoform-k K (also admit a chain whose every junction >= K reads carry;
 #                                  2 = StringTie's single-read choice, register 1267; buffered reader, slower)
@@ -548,7 +552,7 @@ case "${RUSTLE_CHECK_SPLICE:-}" in ""|0) ;; 1) POLISH="$POLISH --check-splice" ;
   *) echo "[rustle_pipeline] RUSTLE_CHECK_SPLICE must be 0 or 1 (got '$RUSTLE_CHECK_SPLICE')" >&2; exit 2 ;; esac
 case "${RUSTLE_TERMINAL_EXON_ANCHOR:-}" in ""|0) ;; *[!0-9]*) echo "[rustle_pipeline] RUSTLE_TERMINAL_EXON_ANCHOR must be a whole number of bp (got '$RUSTLE_TERMINAL_EXON_ANCHOR')" >&2; exit 2 ;;
   *) POLISH="$POLISH --terminal-exon-anchor $RUSTLE_TERMINAL_EXON_ANCHOR" ;; esac
-case "${RUSTLE_EXTEND_TRANSFRAGS:-}" in ""|0) ;; 1) POLISH="$POLISH --extend-transfrags" ;;
+case "${RUSTLE_EXTEND_TRANSFRAGS:-}" in 0) ;; ""|1) POLISH="$POLISH --extend-transfrags" ;;
   *) echo "[rustle_pipeline] RUSTLE_EXTEND_TRANSFRAGS must be 0 or 1 (got '$RUSTLE_EXTEND_TRANSFRAGS')" >&2; exit 2 ;; esac
 case "${RUSTLE_TRANSFER_ENDS:-}" in ""|0) ;; 1) POLISH="$POLISH --transfer-ends" ;;
   *) echo "[rustle_pipeline] RUSTLE_TRANSFER_ENDS must be 0 or 1 (got '$RUSTLE_TRANSFER_ENDS')" >&2; exit 2 ;; esac
@@ -805,9 +809,27 @@ stage_assemble() {
     say "assemble: $(grep -c 'fusion_of "' "$OUT.gtf") bridge transcripts kept as fusion_of relations; families input $FAM_GTF"
   fi
 }
+# Register 1761, default since 2026-11-16 (user; RUSTLE_CHAINSCORE=0 = off): the layered assembly loses the multi-exon chains the
+# frozen r1677 score puts below its fixed cut. The score is computed on $OUT.gtf (what the rule was tested on; HG002 held out keeps
+# 0.972 of the correct chains, +0.026 precision over a read-count cut) and the same chain list is taken out of $OUT.final.gtf;
+# $OUT.chainscore.gtf is $OUT.gtf filtered. $OUT.gtf and the families input are never changed. A failure (no python3 with numpy and
+# pysam, say) is reported and leaves $OUT.final.gtf unfiltered.
+# shortcut: one more BAM pass after every assemble (1-2 min on a 12M-read sample); fold the features into copy_assign if it matters
+final_chainscore() {
+  [ "${RUSTLE_CHAINSCORE:-1}" != 0 ] || return 0
+  if ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/../bench/famcmp/chainscore.py" apply "$RP_DRIVER_DIR/data/chainscore_r1677.json" "$OUT.gtf" "$BAM" "$FASTA" \
+       "$OUT.chainscore.gtf.tmp" "$THREADS" "$OUT.final.gtf" "$OUT.final.gtf.tmp" > "$OUT.chainscore.log" 2>&1 && [ -s "$OUT.final.gtf.tmp" ]; then
+    mv -f "$OUT.chainscore.gtf.tmp" "$OUT.chainscore.gtf"; mv -f "$OUT.final.gtf.tmp" "$OUT.final.gtf"
+    say "assemble: chain score filter, $(grep -m1 'by the same chain list' "$OUT.chainscore.log" | sed 's/^[^:]*: //') taken out of $OUT.final.gtf ($OUT.chainscore.gtf: $(tail -1 "$OUT.chainscore.log"))"
+  else
+    rm -f "$OUT.chainscore.gtf.tmp" "$OUT.final.gtf.tmp"
+    say "assemble: WARNING the chain score filter failed (see $OUT.chainscore.log); $OUT.final.gtf is the unfiltered layered assembly"
+  fi
+}
 layered_report() {
   if [ -s "$OUT.final.gtf" ]; then
     say "assemble: $(awk -F'\t' '$3=="transcript"' "$OUT.final.gtf" | wc -l) transcripts in the layered assembly $OUT.final.gtf (log $OUT.final.log)"
+    final_chainscore
   else
     say "assemble: WARNING the layered assembly failed (see $OUT.final.log); $OUT.gtf and the families input are unaffected"
   fi
@@ -877,6 +899,16 @@ stage_famreps() {
   if [ "$A" = "$OUT.fam.copies" ]; then for e in tsv fa regions; do mv -f "$OUT.fam.copies.$e" "$OUT.fam.base.copies.$e"; done; fi
   for e in tsv fa regions; do mv -f "$r.table.$e" "$OUT.fam.copies.$e"; done
   say "famreps: $(awk 'NR>1' "$OUT.fam.base.copies.tsv" | wc -l) -> $(awk 'NR>1' "$OUT.fam.copies.tsv" | wc -l) copies ($OUT.fam.copies.tsv; the first run's table is $OUT.fam.base.copies.tsv)"
+}
+# chainscore: the named stage (register 1761); the same filter is applied to $OUT.final.gtf by default, see final_chainscore. $OUT.chainscore.gtf = $OUT.gtf minus the multi-exon chains the
+# frozen r1677 logistic score (fit on OR6737 + A119b, cut 0.061 fixed there) puts below the cut; $OUT.gtf is not touched.
+# HG002 held out: keeps 0.972 of the correct chains, precision +0.026 over a read-count cut at equal correct chains.
+stage_chainscore() {
+  [ -s "$OUT.gtf" ] && [ -s "$BAM" ] && [ -s "$FASTA" ] || { echo "[rustle_pipeline] chainscore needs $OUT.gtf (run assemble first), --bam and --fasta" >&2; exit 2; }
+  ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/../bench/famcmp/chainscore.py" apply "$RP_DRIVER_DIR/data/chainscore_r1677.json" "$OUT.gtf" "$BAM" "$FASTA" "$OUT.chainscore.gtf.tmp" "$THREADS" > "$OUT.chainscore.log" 2>&1 \
+    || { echo "[rustle_pipeline] chainscore failed (see $OUT.chainscore.log); $OUT.gtf is unaffected" >&2; rm -f "$OUT.chainscore.gtf.tmp"; exit 1; }
+  mv -f "$OUT.chainscore.gtf.tmp" "$OUT.chainscore.gtf"
+  say "chainscore: $(tail -1 "$OUT.chainscore.log") -> $OUT.chainscore.gtf"
 }
 # trunc5: OPT-IN, named only (register 1677, never part of `all`). $OUT.trunc5.gtf = $OUT.gtf minus 5' truncation chains;
 # $OUT.gtf is not touched. Failed its held-out bar on KB3781 (+0.013 over the read-count curve), so it is not a default.
@@ -1675,7 +1707,7 @@ stage_all() {
 }
 case "$STAGE" in
   merged) stage_merged;;
-  assemble) stage_assemble; if [ -n "${GUIDE:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_guided; fi;; guided) stage_guided;; siblings) stage_siblings;; flairlike) stage_flairlike;; altends) stage_altends;; trunc5) stage_trunc5;; shiftdrop) stage_shiftdrop;; shortexons) stage_shortexons;; capstarts) stage_capstarts;; earlyends) stage_earlyends;; repeatloci) stage_repeatloci;; exonmap) stage_exonmap;; relatives) stage_relatives;; sdcore) stage_sdcore;; famreps) stage_famreps;; families) stage_families;; candidates) stage_candidates;; catalog) stage_catalog;;
+  assemble) stage_assemble; if [ -n "${GUIDE:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_guided; fi;; guided) stage_guided;; siblings) stage_siblings;; flairlike) stage_flairlike;; altends) stage_altends;; trunc5) stage_trunc5;; chainscore) stage_chainscore;; shiftdrop) stage_shiftdrop;; shortexons) stage_shortexons;; capstarts) stage_capstarts;; earlyends) stage_earlyends;; repeatloci) stage_repeatloci;; exonmap) stage_exonmap;; relatives) stage_relatives;; sdcore) stage_sdcore;; famreps) stage_famreps;; families) stage_families;; candidates) stage_candidates;; catalog) stage_catalog;;
   assign) stage_assign;; flag) stage_flag;; flag_scan) stage_flag_scan;; index) stage_index;;
   # `all`'s background flag stage: the scan, then align + verdict, whose wall goes to PREFIX.flag.time
   flag_bg) stage_flag_scan; export RP_FLAG_SCAN_DONE=1; fb0=$SECONDS; stage_flag; printf 'wall_s\t%s\n' "$(( SECONDS - fb0 ))" > "$OUT.flag.time.tmp";;
