@@ -69,3 +69,7 @@ lose on OR6737 and PPY; panel precision moves by -0.0016 to +0.0049 with no cons
 annotation needed), to be promoted only if another rule removes the wrong new chains. Check on PTR through the driver:
 the same 294 units and the same 3,280 rewritten reads as this row's run; whole genome against the default assembly
 139 new chains (19 RefSeq-correct), 130 lost (8 correct); 151 s on 72 cores.
+Full-size check, A119b (96 GB BAM) through the driver, job 4473749: 2,324 s on 72 cores, work directory peak about
+180 GB and removed at the end; 1,477 units (402 search, 1,075 junction), 29,989 reads rewritten. Against the default
+assembly of row 1745 (`r1745_retained/a.R10/a.gtf`, an earlier job): 529 new chains (96 RefSeq-correct), 449 lost
+(18 correct), chain precision 0.1764 -> 0.1767.
