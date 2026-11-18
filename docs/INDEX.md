@@ -6,54 +6,55 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 
 | file | title | last commit | cited by |
 |---|---|---|---|
-| [`ADVISOR_QUESTIONS.md`](ADVISOR_QUESTIONS.md) | The advisor's standing questions — and what the codebase can answer | 2026-11-16 | memory ×1 |
+| [`ADVISOR_QUESTIONS.md`](ADVISOR_QUESTIONS.md) | The advisor's standing questions — and what the codebase can answer | 2026-11-18 | memory ×1 |
 | [`AUDIT_ROUNDS_2026-11.md`](AUDIT_ROUNDS_2026-11.md) | Audit rounds, November 2026 (ponytail-audit, goal: 100 rounds) | 2026-11-15 | memory ×1 |
 | [`DATA.md`](DATA.md) | Datasets — what they are, where they came from, how to rebuild them | 2026-11-16 | register ×1, memory ×2 |
-| [`LEDGER_GENERAL.md`](LEDGER_GENERAL.md) | Ledger: general (handoffs, pending lists, register drafts, overviews) | 2026-11-16 | — |
-| [`LEDGER_O1.md`](LEDGER_O1.md) | Ledger: O1 (family definition, assembler, locus units) | 2026-11-16 | register ×1, memory ×1 |
-| [`LEDGER_O2.md`](LEDGER_O2.md) | Ledger: O2 (copy assignment of tied reads) | 2026-11-16 | register ×1, memory ×1 |
-| [`LEDGER_O3.md`](LEDGER_O3.md) | Ledger: O3 (copies the reference lacks) | 2026-11-15 | — |
+| [`LEDGER_GENERAL.md`](LEDGER_GENERAL.md) | Ledger: general (handoffs, pending lists, register drafts, overviews) | 2026-11-18 | — |
+| [`LEDGER_O1.md`](LEDGER_O1.md) | Ledger: O1 (family definition, assembler, locus units) | 2026-11-18 | register ×1, memory ×2 |
+| [`LEDGER_O2.md`](LEDGER_O2.md) | Ledger: O2 (copy assignment of tied reads) | 2026-11-18 | register ×1, memory ×1 |
+| [`LEDGER_O3.md`](LEDGER_O3.md) | Ledger: O3 (copies the reference lacks) | 2026-11-18 | — |
 | [`MODULE_STATUS.md`](MODULE_STATUS.md) | Module status — what is SHIPPED vs what was TRIED | 2026-11-15 | — |
-| [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) | REGISTER OF NEGATIVE RESULTS (full: archive/2026-11/NEGATIVE_RESULTS_REGISTER.md:1) | 2026-11-16 | memory ×4 |
+| [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) | REGISTER OF NEGATIVE RESULTS (full: archive/2026-11/NEGATIVE_RESULTS_REGISTER.md:1) | 2026-11-18 | memory ×4 |
 | [`PERFORMANCE.md`](PERFORMANCE.md) | Pipeline performance: where the time goes and the switches that change it | 2026-11-15 | — |
 | [`README.md`](README.md) | docs/ — what is where | 2026-11-16 | memory ×1 |
 | [`REFERENCE.md`](REFERENCE.md) | REFERENCE — glossary, data locations, and a worked example | 2026-11-07 | — |
 | [`SCRIPT_INVENTORY.md`](SCRIPT_INVENTORY.md) | Script inventory (2026-11-02) | 2026-11-16 | — |
-| [`THESIS_OBJECTIVES.md`](THESIS_OBJECTIVES.md) | Thesis objectives — the current three | 2026-11-16 | — |
-| [`copy_assignment_definition.md`](copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-05 | register ×1 |
+| [`THESIS_OBJECTIVES.md`](THESIS_OBJECTIVES.md) | Thesis objectives — the current three | 2026-11-18 | — |
+| [`copy_assignment_definition.md`](copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-18 | register ×1 |
 | [`seeded_family_definition.md`](seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-08 | — |
 
-## Open studies and current handoff (225)
+## Open studies and current handoff (226)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
-| [`PRECISION_RULES_2026-11-18.md`](PRECISION_RULES_2026-11-18.md) | Precision rules on 12 samples, and the new chain score default (17-18 Nov 2026) | uncommitted | — |
-| [`PREREG_family_ties_2026-11-18.md`](PREREG_family_ties_2026-11-18.md) | PREREG r1790: are the near-tied reads concentrated in a few families? (2026-11-18) | uncommitted | register ×1 |
-| [`PREREG_splicesite_features_2026-11-18.md`](PREREG_splicesite_features_2026-11-18.md) | Row 1789: does splice-site sequence strength add precision? (pre-registered 2026-11-18) | uncommitted | register ×1 |
-| [`PREREG_testis_replication_2026-11-18.md`](PREREG_testis_replication_2026-11-18.md) | Row 1792: are the "wrong" chains the score keeps in testis real transcripts RefSeq lacks? (pre-registered 2026-11-18, di | uncommitted | register ×1 |
-| [`PREREG_tie_split_2026-11-18.md`](PREREG_tie_split_2026-11-18.md) | PREREG r1791: what the "true ties" of r1790 are (2026-11-18) | uncommitted | register ×1 |
-| [`PREREG_tsl_split_2026-11-18.md`](PREREG_tsl_split_2026-11-18.md) | PREREG r1788: assembly recovery split by Ensembl transcript support level, human A119b (2026-11-18) | uncommitted | register ×1 |
-| [`PREREG_winnowmap_orangutan_2026-11-18.md`](PREREG_winnowmap_orangutan_2026-11-18.md) | PREREG r1787: Winnowmap (stock and patched) on a second ape, with tandem copies read on their own (2026-11-18) | uncommitted | register ×1 |
-| [`TSL_SPLIT_2026-11-18.md`](TSL_SPLIT_2026-11-18.md) | Assembly recovery by Ensembl transcript support level, human samples (row 1788, 2026-11-18) | uncommitted | — |
-| [`WINNOWMAP_AND_FAMILY_TIES_2026-11-18.md`](WINNOWMAP_AND_FAMILY_TIES_2026-11-18.md) | Winnowmap at multi-copy families, and how large the assignment problem is (2026-11-17 / 18) | uncommitted | memory ×1 |
-| [`NEUTRAL_TRUTH_PLACEMENT_2026-11-17.md`](NEUTRAL_TRUTH_PLACEMENT_2026-11-17.md) | Read placement at multi-copy families on the neutral truth, and a defect in that truth (2026-11-17) | uncommitted | — |
-| [`PREREG_allele_graph_2026-11-17.md`](PREREG_allele_graph_2026-11-17.md) | PREREG r1777: assignment of near-tied reads on locus graphs built from the produced GTF and the sample's own alleles (20 | uncommitted | register ×1 |
-| [`PREREG_assign_arm_2026-11-17.md`](PREREG_assign_arm_2026-11-17.md) | PREREG r1778: our assign stage as an arm on the neutral read-origin truth, HG002 (2026-11-17) | uncommitted | register ×1 |
-| [`PREREG_bamtag_features_2026-11-17.md`](PREREG_bamtag_features_2026-11-17.md) | Row 1770: do alignment tags and CIGAR details add precision to the chain score? (pre-registered 2026-11-17) | uncommitted | register ×1 |
-| [`PREREG_denovo_cut_2026-11-17.md`](PREREG_denovo_cut_2026-11-17.md) | Row 1774: can the chain score's cut be set per sample without an annotation? (pre-registered 2026-11-17) | uncommitted | register ×1 |
-| [`PREREG_eichler_baseline_2026-11-17.md`](PREREG_eichler_baseline_2026-11-17.md) | PREREG r1775: the adapted Eichler filter as the baseline for reads of multi-copy families, and Winnowmap as an arm (2026 | uncommitted | register ×1 |
-| [`PREREG_hg002_room_2026-11-17.md`](PREREG_hg002_room_2026-11-17.md) | PREREG r1776: room for graph assignment at near ties on a sample that is not its own reference (2026-11-17) | uncommitted | register ×1 |
-| [`PREREG_multisample_precision_2026-11-17.md`](PREREG_multisample_precision_2026-11-17.md) | Row 1769: does a chain score fitted across species beat the frozen two-sample score? (pre-registered 2026-11-17) | uncommitted | register ×1, memory ×1 |
-| [`PREREG_own_psv_2026-11-17.md`](PREREG_own_psv_2026-11-17.md) | PREREG r1783: copy differences from the individual's own reads, certified against the other copy, HG002 (2026-11-17) | uncommitted | register ×1 |
-| [`PREREG_readend_features_2026-11-17.md`](PREREG_readend_features_2026-11-17.md) | Row 1771: do read-end features (cap G, clip content, end sites shared across the locus) add precision? (pre-registered 2 | uncommitted | register ×1 |
-| [`PREREG_sibling_reach_2026-11-17.md`](PREREG_sibling_reach_2026-11-17.md) | PREREG r1772: are the siblings of an expressed family member reached by its multimapping reads? (2026-11-17) | uncommitted | register ×1 |
-| [`PREREG_sibling_reverse_2026-11-17.md`](PREREG_sibling_reverse_2026-11-17.md) | PREREG r1773: which loci do a family's multimapping reads reach? (2026-11-17) | uncommitted | register ×1 |
-| [`PREREG_simulation_transfer_2026-11-17.md`](PREREG_simulation_transfer_2026-11-17.md) | Rows 1779 and 1780: does the assembler transfer to data it was never tuned on? (pre-registered 2026-11-17) | uncommitted | register ×1, memory ×1 |
-| [`PREREG_tie_ms_arm_2026-11-17.md`](PREREG_tie_ms_arm_2026-11-17.md) | PREREG r1781: the wider gate (`--tie-ms 10`) as an arm on the neutral truth, HG002 (2026-11-17) | uncommitted | register ×1 |
-| [`PREREG_truth_repair_eichler_profile_2026-11-17.md`](PREREG_truth_repair_eichler_profile_2026-11-17.md) | PREREG r1785 (repair of the neutral truth) and r1786 (how far the adapted Eichler filter carries) (2026-11-17) | uncommitted | register ×1 |
-| [`PREREG_winnowmap2_spliced_2026-11-17.md`](PREREG_winnowmap2_spliced_2026-11-17.md) | PREREG r1784: the Winnowmap2 method forced on for spliced reads, HG002 near ties (2026-11-17) | uncommitted | register ×1 |
-| [`PREREG_winnowmap_hg002_2026-11-17.md`](PREREG_winnowmap_hg002_2026-11-17.md) | PREREG r1782: Winnowmap on the near-tied reads of HG002 against CHM13 (2026-11-17) | uncommitted | register ×1 |
-| [`STEP0_seeding_band_sweep_2026-11-17.md`](STEP0_seeding_band_sweep_2026-11-17.md) | Step 0, row 1767: what do secondary alignments beyond the 0.98 band add to the assembly? (2026-11-16 / 17) | uncommitted | register ×1, memory ×1 |
+| [`PRECISION_RULES_2026-11-18.md`](PRECISION_RULES_2026-11-18.md) | Precision rules on 12 samples, and the new chain score default (17-18 Nov 2026) | 2026-11-18 | memory ×1 |
+| [`PREREG_family_ties_2026-11-18.md`](PREREG_family_ties_2026-11-18.md) | PREREG r1790: are the near-tied reads concentrated in a few families? (2026-11-18) | 2026-11-18 | register ×1 |
+| [`PREREG_famwise_origin_2026-11-18.md`](PREREG_famwise_origin_2026-11-18.md) | PREREG r1796 / r1794 / r1795: the family-wise layer against the origin of the reads (2026-11-18) | uncommitted | register ×1, memory ×1 |
+| [`PREREG_splicesite_features_2026-11-18.md`](PREREG_splicesite_features_2026-11-18.md) | Row 1789: does splice-site sequence strength add precision? (pre-registered 2026-11-18) | 2026-11-18 | register ×1 |
+| [`PREREG_testis_replication_2026-11-18.md`](PREREG_testis_replication_2026-11-18.md) | Row 1792: are the "wrong" chains the score keeps in testis real transcripts RefSeq lacks? (pre-registered 2026-11-18, di | 2026-11-18 | register ×1 |
+| [`PREREG_tie_split_2026-11-18.md`](PREREG_tie_split_2026-11-18.md) | PREREG r1791: what the "true ties" of r1790 are (2026-11-18) | 2026-11-18 | register ×1 |
+| [`PREREG_tsl_split_2026-11-18.md`](PREREG_tsl_split_2026-11-18.md) | PREREG r1788: assembly recovery split by Ensembl transcript support level, human A119b (2026-11-18) | 2026-11-18 | register ×1 |
+| [`PREREG_winnowmap_orangutan_2026-11-18.md`](PREREG_winnowmap_orangutan_2026-11-18.md) | PREREG r1787: Winnowmap (stock and patched) on a second ape, with tandem copies read on their own (2026-11-18) | 2026-11-18 | register ×1 |
+| [`TSL_SPLIT_2026-11-18.md`](TSL_SPLIT_2026-11-18.md) | Assembly recovery by Ensembl transcript support level, human samples (row 1788, 2026-11-18) | 2026-11-18 | — |
+| [`WINNOWMAP_AND_FAMILY_TIES_2026-11-18.md`](WINNOWMAP_AND_FAMILY_TIES_2026-11-18.md) | Winnowmap at multi-copy families, and how large the assignment problem is (2026-11-17 / 18) | 2026-11-18 | memory ×1 |
+| [`NEUTRAL_TRUTH_PLACEMENT_2026-11-17.md`](NEUTRAL_TRUTH_PLACEMENT_2026-11-17.md) | Read placement at multi-copy families on the neutral truth, and a defect in that truth (2026-11-17) | 2026-11-18 | — |
+| [`PREREG_allele_graph_2026-11-17.md`](PREREG_allele_graph_2026-11-17.md) | PREREG r1777: assignment of near-tied reads on locus graphs built from the produced GTF and the sample's own alleles (20 | 2026-11-18 | register ×1 |
+| [`PREREG_assign_arm_2026-11-17.md`](PREREG_assign_arm_2026-11-17.md) | PREREG r1778: our assign stage as an arm on the neutral read-origin truth, HG002 (2026-11-17) | 2026-11-18 | register ×1 |
+| [`PREREG_bamtag_features_2026-11-17.md`](PREREG_bamtag_features_2026-11-17.md) | Row 1770: do alignment tags and CIGAR details add precision to the chain score? (pre-registered 2026-11-17) | 2026-11-18 | register ×1 |
+| [`PREREG_denovo_cut_2026-11-17.md`](PREREG_denovo_cut_2026-11-17.md) | Row 1774: can the chain score's cut be set per sample without an annotation? (pre-registered 2026-11-17) | 2026-11-18 | register ×1 |
+| [`PREREG_eichler_baseline_2026-11-17.md`](PREREG_eichler_baseline_2026-11-17.md) | PREREG r1775: the adapted Eichler filter as the baseline for reads of multi-copy families, and Winnowmap as an arm (2026 | 2026-11-18 | register ×1 |
+| [`PREREG_hg002_room_2026-11-17.md`](PREREG_hg002_room_2026-11-17.md) | PREREG r1776: room for graph assignment at near ties on a sample that is not its own reference (2026-11-17) | 2026-11-18 | register ×1 |
+| [`PREREG_multisample_precision_2026-11-17.md`](PREREG_multisample_precision_2026-11-17.md) | Row 1769: does a chain score fitted across species beat the frozen two-sample score? (pre-registered 2026-11-17) | 2026-11-18 | register ×1, memory ×1 |
+| [`PREREG_own_psv_2026-11-17.md`](PREREG_own_psv_2026-11-17.md) | PREREG r1783: copy differences from the individual's own reads, certified against the other copy, HG002 (2026-11-17) | 2026-11-18 | register ×1 |
+| [`PREREG_readend_features_2026-11-17.md`](PREREG_readend_features_2026-11-17.md) | Row 1771: do read-end features (cap G, clip content, end sites shared across the locus) add precision? (pre-registered 2 | 2026-11-18 | register ×1 |
+| [`PREREG_sibling_reach_2026-11-17.md`](PREREG_sibling_reach_2026-11-17.md) | PREREG r1772: are the siblings of an expressed family member reached by its multimapping reads? (2026-11-17) | 2026-11-18 | register ×1 |
+| [`PREREG_sibling_reverse_2026-11-17.md`](PREREG_sibling_reverse_2026-11-17.md) | PREREG r1773: which loci do a family's multimapping reads reach? (2026-11-17) | 2026-11-18 | register ×1 |
+| [`PREREG_simulation_transfer_2026-11-17.md`](PREREG_simulation_transfer_2026-11-17.md) | Rows 1779 and 1780: does the assembler transfer to data it was never tuned on? (pre-registered 2026-11-17) | 2026-11-18 | register ×1, memory ×1 |
+| [`PREREG_tie_ms_arm_2026-11-17.md`](PREREG_tie_ms_arm_2026-11-17.md) | PREREG r1781: the wider gate (`--tie-ms 10`) as an arm on the neutral truth, HG002 (2026-11-17) | 2026-11-18 | register ×1 |
+| [`PREREG_truth_repair_eichler_profile_2026-11-17.md`](PREREG_truth_repair_eichler_profile_2026-11-17.md) | PREREG r1785 (repair of the neutral truth) and r1786 (how far the adapted Eichler filter carries) (2026-11-17) | 2026-11-18 | register ×1 |
+| [`PREREG_winnowmap2_spliced_2026-11-17.md`](PREREG_winnowmap2_spliced_2026-11-17.md) | PREREG r1784: the Winnowmap2 method forced on for spliced reads, HG002 near ties (2026-11-17) | 2026-11-18 | register ×1 |
+| [`PREREG_winnowmap_hg002_2026-11-17.md`](PREREG_winnowmap_hg002_2026-11-17.md) | PREREG r1782: Winnowmap on the near-tied reads of HG002 against CHM13 (2026-11-17) | 2026-11-18 | register ×1 |
+| [`STEP0_seeding_band_sweep_2026-11-17.md`](STEP0_seeding_band_sweep_2026-11-17.md) | Step 0, row 1767: what do secondary alignments beyond the 0.98 band add to the assembly? (2026-11-16 / 17) | 2026-11-18 | register ×1, memory ×1 |
 | [`FAMILY_WISE_REVIEW_2026-11-16.md`](FAMILY_WISE_REVIEW_2026-11-16.md) | Family-wise assembly review, and the `names` / `eqclasses` / `psi` stages (2026-11-16) | 2026-11-16 | memory ×2 |
 | [`PREREG_bundle_jaccard_2026-11-16.md`](PREREG_bundle_jaccard_2026-11-16.md) | PREREG row 1762: read-set Jaccard between de novo bundles as the family rule (2026-11-16) | 2026-11-16 | register ×1 |
 | [`PREREG_cellline_opt_ins_2026-11-16.md`](PREREG_cellline_opt_ins_2026-11-16.md) | PREREG: three assembly opt-ins on four unseen cell-line samples, with a promotion rule (2026-11-16, register 1760) | 2026-11-16 | register ×1 |
@@ -257,6 +258,16 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 
 | file | title | last commit | cited by |
 |---|---|---|---|
+| [`copy_assignment_definition.md`](archive/2026-11/copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-18 | register ×1 |
+| [`THESIS_OBJECTIVES.md`](archive/2026-11/THESIS_OBJECTIVES.md) | Thesis objectives — the current three | 2026-11-18 | — |
+| [`NEGATIVE_RESULTS_REGISTER.md`](archive/2026-11/NEGATIVE_RESULTS_REGISTER.md) | REGISTER OF NEGATIVE RESULTS | 2026-11-18 | register ×1720, memory ×4 |
+| [`MEMORY_DIGEST.md`](archive/2026-11/MEMORY_DIGEST.md) | Memory digest — the long form of the memory index | 2026-11-18 | — |
+| [`LEDGER_O3.md`](archive/2026-11/LEDGER_O3.md) | Ledger: O3 (copies the reference lacks) | 2026-11-18 | — |
+| [`LEDGER_O2.md`](archive/2026-11/LEDGER_O2.md) | Ledger: O2 (copy assignment of tied reads) | 2026-11-18 | register ×1, memory ×1 |
+| [`LEDGER_O1.md`](archive/2026-11/LEDGER_O1.md) | Ledger: O1 (family definition, assembler, locus units) | 2026-11-18 | register ×1, memory ×2 |
+| [`LEDGER_GENERAL.md`](archive/2026-11/LEDGER_GENERAL.md) | Ledger: general (handoffs, pending lists, register drafts, overviews) | 2026-11-18 | — |
+| [`CHAPTER_O1_O2_COMPOSITION_DRAFT.md`](archive/2026-11/CHAPTER_O1_O2_COMPOSITION_DRAFT.md) | O1 → O2 by composition: families of transcribed loci, and assignment among exactly those loci (draft, 2026-09-05) | 2026-11-18 | — |
+| [`ADVISOR_QUESTIONS.md`](archive/2026-11/ADVISOR_QUESTIONS.md) | The advisor's standing questions — and what the codebase can answer | 2026-11-18 | memory ×1 |
 | [`PREREG_strand_vote_dup_zmw_2026-11-04.md`](archive/2026-11/PREREG_strand_vote_dup_zmw_2026-11-04.md) | PREREG r1525: ship the strand vote; narrow the duplicate rule to different ZMWs | 2026-11-04 | register ×1 |
 | [`PREREG_family_mode_tied_seed_2026-11-04.md`](archive/2026-11/PREREG_family_mode_tied_seed_2026-11-04.md) | PREREG r1523: family-wide assembly mode (tied-seed members + fused-model cuts), judged on the r1521 panel | 2026-11-04 | register ×1 |
 | [`PREREG_base_family_misses_2026-11-04.md`](archive/2026-11/PREREG_base_family_misses_2026-11-04.md) | PREREG r1524: recover the base-mode family misses (strand vote, pass-1 drop, catalog-family cut) | 2026-11-04 | register ×1 |
@@ -271,7 +282,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_o2_primary_on_family_2026-11-03.md`](archive/2026-11/PREREG_o2_primary_on_family_2026-11-03.md) | PREREG O2 PRIMARY-ON-FAMILY GUARD (register 1514, 2026-11-03) | 2026-11-03 | register ×1 |
 | [`PREREG_o2_ms_tie_proof_2026-11-03.md`](archive/2026-11/PREREG_o2_ms_tie_proof_2026-11-03.md) | PREREG O2 MS-TIE PROOF (register 1509, 2026-11-03) | 2026-11-03 | register ×1 |
 | [`PREREG_o2_ms_tie_heldout_2026-11-03.md`](archive/2026-11/PREREG_o2_ms_tie_heldout_2026-11-03.md) | PREREG O2 MS-TIE HELD-OUT (register 1510, 2026-11-03) | 2026-11-03 | register ×1 |
-| [`PREREG_o2_contested_census_2026-11-03.md`](archive/2026-11/PREREG_o2_contested_census_2026-11-03.md) | PREREG O2 CONTESTED CENSUS (register 1508, 2026-11-03) | 2026-11-03 | register ×1 |
+| [`PREREG_o2_contested_census_2026-11-03.md`](archive/2026-11/PREREG_o2_contested_census_2026-11-03.md) | PREREG O2 CONTESTED CENSUS (register 1508, 2026-11-03) | 2026-11-18 | register ×1 |
 | [`PREREG_isocon_only_2026-11-03.md`](archive/2026-11/PREREG_isocon_only_2026-11-03.md) | PREREG ISOCON-ONLY TRANSCRIPTS (register 1515, 2026-11-03) | 2026-11-04 | register ×1 |
 | [`PREREG_family_panel_tools_2026-11-03.md`](archive/2026-11/PREREG_family_panel_tools_2026-11-03.md) | PREREG FAMILY PANEL ACROSS TOOLS (register 1521, 2026-11-03; descriptive, predictions stated) | 2026-11-04 | register ×1 |
 | [`PREREG_truth_split_collapsed_2026-11-02.md`](archive/2026-11/PREREG_truth_split_collapsed_2026-11-02.md) | PREREG TRUTH SPLIT COLLAPSED (register 1494, 2026-11-02) | 2026-11-03 | register ×1 |
@@ -291,20 +302,10 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`ANNOT_CAT_VS_REFSEQ_2026-11-02.md`](archive/2026-11/ANNOT_CAT_VS_REFSEQ_2026-11-02.md) | CHM13 CAT/Liftoff vs NCBI RefSeq (native CHM13): why they differ (2026-11-02, descriptive, no decision rule) | 2026-11-03 | — |
 | [`seeded_family_definition.md`](archive/2026-11/seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-01 | — |
 | [`o1_ledger.md`](archive/2026-11/o1_ledger.md) | O1 LEDGER — what has and has not worked | 2026-11-01 | — |
-| [`copy_assignment_definition.md`](archive/2026-11/copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-01 | register ×1 |
-| [`THESIS_OBJECTIVES.md`](archive/2026-11/THESIS_OBJECTIVES.md) | Thesis objectives — the current three | 2026-11-01 | — |
 | [`REFERENCE.md`](archive/2026-11/REFERENCE.md) | REFERENCE — glossary, data locations, and a worked example | 2026-11-01 | — |
 | [`PREREG_sqanti_single_copy_2026-11-01.md`](archive/2026-11/PREREG_sqanti_single_copy_2026-11-01.md) | Pre-registration: SQANTI3 on single-copy genes, our plain assembly vs StringTie, FLAIR and IsoCon (A119b chr20, 2026-11- | 2026-11-03 | — |
 | [`PREREG_assembly_ends_2026-11-01.md`](archive/2026-11/PREREG_assembly_ends_2026-11-01.md) | PREREG ASSEMBLY ENDS (2026-11-01, register 1485 / 1486) | 2026-11-03 | register ×3 |
 | [`O3_STATUS.md`](archive/2026-11/O3_STATUS.md) | O3 — reference-absent copies: the evidence, and what it does and does not support | 2026-11-01 | — |
-| [`NEGATIVE_RESULTS_REGISTER.md`](archive/2026-11/NEGATIVE_RESULTS_REGISTER.md) | REGISTER OF NEGATIVE RESULTS | 2026-11-01 | register ×1720, memory ×4 |
-| [`MEMORY_DIGEST.md`](archive/2026-11/MEMORY_DIGEST.md) | Memory digest — the long form of the memory index | 2026-11-01 | — |
-| [`LEDGER_O3.md`](archive/2026-11/LEDGER_O3.md) | Ledger: O3 (copies the reference lacks) | 2026-11-01 | — |
-| [`LEDGER_O2.md`](archive/2026-11/LEDGER_O2.md) | Ledger: O2 (copy assignment of tied reads) | 2026-11-01 | register ×1, memory ×1 |
-| [`LEDGER_O1.md`](archive/2026-11/LEDGER_O1.md) | Ledger: O1 (family definition, assembler, locus units) | 2026-11-01 | register ×1, memory ×1 |
-| [`LEDGER_GENERAL.md`](archive/2026-11/LEDGER_GENERAL.md) | Ledger: general (handoffs, pending lists, register drafts, overviews) | 2026-11-01 | — |
-| [`CHAPTER_O1_O2_COMPOSITION_DRAFT.md`](archive/2026-11/CHAPTER_O1_O2_COMPOSITION_DRAFT.md) | O1 → O2 by composition: families of transcribed loci, and assignment among exactly those loci (draft, 2026-09-05) | 2026-11-01 | — |
-| [`ADVISOR_QUESTIONS.md`](archive/2026-11/ADVISOR_QUESTIONS.md) | The advisor's standing questions — and what the codebase can answer | 2026-11-01 | memory ×1 |
 | [`ACTIVE_WORKING_SET.md`](archive/2026-11/ACTIVE_WORKING_SET.md) | Active working set — what is actually in use (2026-09-19; wave 4 applied 2026-09-23) | 2026-11-01 | — |
 | [`STATUS_O2_O3_2026-10-24.md`](archive/2026-11/STATUS_O2_O3_2026-10-24.md) | O2 / O3 status, 2026-10-24 (main; o3-fast merged) | 2026-11-01 | — |
 
@@ -414,7 +415,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_liftoff_loci_2026-09-25.md`](archive/2026-09/PREREG_liftoff_loci_2026-09-25.md) | Pre-registration: loci in the Liftoff framework (Figure 8) | 2026-10-15 | — |
 | [`PREREG_guided_transcript_comparison_2026-09-25.md`](archive/2026-09/PREREG_guided_transcript_comparison_2026-09-25.md) | Pre-registration: annotation-guided transcript comparison (figures 1-3, guided path) — 2026-09-25 | 2026-10-07 | — |
 | [`PREREG_genome_wide_families_2026-09-25.md`](archive/2026-09/PREREG_genome_wide_families_2026-09-25.md) | Pre-registration: genome-wide family definition on every sample (Figures 6 and 7) | 2026-10-07 | — |
-| [`PREREG_genome_wide_copy_assignment_2026-09-25.md`](archive/2026-09/PREREG_genome_wide_copy_assignment_2026-09-25.md) | Pre-registration: genome-wide copy assignment on every sample (Figures 4 and 5) | 2026-10-07 | — |
+| [`PREREG_genome_wide_copy_assignment_2026-09-25.md`](archive/2026-09/PREREG_genome_wide_copy_assignment_2026-09-25.md) | Pre-registration: genome-wide copy assignment on every sample (Figures 4 and 5) | 2026-11-18 | — |
 | [`PREREG_families_copy_table_2026-09-25.md`](archive/2026-09/PREREG_families_copy_table_2026-09-25.md) | Pre-registration: the families stage writes the copy table that copy assignment consumes (parity checks) | 2026-10-07 | — |
 | [`O3_WGS_TRIO_CN_2026-09-25.md`](archive/2026-09/O3_WGS_TRIO_CN_2026-09-25.md) | O3 — between-individual copy number: RNA cannot see it, DNA can (2026-09-25) | 2026-10-07 | — |
 | [`ADVISOR_JACCARD_ANCHORS_2026-09-25.md`](archive/2026-09/ADVISOR_JACCARD_ANCHORS_2026-09-25.md) | Advisor's proposal: read-Jaccard + multimapper chaining anchors instead of exon sums | 2026-10-07 | — |
@@ -468,7 +469,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`NODE_CONSTRUCTION_OVERMERGE_2026-09-21.md`](archive/2026-09/NODE_CONSTRUCTION_OVERMERGE_2026-09-21.md) | Node construction: the de novo defect is OVER-merge, not fragmentation | 2026-10-07 | — |
 | [`NEIGHBOURHOOD_JACCARD_RESULT_2026-09-21.md`](archive/2026-09/NEIGHBOURHOOD_JACCARD_RESULT_2026-09-21.md) | Neighbourhood Jaccard — a real connectivity metric, and exactly where it is blind | 2026-10-07 | — |
 | [`FALSE_NEGATIVE_RULES_RESULT_2026-09-21.md`](archive/2026-09/FALSE_NEGATIVE_RULES_RESULT_2026-09-21.md) | False negatives: where they are, and why the obvious rules do not transfer | 2026-10-07 | — |
-| [`EICHLER_COMPARISON_2026-09-21.md`](archive/2026-09/EICHLER_COMPARISON_2026-09-21.md) | The AS-margin rule adapted from the Eichler lab's filter, computed alongside ours | 2026-10-07 | — |
+| [`EICHLER_COMPARISON_2026-09-21.md`](archive/2026-09/EICHLER_COMPARISON_2026-09-21.md) | The AS-margin rule adapted from the Eichler lab's filter, computed alongside ours | 2026-11-18 | — |
 | [`COVER_AND_JN_DEFINITION_2026-09-21.md`](archive/2026-09/COVER_AND_JN_DEFINITION_2026-09-21.md) | Two candidate definitions tested: cover prediction, and J_N as an MCL weight | 2026-10-07 | — |
 | [`VG_CONTAINMENT_RESULT_2026-09-20.md`](archive/2026-09/VG_CONTAINMENT_RESULT_2026-09-20.md) | Would a variation graph solve the containment problem? — No, and the number says why | 2026-10-07 | — |
 | [`SLIM_REGRESSION_2026-09-20.md`](archive/2026-09/SLIM_REGRESSION_2026-09-20.md) | Does the slimmed codebase still produce the recorded numbers? | 2026-10-07 | — |

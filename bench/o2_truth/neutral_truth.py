@@ -20,8 +20,12 @@ COMP = str.maketrans('ACGTNacgtn', 'TGCANtgcan')
 CAPS = {'S0': 5000, 'S1': 30000, 'S2': 30000}; MAXLOCI = 12; TH = int(os.environ.get('NT_THREADS', os.cpu_count()))
 if os.environ.get('NT_CAP'): CAPS = {k: int(os.environ['NT_CAP']) for k in CAPS}  # smoke test
 
+def selected(name, pct, offset=0):
+    """hash sample of the reads: residues offset .. offset + pct - 1 of 100 (another offset = reads not yet looked at)"""
+    return (int(hashlib.sha256(name.encode()).hexdigest()[:8], 16) - offset) % 100 < pct
+
 def select(bam_path, out):
-    PCT = int(os.environ.get('NT_SELECT_PCT', 100))  # hash sample of the selected reads, for deep samples
+    PCT = int(os.environ.get('NT_SELECT_PCT', 100)); OFFSET = int(os.environ.get('NT_SELECT_OFFSET', 0))  # hash sample of the selected reads, for deep samples
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'denovo_eval'))
     import famtruth as F
     G = F.load_genes(os.environ.get('PANEL_SPECIES', 'human'))
@@ -37,7 +41,7 @@ def select(bam_path, out):
                     if r.is_reverse == (v['strand'] == '+'): continue
                     if not any(a < y and x < b for a, b in r.get_blocks() for x, y in v['exons']): continue
                     seen.add(r.query_name)
-                    if int(hashlib.sha256(r.query_name.encode()).hexdigest()[:8], 16) % 100 >= PCT: continue
+                    if not selected(r.query_name, PCT, OFFSET): continue
                     s = r.query_sequence
                     if r.is_reverse: s = s.translate(COMP)[::-1]
                     w.write(f">{r.query_name}\n{s}\n"); n += 1

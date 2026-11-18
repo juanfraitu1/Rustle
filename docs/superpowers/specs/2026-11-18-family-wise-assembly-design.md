@@ -174,6 +174,27 @@ does not judge; E1 reports it with both bounds.
 The exact band is the statement (it keeps what the aligner decided and widens only at true ties); the within-10 band is
 the envelope the truth should lie in. No single window is right for both kinds, hence two bands and four statuses.
 
+### The same table with the registered statement, on `ms` and on AS (2026-11-18)
+Scorer `bench/famwise_eval/origin_score.py` on reads already seen (`r1796_famwise_origin/{hg_seen,kb,pab}`); near-tied =
+the two best places within 10 on the score; statement = the primary plus every record within the window of the
+molecule's best. Per score: molecules | equals: primary alone / exact band / within 10 | no true copy in it.
+
+| sample, truth kind | `ms`: molecules | equals | no true copy | AS: molecules | equals | no true copy |
+|---|---|---|---|---|---|---|
+| HG002 on CHM13 (first quarter), one origin | 440 | 0.90 / 0.82 / 0.00 | 44 / 24 / 1 | 600 | 0.92 / 0.67 / 0.00 | 47 / 22 / 3 |
+| HG002 on CHM13 (first quarter), fits several own copies | 2,940 | 0.00 / 0.82 / 0.96 | 1 / 1 / 1 | 2,944 | 0.00 / 0.82 / 0.96 | 1 / 1 / 1 |
+| KB3781, one origin | 13 | 0.62 / 0.62 / 0.00 | 5 / 3 / 0 | 45 | 0.89 / 0.58 / 0.00 | 5 / 3 / 0 |
+| KB3781, tie (not split) | 788 | 0.00 / 0.07 / 0.99 | 0 / 0 / 0 | 786 | 0.00 / 0.07 / 0.99 | 0 / 0 / 0 |
+| orangutan AG06213, one origin | 4 | 1.00 / 1.00 / 0.00 | 0 / 0 / 0 | 173 | 1.00 / 0.43 / 0.00 | 0 / 0 / 0 |
+| orangutan AG06213, tie (not split) | 88 | 0.00 / 0.23 / 0.97 | 0 / 0 / 0 | 89 | 0.00 / 0.25 / 0.96 | 0 / 0 / 0 |
+
+The tie rows, the near-tie counts and the primary's shares of the table above are reproduced on AS. Its one-origin cells
+for the exact band and within 10 are not (HG002: 0.67 and 0 here against 0.90 and 0.15): that probe used another
+statement. With this one a molecule whose two best places are within 10 always states two places within 10, and on
+one-origin molecules the primary alone is the better statement; the exact band gains only where the molecule truly fits
+several copies. Fewer one-origin molecules are near-tied on `ms` than on AS (440 against 600, 13 against 45, 4 against
+173): the score the aligner ranks on separates them more often.
+
 ### Stage output (2026-11-18)
 The stage as built (`tools/famwise.py`, switch `--famwise` of `tools/eq_classes.py`), whole samples, on the default
 assemblies of 2026-11-16, bands on `ms`. Command: `bash tools/rustle_pipeline.sh famwise --bam B --fasta G --out PREFIX
