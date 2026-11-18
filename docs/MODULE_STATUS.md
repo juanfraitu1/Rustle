@@ -1,7 +1,8 @@
 # Module status — what is SHIPPED vs what was TRIED
 
-Enforced by `module_status_tests`: every module must carry a `//! **STATUS:** <TAG>` line, and
-this file must list exactly the module set.
+Enforced by `module_status_tests` for the nine top-level modules of `src/family.rs` only: each must carry a
+`//! **STATUS:** <TAG>` line and be named in the table below. The status column and the other crate modules (`bam`,
+`genome`, `types`, `end_artifacts`, `sample_counts`, `guide`, `copy_phasing`, `sedef`) are kept by hand.
 
 ## Consolidated module registry (2026-10-05)
 
@@ -15,7 +16,7 @@ this file must list exactly the module set.
 | `family_hierarchy.rs` | **OPT-IN** | `mcl_families --emit-hierarchy` (2026-10-09): superfamily / family / expansion / duplicon layers, SD components, fusion loci, external families placed by containment (`docs/archive/2026-11/LEDGER_O1.md:2850 (PREREG_family_hierarchy_flag_2026-10-09.md)`). Annotation only. |
 | `family_detect.rs` | **SHIPPED-DEFAULT** | Strand-aware de-novo family detection; includes `family_graph`, `family_split`, `mosaic`, `read_conflict`, `family_rescue`. |
 | `missing_copy.rs` | **OTHER-BINARY** | O3 RNA-only chain used by `missing_copy_flag` binary. |
-| `candidates.rs` | **OTHER-BINARY** | Candidate copies and reference-absent copy admission; used by `candidate_copies` binary. |
+| `candidates.rs` | **OPT-IN** | Candidate copies and reference-absent copy admission; used by `candidate_copies` binary. |
 
 **Vendored crate, not a family module:** `src/sedef/` (sedef-rs, segmental duplications; vendored 2026-10-13 from
 the user's sandbox) — OTHER-BINARY: `utilities sd-scan` and the driver's `sd` stage; an opt-in input of

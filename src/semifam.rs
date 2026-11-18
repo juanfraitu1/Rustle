@@ -271,14 +271,13 @@ fn main() -> Result<()> {
         wt.flush()?;
         wr.flush()?;
     }
-    let out = std::process::Command::new("minimap2")
+    let out = std::process::Command::new(std::env::var("RUSTLE_MINIMAP2").unwrap_or_else(|_| "minimap2".into()))
         .args(["-c", "-x", "splice", "--secondary=yes", "-N", "200", "-p", "0.05", "-t", &args.threads.to_string()])
         .arg(tmp.join("reg.fa"))
         .arg(tmp.join("tpl.fa"))
-        .stderr(std::process::Stdio::null())
         .output()
         .context("running minimap2")?;
-    anyhow::ensure!(out.status.success(), "minimap2 failed");
+    anyhow::ensure!(out.status.success(), "minimap2 failed: {}", String::from_utf8_lossy(&out.stderr));
     // best alignment per candidate: max cov x identity, first wins on ties
     let mut best: HashMap<usize, (f64, f64, char, Vec<(i64, i64)>)> = HashMap::new();
     for line in String::from_utf8_lossy(&out.stdout).lines() {

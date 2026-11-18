@@ -697,7 +697,10 @@ def plan_shards(bam, cat_tsv, cat_fa, contigs: list, out_dir: Path, *, kind: str
                     best = (gap, sm[0])
             uf.union(i, best[1])
     # (b) reads
-    hashes, cids, counts = link_pieces(bam, clusters, out_dir / "links", deadline=deadline)
+    # keyed by the BAM and the clusters: pieces of an earlier catalog (renumbered cluster ids) used to be loaded as they were
+    bst = os.stat(bam)
+    lk = hashlib.md5(json.dumps([str(bam), bst.st_size, int(bst.st_mtime), clusters], sort_keys=True, default=str).encode()).hexdigest()[:12]
+    hashes, cids, counts = link_pieces(bam, clusters, out_dir / "links" / lk, deadline=deadline)
     rep = {cid: m[0] for cid, m in cl_members.items()}
     import numpy as np
     if hashes and sum(len(h) for h in hashes):

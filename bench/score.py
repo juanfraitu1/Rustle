@@ -289,7 +289,7 @@ def pairs_referee_bands(a, gene_of, kind, tpath):
     for k, b in truth.items():
         by[b][1] += 1; by[b][0] += (k in pairs)
     jd = {k for k in pairs if all(g in fam for g in k)}; tp = sum(1 for k in jd if len({fam[g] for g in k}) == 1)
-    big = max(cg.items(), key=lambda x: len(x[1]))[1]
+    big = max(cg.values(), key=len, default=set())
     comp = collections.Counter(fam.get(g, NO_FAMILY) for g in sorted(big))
     order = ['>=90', '80-90', '70-80', '60-70', '<60', 'none']
     rec = ' · '.join(f"{b} {by[b][0]}/{by[b][1]}" for b in order if b in by)
@@ -816,7 +816,7 @@ def report_referee(ours, sot, ref):
         print(f"  {name:12s} {p:>10.3f} {r:>8.3f} {f:>8.3f} {np_:>13} {tp:>6}")
     print(f"\n  (same-family pairs available: {lib.pair_scores(ours, ref)[4]})")
 
-    print("\nstratified by protein-homology family size — 'in any part':")
+    print("\nstratified by protein-homology family size — pairs with both genes in the size class (a false pair across classes is in no row):")
     print(f"  {'family size':>13} {'genes':>6} {'OURS prec':>10} {'SOTO prec':>10} {'OURS rec':>9} {'SOTO rec':>9}")
     byr = collections.defaultdict(list)
     for g, f in ref.items():
@@ -960,10 +960,11 @@ def cmd_rna_ceiling(a):
                 fh.write(f'>{g}\n{s}\n')
     paf = a.out + '.rna.paf'
     if not os.path.exists(paf):
-        with open(paf, 'w') as fh:
+        with open(paf + '.tmp', 'w') as fh:
             subprocess.run(['minimap2', '-x', 'asm20', '-c', '-X', '-N', '50', '-p', '0.1',
                             '-t', str(a.threads), rna, rna], stdout=fh,
                            stderr=subprocess.DEVNULL, check=True)
+        os.replace(paf + '.tmp', paf)   # an interrupted minimap2 must not leave a partial PAF the rerun reuses
 
     # §6o9's own two gates: "align at all", and the shipped edge gate id >= 0.80 AND cov >= 0.50
     aligned, gated = set(), set()
@@ -1039,7 +1040,7 @@ def cmd_members(a):
         if gid and gn:
             name_of_gid[gid.group(1)] = gn.group(1)
     out = os.path.splitext(gtf)[0] + '.gc'
-    subprocess.run(['gffcompare', '-r', ref, '-o', out, gtf], capture_output=True, text=True)
+    subprocess.run(['gffcompare', '-r', ref, '-o', out, gtf], capture_output=True, text=True, check=True)  # a failed run used to score an old tmap
     tmap = [p for p in os.listdir(os.path.dirname(gtf) or '.') if p.startswith(os.path.basename(out)) and p.endswith('.tmap')]
     tmap = os.path.join(os.path.dirname(gtf) or '.', tmap[0])
     best = collections.defaultdict(set); ntx_gene = collections.Counter()
@@ -1288,14 +1289,6 @@ def _eichler_legacy(a):
 EICHLER_THRESHOLDS = (1, 10, 20)
 # the six strata of docs/archive/2026-09/PREREG_genome_wide_copy_assignment_2026-09-25.md, Amendment 2 (C.2), in display order
 MR_STRATA = ['both_same', 'both_differ', 'margin_only', 'rustle_aligner', 'rustle_test', 'neither']
-MR_STRATUM_LABEL = {
-    'both_same': 'both assign, same placement',
-    'both_differ': 'both assign, different placement',
-    'margin_only': 'margin rule only',
-    'rustle_aligner': "Rustle only: the aligner's placement (MAPQ > 0)",
-    'rustle_test': 'Rustle only: the copy-assignment test (MAPQ 0)',
-    'neither': 'neither',
-}
 MR_READINGS = {'u': 'union test', 's': 'test scored in the source family*'}
 MR_SIM_HEADER = ['read_name', 'true_family', 'true_copy', 'identity', 'mapq', 'n_aln', 'best_as', 'second_as',
                  'margin', 'mr_copy', 'mr_verdict', 'primary_copy', 'primary_verdict', 'primary_is_best',
@@ -2133,14 +2126,6 @@ def cmd_bakeoff_compare(a):
     print(f"   {ours_l:10s} copies {len(cov[ours_l])}: {sorted(cov[ours_l])}")
     # P6 copy attribution of the O2-assigned
     asg = strata["    assigned"]
-    if a.gtf:
-        tx_copy = {}   # read but not reported (kept as in the old script)
-        for line in open(a.gtf):
-            if "\ttranscript\t" not in line:
-                continue
-            t = re.search(r'transcript_id "([^"]+)"', line); ci = re.search(r'copy_index "([^"]+)"', line)
-            if t and ci:
-                tx_copy[t.group(1)] = ci.group(1)
     print(f"\nP6 the {len(asg)} O2-assigned molecules (report):")
     for l, c in tools:
         one = [m for m in asg if c.get(m, ("derived_none", []))[0] == "derived_one"]

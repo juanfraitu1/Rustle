@@ -66,7 +66,7 @@ impl GenomeIndex {
                     current = None;
                     continue;
                 }
-                seqs.entry(name.clone()).or_default();
+                anyhow::ensure!(seqs.insert(name.clone(), Vec::new()).is_none(), "{path}: two FASTA records are named {name}");
                 current = Some(name);
             } else if let Some(chr) = current.as_ref() {
                 let seq = seqs.get_mut(chr).expect("header inserted");
@@ -461,7 +461,7 @@ impl GenomeIndex {
 
     /// Length of a chromosome's sequence, or 0 if not present.
     pub fn chrom_len(&self, chrom: &str) -> u64 {
-        self.seqs.get(chrom).map(|s| s.len() as u64).unwrap_or(0)
+        self.seqs.get(chrom).map(|s| s.len() as u64).or_else(|| self.windows.get(chrom).map(|w| w.0 as u64)).unwrap_or(0)
     }
 
     /// Canonical splice site (annotation-free, FASTA only). `donor` = left-exon-end,
@@ -667,18 +667,18 @@ impl IndexedFasta {
         if s >= e {
             return Some(Vec::new());
         }
-        let mut out = Vec::with_capacity((e - s) as usize);
+        // one read for the whole span, then the newlines are skipped (it was one pread per FASTA line)
         let (lb, lw) = (rec.linebases, rec.linewidth);
-        let mut p = s;
+        let byte = |p: u64| rec.offset + (p / lb) * lw + p % lb;
+        let mut raw = vec![0u8; (byte(e - 1) + 1).saturating_sub(byte(s)) as usize];
+        self.file.read_exact_at(&mut raw, byte(s)).ok()?;
+        let mut out = Vec::with_capacity((e - s) as usize);
+        let (mut p, mut at) = (s, 0usize);
         while p < e {
-            let line = p / lb;
-            let col = p % lb;
-            let byte_off = rec.offset + line * lw + col;
-            let take = std::cmp::min(lb - col, e - p); // bases left on this line
-            let mut buf = vec![0u8; take as usize];
-            self.file.read_exact_at(&mut buf, byte_off).ok()?;
-            out.extend_from_slice(&buf);
-            p += take;
+            let take = std::cmp::min(lb - p % lb, e - p) as usize; // bases left on this line
+            out.extend_from_slice(raw.get(at..at + take)?);
+            at += take + lw.saturating_sub(lb) as usize;
+            p += take as u64;
         }
         Some(out)
     }
@@ -1185,6 +1185,7 @@ mod tests {
     /// `vg_family/testdata/indexed_fasta_pysam_fixture.json` (trimmed from the retired
     /// `repeat_catalog_fixture.json`). Skipped (passes) when the 3.4G genome is unavailable (e.g. CI).
     #[test]
+    #[ignore = "needs /home/juanfra/winloci_scratch/GGO.fasta (an old machine): it used to skip and count as passed"]
     fn indexed_fasta_matches_pysam_on_real_genome() {
         let genome = "/home/juanfra/winloci_scratch/GGO.fasta"; // test-only; not a shipped default
         if !std::path::Path::new(&format!("{genome}.fai")).exists() {

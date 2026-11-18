@@ -107,7 +107,7 @@ pub fn write(path: &Path, k: usize, blocks: &[BlockAnchors]) -> Result<(), Box<d
         }
         enc.write_all(&rec)?;
     }
-    enc.finish()?;
+    enc.finish()?.flush()?; // drop would swallow a write error (quota, full disk)
     Ok(())
 }
 

@@ -54,10 +54,11 @@ elif cmd == 'eval':
 else:
     import multiprocessing, chain_rules_feat as F
     m = json.load(open(sys.argv[2])); gtf, bam, fa, out = sys.argv[3:7]; thr = int(sys.argv[7]) if len(sys.argv) > 7 else 16
+    m['tau'] = float(os.environ.get('RUSTLE_CHAINSCORE_TAU') or m['tau'])  # row 1810: the cut can be set per run
     D = F.load(gtf); per = collections.defaultdict(dict)
     for (ctg, c), (r, s, g, e) in D.items(): per[ctg][c] = (r, s, g, e, 0, r)
     with multiprocessing.Pool(thr) as pool:
-        rows = [r for rs in pool.imap_unordered(F.work, [(bam, fa, ctg, cand) for ctg, cand in sorted(per.items(), key=lambda x: -len(x[1]))]) for r in rs]
+        rows = [r for rs in pool.imap(F.work, [(bam, fa, ctg, cand) for ctg, cand in sorted(per.items(), key=lambda x: -len(x[1]))]) for r in rs]
     d = {k: np.array([r[i] for r in rows]) if k in ('chrom', 'strand', 'key') else np.array([float(r[i]) for r in rows]) for i, k in enumerate(F.COLS)}
     p = prob(d, np.ones(len(rows), bool), m, fa); bad = {(c, k) for c, k, x in zip(d['chrom'], d['key'], p) if x < m['tau']}
     def strip(src, dst):

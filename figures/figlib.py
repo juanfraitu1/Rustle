@@ -359,7 +359,9 @@ def run(cmd, *, log: Path | None = None, env: dict | None = None, cwd=None, chec
     else:
         r = subprocess.run(cmd, env=e, cwd=cwd, shell=isinstance(cmd, str))
     if check and r.returncode != 0:
-        raise RuntimeError(f"command failed ({r.returncode}): {cmd}" + (f" — see {log}" if log else ""))
+        if log:
+            os.replace(log, f"{log}.failed")   # callers treat a fresh log as a done step
+        raise RuntimeError(f"command failed ({r.returncode}): {cmd}" + (f" — see {log}.failed" if log else ""))
     return r.returncode
 
 

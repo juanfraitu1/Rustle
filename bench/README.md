@@ -5,7 +5,7 @@ counts below are that wave's own). They are tiered — from "runs in the shipped
 
 | tier | what | where |
 |---|---|---|
-| **1. SHIPPED PIPELINE** | called by `tools/rustle_pipeline.sh` / the binaries in a normal run | `tools/` (7 files, table below) |
+| **1. SHIPPED PIPELINE** | called by `tools/rustle_pipeline.sh` / the binaries in a normal run | `tools/` (the files in the table below; the November 2026 stage helpers are named in the driver header) |
 | **2. CORE LIBRARY** | the wave-7 scoring/simulation/truth hubs; most-cited scripts in the repo | `bench/` root, 9 files (table below) |
 | **3. STUDY SCRIPTS** | one directory per study, each owned by a registered doc (named in each table); run only to reproduce that study | `bench/rna_allele/`, `bench/soto_m2/`, `bench/annotation/`, `bench/npip_read_pool/`, `bench/mechanism/`, `bench/rep_rule/`, `bench/layer_order/` |
 | **4. ACCESSORY** | page builders, figure scripts, fixture generators; not part of any registered command | `bench/soto_m2/page/`, `figures/`, `tests/fixtures/` |
@@ -17,7 +17,7 @@ prereg's H-bar scorer), `bench/npip_read_pool/score.py` (the read-pool scorer), 
 representative-rule scorer). The same collision exists for `make_bam.py` (two independent fixture generators) and the
 `truth_*` names; the owning doc in each table disambiguates.
 
-## Tier 1 — the shipped pipeline (`tools/`, 7)
+## Tier 1 — the shipped pipeline (`tools/`)
 
 | file | role |
 |---|---|

@@ -89,7 +89,7 @@ fn junction_counts(
     let mut reader = noodles_bam::io::reader::Builder::default().build_from_path(bam_path)?;
     let header = reader.read_header()?;
     let index = noodles_bam::bai::read(&bai_path)?;
-    let region: noodles_core::Region = format!("{chrom}:{lo}-{hi}").parse()?;
+    let region: noodles_core::Region = format!("{chrom}:{}-{hi}", lo.max(1)).parse()?;
 
     let (mut p, mut s, mut u) = (0u64, 0u64, 0u64);
     // samtools view on a reference the BAM does not know prints nothing and exits 0; any other query error (a stale or

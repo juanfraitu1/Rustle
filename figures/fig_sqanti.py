@@ -256,7 +256,7 @@ def build(cfg: dict, data_dir: Path, force: bool = False):
         print(f"TOTAL\t{len(plan.rows)} call(s)\t\t\t{plan.n}\t\t{plan.lo:.0f}\t{plan.hi:.0f}  "
               f"(= {plan.lo / 3600:.1f}-{plan.hi / 3600:.1f} h)")
         return
-    budget = assembly.Budget(cfg, "fig2")
+    budget = assembly.Budget(cfg, "fig2", force)
     tallies, inputs = {}, {}
     for key, tool in order:
         t, i = build_sample(cfg, key, [tool], force=force, budget=budget)
@@ -278,7 +278,7 @@ def build(cfg: dict, data_dir: Path, force: bool = False):
         for key in assembly.all_samples(cfg):
             row = samples.get(cfg, key)
             lead = [row["id"], assembly.sample_label(cfg, key), row["tissue"]]
-            for tool in S.RUSTLE_ARMS:
+            for tool in [a for a in S.RUSTLE_ARMS if (key, a) in tallies]:   # fig2_arms may leave an arm out
                 t = tallies[(key, tool)]
                 scat += [lead + r for r in S.category_rows(row["species"], scope_text(cfg, key), tool, t)]
                 sfilt.append(lead + S.filter_row(row["species"], scope_text(cfg, key), tool, t))
@@ -347,7 +347,9 @@ def write_tables(cfg, data_dir, cat_rows, filt_rows, sub_rows, inputs, extra_not
                                                                     if assembly.unannotated_contigs(cfg, k) else "")
                                    for k in assembly.benchmark_samples(cfg)),
              "methods: " + ", ".join(S.arms(cfg)) + " (the fig1 GTFs, assembly.ensure_arm)",
-             "mode: " + assembly.MODE_DENOVO_METHODS + "; " + assembly.guided_status(cfg)] + list(extra_notes)
+             "mode: " + assembly.MODE_DENOVO_METHODS + "; " + assembly.guided_status(cfg)] + list(extra_notes) \
+        + [f"provisional: {k} restricted to {scope_text(cfg, k)} (development subset)"
+           for k in assembly.benchmark_samples(cfg) if not S.is_genome_wide(cfg, k)]
     gen = "figures/fig_sqanti.py build"
     figlib.write_table("fig2_sqanti_categories", S.CATEGORY_HEADER, cat_rows, generator=gen, inputs=inputs,
                        notes=notes, data_dir=data_dir)

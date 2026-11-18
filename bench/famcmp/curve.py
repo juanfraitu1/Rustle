@@ -8,8 +8,9 @@ def load(path, key=None):
         if len(f) < 9: continue
         if f[2] == 'exon': ex[(f[0], f[6], re.search(r'transcript_id "([^"]+)"', f[8]).group(1))].append((int(f[3]), int(f[4])))
         elif f[2] == 'transcript' and key:
-            m = re.search(key + r' "([^"]+)"', f[8]); g = re.search(r'gene_id "([^"]+)"', f[8]).group(1)
+            m = re.search(r'\b' + key + r' "([^"]+)"', f[8]); g = re.search(r'gene_id "([^"]+)"', f[8]).group(1)
             val[(f[0], f[6], re.search(r'transcript_id "([^"]+)"', f[8]).group(1))] = (float(m.group(1)) if m else 0.0, g)
+    if key and not val: sys.exit(f'{path}: no transcript line, cannot cut on {key}')
     out = {}
     for k, e in ex.items():
         e.sort()

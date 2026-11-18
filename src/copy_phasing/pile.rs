@@ -288,7 +288,7 @@ impl Bam {
 
     /// `read_primaries` with `records`: one pass over the whole BAM. Returns ({read: primary}, {read: [record summary]}).
     pub fn read_primaries(&self, names: &HashMap<Vec<u8>, ReadId>) -> Result<(HashMap<ReadId, Prim>, HashMap<ReadId, Vec<RecSummary>>)> {
-        let mut reader = crate::bam::open_bam(&self.path, 2)?;
+        let mut reader = crate::bam::open_bam(&self.path, crate::bam::bgzf_workers())?;
         reader.read_header()?;
         let (mut prim, mut best, mut best_ms, mut records): (HashMap<ReadId, (Vec<u8>, Option<Vec<u8>>, bool, Option<(i32, usize)>)>, HashMap<ReadId, i32>, HashMap<ReadId, i32>, HashMap<ReadId, Vec<RecSummary>>) =
             Default::default();

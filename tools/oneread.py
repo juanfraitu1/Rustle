@@ -72,6 +72,8 @@ def main(default, floor1, bam, fasta, out):
             if p or o < MIN_ORF: continue
             n += 1
             for l in lines:
+                # the 1-read run reuses DN_<contig>_<start>_<n> ids of other default transcripts: gtf_ptc joined their exons
+                l = re.sub(r'(transcript_id "[^"]+)', r'\1.oneread', l, 1)
                 if l.split('\t')[2] == 'transcript': l = l.rstrip('\n').rstrip() + ('' if l.rstrip().endswith(';') else ';') + ' oneread "1";\n'
                 w.write(l)
     print('%d one-read chains admitted of %d chains the default lacks' % (n, len(cand)))

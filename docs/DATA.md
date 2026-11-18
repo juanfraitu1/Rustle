@@ -59,6 +59,7 @@ on chr20.
 minimap2 -ax splice:hq --eqx -Y -N 50 -p 0.1 --secondary=yes -t 8 \
          chm13v2.0.splice.mmi human_testis.fastq.gz | samtools sort -@4 -o human_testis.t2t.bam
 samtools index human_testis.t2t.bam
+# (this 2026-09 BAM was mapped without -uf; new BAMs use the -uf line the README gives, which is what the driver expects)
 ```
 (minimap2 2.30-r1287, samtools 1.22.1. ⚠ no `-uf` — unlike the two libraries below.)
 

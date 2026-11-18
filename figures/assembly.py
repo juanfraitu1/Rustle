@@ -296,9 +296,12 @@ class Pending(SystemExit):
 class Budget:
     """Wall-time budget of one build call: cfg['<fig>_budget_s'], else cfg['figs_budget_s']; 0 or unset = none."""
 
-    def __init__(self, cfg: dict, fig: str):
+    def __init__(self, cfg: dict, fig: str, force: bool = False):
         self.fig = fig
         self.limit = float(cfg.get(f"{fig}_budget_s") or cfg.get("figs_budget_s") or 0)
+        if force and self.limit > 0:
+            raise SystemExit(f"{fig}: --force redoes every cached unit on each call, so a budgeted call never "
+                             "finishes; run the forced call with figs_budget_s=0")
         self.t0 = time.time()
 
     def remaining(self) -> float:
@@ -316,7 +319,8 @@ def plan_only(cfg: dict) -> bool:
 def restrict_gtf(src, dst: Path, contigs: set[str] | None, *, force=False) -> Path:
     """Copy GTF/GFF lines whose seqname is in `contigs` (all when None); comment lines dropped."""
     dst = Path(dst)
-    if not force and figlib.fresh(dst, src):
+    side = Path(str(dst) + ".src")   # a registry cell re-pointed at an OLDER file must re-cut
+    if not force and figlib.fresh(dst, src) and (not side.exists() or side.read_text() == str(src)):
         return dst
     tmp = dst.with_suffix(dst.suffix + ".tmp")
     with _open(src) as fi, open(tmp, "w") as fo:
@@ -326,6 +330,7 @@ def restrict_gtf(src, dst: Path, contigs: set[str] | None, *, force=False) -> Pa
             if contigs is None or line.split("\t", 1)[0] in contigs:
                 fo.write(line)
     tmp.replace(dst)
+    side.write_text(str(src))
     return dst
 
 

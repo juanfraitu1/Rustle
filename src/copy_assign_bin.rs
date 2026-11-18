@@ -524,6 +524,24 @@ struct Args {
     #[arg(long, default_value_t = false)]
     polish_mono_shadow: bool,
 
+    /// SUPPORT TEST for `--polish-mono-shadow`, opt-in (r1801): a single-exon transcript in a shadow is kept when its
+    /// reads are at least this many times those of the best-supported multi-exon transcript shadowing it (taken
+    /// over the merged overlapping exons / spans). Without it a 2-read spliced artefact removes the unspliced
+    /// transcript it lies in (the unspliced SIRV spike-ins: 4 of 15 lost). 0 (default) = no support test,
+    /// byte-identical.
+    #[arg(long, default_value_t = 0.0)]
+    polish_mono_shadow_ratio: f64,
+
+    /// SPLICED SHARE for `--assembly-polish`, opt-in (r1801): before every polish step, drop a multi-exon transcript
+    /// when one of its introns is spliced by less than this share of the primary reads that reach across it
+    /// (spliced / (spliced + through); through = a primary read aligned across the whole intron with 10 bp to
+    /// spare on both sides, no N and no deletion >= 20 bp inside; every BAM record counts, coordinate duplicates
+    /// too). An intron no primary read splices gives no verdict. Removes full-length reads with an internal
+    /// deletion read as an intron (unspliced SIRV spike-ins: 3 reads splice, 1,500 read through). Needs the
+    /// indexed `--bam`. 0 (default) = off, byte-identical.
+    #[arg(long, default_value_t = 0.0)]
+    polish_spliced_share: f64,
+
     /// ⭐ §6p9 LOCUS ISOFORM FRACTION for `--assembly-polish`. Drop a transcript whose read support is
     /// below this fraction of the BEST-supported transcript at the same `gene_id`; the dominant isoform of
     /// a locus is never dropped. This is StringTie's `-f` criterion (fraction of the locus maximum), and it
@@ -1657,8 +1675,9 @@ fn molecule_pool_on(a: &Args) -> bool {
 /// What `--rescue-singletons` groups reads by: the intron chain, and for an unspliced read (no chain) the copy it was
 /// assigned to. Audit round 70: every unspliced read shared the empty chain, so reads of copies far apart became one
 /// transcript from the smallest start to the largest end.
-fn rescue_key(chain: &[(u64, u64)], catalog_idx: &str) -> (Vec<(u64, u64)>, String) {
-    (chain.to_vec(), if chain.is_empty() { catalog_idx.to_string() } else { String::new() })
+/// `catalog_idx` is numbered per family, so the family is part of the key (copy 0 of two families was one transcript).
+fn rescue_key(chain: &[(u64, u64)], family_id: &str, catalog_idx: &str) -> (Vec<(u64, u64)>, String) {
+    (chain.to_vec(), if chain.is_empty() { format!("{family_id}\t{catalog_idx}") } else { String::new() })
 }
 
 /// `--posterior`'s zone: the span, on the top copy's contig, of the copies above the floor (`idx`, best first).
@@ -3544,6 +3563,7 @@ fn regroup_gtf_lines(lines: &mut [String]) -> Result<RegroupStats> {
 /// Validated in `bench/ASSEMBLY_POLISH.md` against `docs/archive/2026-09/PREREG_assembly_polish_2026-09-19.md`: the mono
 /// floor costs zero matching intron chains on both chr20 and the held-out chr11; the ISM collapse trades
 /// chains for precision.
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 fn polish_gtf_lines(
     lines: &mut Vec<String>,
@@ -3597,6 +3617,7 @@ fn retain_transcripts(lines: &mut Vec<String>, drop: &DetHashSet<String>) {
 
 /// The body of [`polish_gtf_lines`]: which transcripts the polish drops, and at which step (`fuzzy`, `ism`, `ism_mono`,
 /// `floor`, `shadow`, `frac`, `ret`), without touching `lines`. Also the counts `polish_gtf_lines` returns.
+#[cfg(test)]
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn polish_drop_set(
     lines: &[String],
@@ -3612,6 +3633,36 @@ fn polish_drop_set(
     fuzzy_ism: bool,
     fraction_min_reads: u64,
     retained_ratio: f64,
+) -> (
+    DetHashSet<String>,
+    DetHashMap<String, &'static str>,
+    (usize, usize, usize, u64, usize),
+) {
+    polish_drop_set_with(
+        lines, mode, mono_quantile, isoform_fraction, mono_shadow, ism_absolute_escape, ism_3p_anchored, ism_ratio,
+        fraction_exempt, fuzzy, fuzzy_ism, fraction_min_reads, retained_ratio, 0.0,
+    )
+}
+
+/// [`polish_drop_set`] with `--polish-mono-shadow-ratio`: at `shadow_ratio` > 0 the shadow rule spares a single-exon
+/// transcript whose reads reach `shadow_ratio` times those of the best-supported multi-exon transcript among the
+/// overlapping (merged) exons / spans that shadow it. 0 = the rule without a support test.
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn polish_drop_set_with(
+    lines: &[String],
+    mode: &str,
+    mono_quantile: f64,
+    isoform_fraction: f64,
+    mono_shadow: bool,
+    ism_absolute_escape: bool,
+    ism_3p_anchored: bool,
+    ism_ratio: f64,
+    fraction_exempt: bool,
+    fuzzy: i64,
+    fuzzy_ism: bool,
+    fraction_min_reads: u64,
+    retained_ratio: f64,
+    shadow_ratio: f64,
 ) -> (
     DetHashSet<String>,
     DetHashMap<String, &'static str>,
@@ -3915,32 +3966,36 @@ fn polish_drop_set(
     if mono_shadow {
         // multi-exon EXONS keyed by contig alone (either strand), and multi-exon SPANS keyed by
         // contig+strand (same strand only)
-        let mut exons_any: DetHashMap<&str, Vec<(i64, i64)>> = DetHashMap::default();
-        let mut spans_same: DetHashMap<(&str, &str), Vec<(i64, i64)>> = DetHashMap::default();
+        let mut exons_any: DetHashMap<&str, Vec<(i64, i64, u64)>> = DetHashMap::default();
+        let mut spans_same: DetHashMap<(&str, &str), Vec<(i64, i64, u64)>> = DetHashMap::default();
         for (t, c) in chain.iter() {
             if c.is_empty() || drop.contains(t) {
                 continue;
             }
             let Some(k) = key.get(t) else { continue };
+            let r = reads.get(t).copied().unwrap_or(0);
             spans_same
                 .entry((k.0.as_str(), k.1.as_str()))
                 .or_default()
-                .push(span[t]);
+                .push((span[t].0, span[t].1, r));
             if let Some(ex) = exons.get(t) {
                 exons_any
                     .entry(k.0.as_str())
                     .or_default()
-                    .extend(ex.iter().copied());
+                    .extend(ex.iter().map(|&(a, b)| (a, b, r)));
             }
         }
         // merge each interval list so the overlap probe is a single sorted scan
-        let merge = |v: &mut Vec<(i64, i64)>| {
+        let merge = |v: &mut Vec<(i64, i64, u64)>| {
             v.sort_unstable();
-            let mut out: Vec<(i64, i64)> = Vec::with_capacity(v.len());
-            for &(a, b) in v.iter() {
+            let mut out: Vec<(i64, i64, u64)> = Vec::with_capacity(v.len());
+            for &(a, b, r) in v.iter() {
                 match out.last_mut() {
-                    Some(last) if a <= last.1 => last.1 = last.1.max(b),
-                    _ => out.push((a, b)),
+                    Some(last) if a <= last.1 => {
+                        last.1 = last.1.max(b);
+                        last.2 = last.2.max(r);
+                    }
+                    _ => out.push((a, b, r)),
                 }
             }
             *v = out;
@@ -3951,10 +4006,11 @@ fn polish_drop_set(
         for v in spans_same.values_mut() {
             merge(v);
         }
-        // merged and disjoint: the only candidate is the last interval starting at or before `e`
-        let hits = |v: &Vec<(i64, i64)>, s: i64, e: i64| -> bool {
-            let hi = v.partition_point(|&(a, _)| a <= e);
-            hi > 0 && v[hi - 1].1 >= s
+        // merged and disjoint (ends ascend with starts): the intervals overlapping [s, e] are the last ones starting
+        // at or before `e` that end at or after `s`; the reads of the best-supported transcript among them
+        let hits = |v: &Vec<(i64, i64, u64)>, s: i64, e: i64| -> Option<u64> {
+            let hi = v.partition_point(|&(a, _, _)| a <= e);
+            v[..hi].iter().rev().take_while(|x| x.1 >= s).map(|x| x.2).max()
         };
         let mut mono: Vec<&String> = chain
             .iter()
@@ -3965,12 +4021,15 @@ fn polish_drop_set(
         for t in mono {
             let Some(k) = key.get(t) else { continue };
             let (s, e) = span[t];
-            let exon_hit = exons_any.get(k.0.as_str()).is_some_and(|v| hits(v, s, e));
+            let exon_hit = exons_any.get(k.0.as_str()).and_then(|v| hits(v, s, e));
             let span_hit = spans_same
                 .get(&(k.0.as_str(), k.1.as_str()))
-                .is_some_and(|v| hits(v, s, e));
-            if exon_hit || span_hit {
-                drop.insert(t.clone());
+                .and_then(|v| hits(v, s, e));
+            if let Some(top) = exon_hit.max(span_hit) {
+                let own = reads.get(t).copied().unwrap_or(0) as f64;
+                if !(shadow_ratio > 0.0 && own >= shadow_ratio * top as f64) {
+                    drop.insert(t.clone());
+                }
             }
         }
     }
@@ -4368,7 +4427,8 @@ fn subchain_tag(
 fn annotate_tpm(lines: &mut [String]) -> usize {
     let reads_of = |line: &str| -> Option<f64> {
         let f: Vec<&str> = line.split('\t').collect();
-        if f.len() < 9 || f[2] != "transcript" {
+        // a transcript lifted to another copy repeats its source's reads: the same molecules, not counted twice
+        if f.len() < 9 || f[2] != "transcript" || f[8].contains("lifted_from \"") {
             return None;
         }
         re_attr(f[8], "reads").and_then(|v| v.parse::<f64>().ok())
@@ -4625,6 +4685,102 @@ fn snap_tally_read(
     used
 }
 
+/// `--polish-spliced-share`: a block reads "through" an intron when it covers it with this many bases to spare on
+/// both sides; a deletion at least SHARE_SPLIT_DEL long ends a block (a read deleted across the intron did not read
+/// through it).
+const SHARE_FLANK_BP: i64 = 10;
+const SHARE_SPLIT_DEL: i64 = 20;
+
+/// One read's aligned blocks `[s, e)` (split at every N and every deletion >= SHARE_SPLIT_DEL) and its junctions
+/// `[d, a)`, from `ops` = (SAM op letter, length) starting at `ref_start` (0-based).
+#[allow(clippy::type_complexity)]
+fn read_blocks(ref_start: i64, ops: &[(u8, i64)]) -> (Vec<(i64, i64)>, Vec<(i64, i64)>) {
+    let (mut pos, mut b0) = (ref_start, ref_start);
+    let (mut blocks, mut juncs) = (Vec::new(), Vec::new());
+    for &(op, len) in ops {
+        match op {
+            b'M' | b'=' | b'X' => pos += len,
+            b'D' if len < SHARE_SPLIT_DEL => pos += len,
+            b'D' | b'N' => {
+                if op == b'N' {
+                    juncs.push((pos, pos + len));
+                }
+                if pos > b0 {
+                    blocks.push((b0, pos));
+                }
+                pos += len;
+                b0 = pos;
+            }
+            _ => {}
+        }
+    }
+    if pos > b0 {
+        blocks.push((b0, pos));
+    }
+    (blocks, juncs)
+}
+
+/// One read into `out[i]` = (reads that splice exactly `introns[i]`, reads with a block through it); `introns`
+/// sorted and unique. Blocks of one read are disjoint, so a read counts at most once per intron.
+fn spliced_share_tally(introns: &[(i64, i64)], out: &mut [(u32, u32)], blocks: &[(i64, i64)], juncs: &[(i64, i64)]) {
+    for j in juncs {
+        if let Ok(i) = introns.binary_search(j) {
+            out[i].0 += 1;
+        }
+    }
+    for &(s, e) in blocks {
+        let first = introns.partition_point(|x| x.0 < s + SHARE_FLANK_BP);
+        for (i, &(d, a)) in introns.iter().enumerate().skip(first) {
+            if d >= e {
+                break;
+            }
+            if a + SHARE_FLANK_BP <= e {
+                out[i].1 += 1;
+            }
+        }
+    }
+}
+
+/// [`spliced_share_tally`] over reads given as (blocks, junctions).
+#[cfg(test)]
+#[allow(clippy::type_complexity)]
+fn spliced_share_count(
+    introns: &[(i64, i64)],
+    reads: impl IntoIterator<Item = (Vec<(i64, i64)>, Vec<(i64, i64)>)>,
+) -> Vec<(u32, u32)> {
+    let mut out = vec![(0u32, 0u32); introns.len()];
+    for (blocks, juncs) in reads {
+        spliced_share_tally(introns, &mut out, &blocks, &juncs);
+    }
+    out
+}
+
+/// The introns `[d, a)` of the multi-exon transcripts of `lines`, sorted and unique.
+fn spliced_share_introns(lines: &[String]) -> Vec<(i64, i64)> {
+    let mut v: Vec<(i64, i64)> = snap_parse(lines).iter().flat_map(|t| t.chain()).collect();
+    v.sort_unstable();
+    v.dedup();
+    v
+}
+
+/// `--polish-spliced-share`: the transcripts with an intron that fewer than `min_share` of the primary reads
+/// reaching across it splice (`counts[i]` = (spliced, through) of `introns[i]`). An intron no primary read splices
+/// gives no verdict.
+fn spliced_share_drop(
+    lines: &[String],
+    introns: &[(i64, i64)],
+    counts: &[(u32, u32)],
+    min_share: f64,
+) -> DetHashSet<String> {
+    let low = |j: &(i64, i64)| {
+        introns.binary_search(j).is_ok_and(|i| {
+            let (n, t) = counts[i];
+            n > 0 && (n as f64) < min_share * (n as f64 + t as f64)
+        })
+    };
+    snap_parse(lines).into_iter().filter(|t| t.chain().iter().any(low)).map(|t| t.tid).collect()
+}
+
 /// The indexed BAM `--polish-junction-snap reads` re-reads over the near pairs (opened once per run).
 struct SnapBam {
     reader: noodles_bam::io::Reader<
@@ -4757,6 +4913,79 @@ impl SnapBam {
             reads.push((a, a + span));
         }
         Ok(mono_primed_count(seq, monos, reads))
+    }
+
+    /// `--polish-spliced-share` counts for `introns` (sorted, unique) of `chrom`: (primary reads that splice it,
+    /// primary reads through it), every record counted (coordinate duplicates too). Readers and sub-ranges as in
+    /// [`Self::mono_primed`]: a record counts in the sub-range holding its start.
+    fn spliced_share(bam: &str, chrom: &str, introns: &[(i64, i64)]) -> Result<Vec<(u32, u32)>> {
+        let mut out = vec![(0u32, 0u32); introns.len()];
+        let (Some(lo), Some(hi)) = (introns.iter().map(|j| j.0).min(), introns.iter().map(|j| j.1).max()) else {
+            return Ok(out);
+        };
+        let n = (MONO_PRIMED_CHUNKS as i64).min(hi - lo).max(1);
+        let cut = |k: i64| lo + (hi - lo) * k / n;
+        let parts: Vec<Result<Vec<(u32, u32)>>> = std::thread::scope(|sc| {
+            let hs: Vec<_> = (0..n)
+                .map(|k| {
+                    sc.spawn(move || {
+                        let keep = |a: i64| (k == 0 || a >= cut(k)) && (k == n - 1 || a < cut(k + 1));
+                        Self::open(bam)?.spliced_share_range(chrom, introns, cut(k), cut(k + 1), keep)
+                    })
+                })
+                .collect();
+            hs.into_iter().map(|h| h.join().expect("spliced-share reader thread panicked")).collect()
+        });
+        for part in parts {
+            for (o, x) in out.iter_mut().zip(part?) {
+                o.0 += x.0;
+                o.1 += x.1;
+            }
+        }
+        Ok(out)
+    }
+
+    /// One reader's share of `spliced_share`: primary records overlapping [qlo, qhi) whose start passes `keep`.
+    fn spliced_share_range(
+        &mut self,
+        chrom: &str,
+        introns: &[(i64, i64)],
+        qlo: i64,
+        qhi: i64,
+        keep: impl Fn(i64) -> bool,
+    ) -> Result<Vec<(u32, u32)>> {
+        let mut out = vec![(0u32, 0u32); introns.len()];
+        let mut ops: Vec<(u8, i64)> = Vec::with_capacity(256);
+        let region: noodles_core::Region = format!("{chrom}:{}-{}", qlo + 1, qhi).parse()?;
+        for result in self.reader.query(&self.header, &self.index, &region)? {
+            let record = result?;
+            let flags = record.flags();
+            if flags.is_unmapped() || flags.is_secondary() || flags.is_supplementary() || flags.is_qc_fail() {
+                continue;
+            }
+            let Some(start) = record.alignment_start() else {
+                continue;
+            };
+            let a = usize::from(start?) as i64 - 1;
+            if !keep(a) {
+                continue;
+            }
+            ops.clear();
+            for op in record.cigar().iter() {
+                let op = op?;
+                use noodles_sam::alignment::record::cigar::op::Kind;
+                let c = match op.kind() {
+                    Kind::Match | Kind::SequenceMatch | Kind::SequenceMismatch => b'M',
+                    Kind::Deletion => b'D',
+                    Kind::Skip => b'N',
+                    _ => continue,
+                };
+                ops.push((c, op.len() as i64));
+            }
+            let (blocks, juncs) = read_blocks(a, &ops);
+            spliced_share_tally(introns, &mut out, &blocks, &juncs);
+        }
+        Ok(out)
     }
 
     fn open(bam: &str) -> Result<Self> {
@@ -7549,7 +7778,14 @@ fn main() -> Result<()> {
     let timing = std::env::var_os("RUSTLE_TIMING").is_some();
     // Parse the BAM index + header ONCE and reuse across every region (the per-region path re-parses the
     // multi-MB `.bai` otherwise). None => no usable index; fall back to the per-region open (which scans).
-    let bam_cache = BamIndexCache::open(&args.bam).ok();
+    let bam_cache = match BamIndexCache::open(&args.bam) {
+        Ok(c) => Some(c),
+        Err(e) => {
+            // it used to be silent: one full scan of the BAM per window, and a primaries-only pool
+            eprintln!("[copy_assign] WARNING: {}.bai not usable ({e:#}): every window is read by a full scan of the BAM", args.bam);
+            None
+        }
+    };
     if args.tied_prefilter {
         anyhow::ensure!(
             !(args.no_as_tied_only || args.recover_copies || args.tied_seed || args.gtf || args.flag_missing_copies
@@ -7587,11 +7823,21 @@ fn main() -> Result<()> {
     // Bounded LRU cache of loaded contig genomes — so a worker on any contig reuses an already-loaded genome
     // instead of reloading, and at most ~capacity contig sequences are resident (the memory bound; Arc keeps
     // a genome alive while an evicting worker still uses it). Capacity tracks the concurrency.
+    if args.gtf && flat.iter().any(|k| k.0.starts_with("~xchrom~")) {
+        // a warning, not a refusal: the Figure 5 hard-set shards run exactly this
+        eprintln!("[copy_assign] WARNING: --gtf with a cross-chromosome family: its ~xchrom~ sweep has no contig to assemble on and re-assembles loci the real regions emit");
+    }
+    // without a .fai every load is the whole genome: keep ONE cache entry instead of one whole genome per contig
+    let has_fai = std::path::Path::new(&format!("{}.fai", args.fasta)).exists();
+    if !has_fai {
+        eprintln!("[copy_assign] WARNING: {}.fai missing: the whole genome is loaded (samtools faidx)", args.fasta);
+    }
     let genome_cap = NonZeroUsize::new((args.region_threads + 1).max(2)).unwrap();
     let genome_cache: Arc<Mutex<LruCache<String, Arc<GenomeIndex>>>> =
         Arc::new(Mutex::new(LruCache::new(genome_cap)));
     let genome_for = |contig: &str| -> Result<Arc<GenomeIndex>> {
-        if let Some(g) = genome_cache.lock().unwrap().get(contig).cloned() {
+        let key = if has_fai { contig } else { "" }; // shortcut: concurrent first misses still double-load, lock the load if that bites
+        if let Some(g) = genome_cache.lock().unwrap().get(key).cloned() {
             return Ok(g);
         }
         // load OUTSIDE the lock (a chromosome load is seconds; never block other workers on it). A rare
@@ -7604,7 +7850,7 @@ fn main() -> Result<()> {
         genome_cache
             .lock()
             .unwrap()
-            .put(contig.to_string(), g.clone());
+            .put(key.to_string(), g.clone());
         Ok(g)
     };
     // A region's genome, generalized to however many chromosomes its windows actually touch. The
@@ -8757,7 +9003,7 @@ fn main() -> Result<()> {
                 // them, per family, to the reads that family actually considered (`fa.assignments`) before
                 // clustering. Pooling them across families is the cross-family attribution bug the final
                 // whole-branch review caught -- see that function's own doc comment.
-                let tied = rustle::copy_graph::copy_discovery::tie_partner_placements(&bam_reads);
+                let tied = rustle::copy_graph::copy_discovery::tie_partner_placements(&bam_reads, (args.as_tie_ratio, args.tie_ms));
                 fams.iter()
                     .flat_map(|fa| discover_copies_for_family(fa, &bam_reads, &tied))
                     .collect()
@@ -9098,7 +9344,7 @@ fn main() -> Result<()> {
                         };
                         let mut best: Option<(usize, u64)> = None;
                         for (ci, (c, s0, e0)) in fa.copy_spans.iter().enumerate() {
-                            if c != contig
+                            if read_chrom.get(pri) != Some(c)
                                 || fa.copy_tids.get(ci).map_or(false, |t| {
                                     rustle::copy_assign::copy_assign_pipeline::is_partner(t)
                                 })
@@ -9181,7 +9427,7 @@ fn main() -> Result<()> {
                         bl.iter().any(|&(bs, be)| {
                             fa.copy_spans
                                 .iter()
-                                .any(|(c, s0, e0)| c == contig && be > *s0 && bs < *e0)
+                                .any(|(c, s0, e0)| read_chrom.get(i).is_some_and(|rc| rc == c) && be > *s0 && bs < *e0)
                         })
                     })
                 };
@@ -9199,7 +9445,7 @@ fn main() -> Result<()> {
                         bl.iter().any(|&(bs, be)| {
                             fa.copy_spans
                                 .iter()
-                                .any(|(c, s0, e0)| c == contig && be > *s0 && bs < *e0)
+                                .any(|(c, s0, e0)| read_chrom.get(*ri).is_some_and(|rc| rc == c) && be > *s0 && bs < *e0)
                         })
                     });
                     assign_rows.push(AssignRow {
@@ -10502,6 +10748,7 @@ fn main() -> Result<()> {
                         e0: u64,
                         strand: char,
                         catalog_idx: &'a str,
+                        family_id: &'a str,
                     },
                 }
                 struct Resc {
@@ -10559,6 +10806,7 @@ fn main() -> Result<()> {
                                         e0,
                                         strand,
                                         catalog_idx: row.catalog_copy_idx.as_str(),
+                                        family_id: row.family_id.as_str(),
                                     }
                                 }
                             }
@@ -10576,12 +10824,13 @@ fn main() -> Result<()> {
                             e0,
                             strand,
                             catalog_idx,
+                            family_id,
                         } = rec
                         {
                             // `chain` is guaranteed to have found no gate-passed match here (that is exactly
                             // the condition classification checked before ever producing `Rec::Eligible`),
                             // via `gate_passed_tid_for`'s position-aware lookup — not raw chain membership.
-                            let e = groups.entry(rescue_key(chain, catalog_idx)).or_insert_with(|| Resc {
+                            let e = groups.entry(rescue_key(chain, family_id, catalog_idx)).or_insert_with(|| Resc {
                                 starts: Vec::new(),
                                 ends: Vec::new(),
                                 introns: chain.clone(),
@@ -10676,14 +10925,14 @@ fn main() -> Result<()> {
                                 format!("NA(assigned_copy={cidx})"),
                                 "excluded_chain_at_unassigned_locus",
                             ),
-                            Rec::Eligible { chain, catalog_idx, .. } => {
+                            Rec::Eligible { chain, catalog_idx, family_id, .. } => {
                                 if !args.rescue_singletons {
                                     (
                                         fmt_chain(chain),
                                         "NA".to_string(),
                                         "eligible_for_rescue_flag_off",
                                     )
-                                } else if let Some(t) = rescue_tid_of.get(&rescue_key(chain, catalog_idx)) {
+                                } else if let Some(t) = rescue_tid_of.get(&rescue_key(chain, family_id, catalog_idx)) {
                                     (fmt_chain(chain), t.clone(), "contributed_rescued_singleton")
                                 } else {
                                     // defensive only: every `Eligible` chain is grouped and emitted above,
@@ -10894,6 +11143,20 @@ fn main() -> Result<()> {
                     );
                     snap_stats.push(st);
                 }
+                // --polish-spliced-share: on the polish INPUT, after the snap and before every polish step (0: never entered)
+                if args.polish_spliced_share > 0.0 {
+                    let t0 = std::time::Instant::now();
+                    let introns = spliced_share_introns(&part);
+                    let counts = SnapBam::spliced_share(&args.bam, c, &introns)?;
+                    let gone = spliced_share_drop(&part, &introns, &counts, args.polish_spliced_share);
+                    plog!(log,
+                        "[copy_assign] SPLICED SHARE ({}) {}: {} introns, {} spliced by a primary read, {} transcripts \
+                         dropped (an intron spliced by less than that share of the primary reads across it); {:.1} s",
+                        args.polish_spliced_share, c, introns.len(), counts.iter().filter(|x| x.0 > 0).count(),
+                        gone.len(), t0.elapsed().as_secs_f64()
+                    );
+                    retain_transcripts(&mut part, &gone);
+                }
                 // the contig's end evidence (--polish-tss / --polish-tes; empty and never read when both are off)
                 let recs = if args.polish_tss != "off" || args.polish_tes != "off" {
                     tss_all.by_chrom.remove(c.as_str()).unwrap_or_default()
@@ -10902,30 +11165,7 @@ fn main() -> Result<()> {
                 };
                 let unsp = tss_all.unspliced.remove(c.as_str()).unwrap_or_default();
                 if args.polish_tss == "off" {
-                    let (a, b, d, floor, e) = polish_gtf_lines(
-                        &mut part,
-                        &args.assembly_polish,
-                        args.polish_mono_quantile,
-                        args.polish_isoform_fraction,
-                        args.polish_mono_shadow,
-                        args.polish_ism_escape,
-                        args.polish_ism_3p,
-                        args.polish_ism_ratio,
-                        args.polish_fraction_exempt,
-                        args.polish_fuzzy_junction,
-                        args.polish_fuzzy_ism,
-                        args.polish_fraction_min_reads,
-                        args.polish_retained_ratio,
-                    );
-                    n_ism += a;
-                    n_mono += b;
-                    n_frac += d;
-                    n_ret += e;
-                    floors.push(floor);
-                } else {
-                    // --polish-tss: the unprotected polish decides everything; the proof only takes proven short forms
-                    // back out of its ISM / fraction / retained drops (so the output holds every `off` transcript)
-                    let (drop0, sites, (a, b, d, floor, e)) = polish_drop_set(
+                    let (drop0, _sites, (a, b, d, floor, e)) = polish_drop_set_with(
                         &part,
                         &args.assembly_polish,
                         args.polish_mono_quantile,
@@ -10939,6 +11179,32 @@ fn main() -> Result<()> {
                         args.polish_fuzzy_ism,
                         args.polish_fraction_min_reads,
                         args.polish_retained_ratio,
+                        args.polish_mono_shadow_ratio,
+                    );
+                    retain_transcripts(&mut part, &drop0);
+                    n_ism += a;
+                    n_mono += b;
+                    n_frac += d;
+                    n_ret += e;
+                    floors.push(floor);
+                } else {
+                    // --polish-tss: the unprotected polish decides everything; the proof only takes proven short forms
+                    // back out of its ISM / fraction / retained drops (so the output holds every `off` transcript)
+                    let (drop0, sites, (a, b, d, floor, e)) = polish_drop_set_with(
+                        &part,
+                        &args.assembly_polish,
+                        args.polish_mono_quantile,
+                        args.polish_isoform_fraction,
+                        args.polish_mono_shadow,
+                        args.polish_ism_escape,
+                        args.polish_ism_3p,
+                        args.polish_ism_ratio,
+                        args.polish_fraction_exempt,
+                        args.polish_fuzzy_junction,
+                        args.polish_fuzzy_ism,
+                        args.polish_fraction_min_reads,
+                        args.polish_retained_ratio,
+                        args.polish_mono_shadow_ratio,
                     );
                     n_ism += a;
                     n_mono += b;
@@ -12780,6 +13046,12 @@ fn main() -> Result<()> {
         }
         // --polish-junction-snap: rows only when not `off` (the default params.tsv stays byte-identical); counts
         // summed over contigs
+        if args.polish_spliced_share > 0.0 {
+            row("polish_spliced_share", format!("{}", args.polish_spliced_share))?;
+        }
+        if args.polish_mono_shadow_ratio > 0.0 {
+            row("polish_mono_shadow_ratio", format!("{}", args.polish_mono_shadow_ratio))?;
+        }
         if args.polish_junction_snap != "off" {
             let sum = |f: &dyn Fn(&SnapStats) -> usize| -> String {
                 format!("{}", snap_stats.iter().map(f).sum::<usize>())
@@ -13743,6 +14015,87 @@ mod tests {
             &mut l, "full", 0.0, 0.0, false, false, false, 1.0, false, 0, false, 0, 0.0,
         );
         assert_eq!(n_ret, 0, "ratio 0 is off");
+    }
+
+    /// One transcript as GTF lines (exons 1-based inclusive), for the spliced-share and shadow-ratio tests.
+    fn share_gtf(tid: &str, strand: &str, reads: u64, exons: &[(i64, i64)]) -> Vec<String> {
+        let at = format!("gene_id \"g_{tid}\"; transcript_id \"{tid}\";");
+        let mut v = vec![format!(
+            "chr1\trustle\ttranscript\t{}\t{}\t.\t{strand}\t.\t{at} reads \"{reads}\";",
+            exons[0].0,
+            exons[exons.len() - 1].1
+        )];
+        for (s, e) in exons {
+            v.push(format!("chr1\trustle\texon\t{s}\t{e}\t.\t{strand}\t.\t{at}"));
+        }
+        v
+    }
+
+    #[test]
+    fn read_blocks_split_at_introns_and_long_deletions() {
+        // from 1000: 50M 100N 30M 25D 20M 5D 10M 7S; the 25 bp deletion splits a block, the 5 bp one does not
+        let ops = [(b'M', 50), (b'N', 100), (b'M', 30), (b'D', 25), (b'M', 20), (b'D', 5), (b'M', 10), (b'S', 7)];
+        let (blocks, juncs) = read_blocks(1000, &ops);
+        assert_eq!(juncs, vec![(1050, 1150)]);
+        assert_eq!(blocks, vec![(1000, 1050), (1150, 1180), (1205, 1240)]);
+    }
+
+    #[test]
+    fn spliced_share_counts_spliced_and_through_reads() {
+        let introns = vec![(200i64, 300i64), (500, 600)];
+        let reads: Vec<(Vec<(i64, i64)>, Vec<(i64, i64)>)> = vec![
+            (vec![(100, 200), (300, 400)], vec![(200, 300)]), // splices the first intron
+            (vec![(150, 200), (300, 350)], vec![(200, 300)]),
+            (vec![(100, 400)], vec![]),                       // straight through the first
+            (vec![(190, 310)], vec![]),                       // exactly 10 bp on each side: through
+            (vec![(0, 1000)], vec![]),                        // through both
+            (vec![(195, 400)], vec![]),                       // 5 bp before the donor: not through
+            (vec![(100, 305)], vec![]),                       // 5 bp past the acceptor: not through
+            (vec![(100, 250), (270, 400)], vec![]),           // split inside the intron: not through
+        ];
+        assert_eq!(spliced_share_count(&introns, reads), vec![(2, 3), (0, 1)]);
+    }
+
+    #[test]
+    fn spliced_share_drops_a_transcript_whose_intron_most_reads_run_through() {
+        let mut l = Vec::new();
+        l.extend(share_gtf("ART", "+", 3, &[(100, 200), (300, 400)]));
+        l.extend(share_gtf("REAL", "+", 40, &[(1100, 1200), (1300, 1400)]));
+        l.extend(share_gtf("UNSEEN", "+", 2, &[(2100, 2200), (2300, 2400)]));
+        l.extend(share_gtf("MONO", "+", 500, &[(100, 400)]));
+        let introns = spliced_share_introns(&l);
+        assert_eq!(introns, vec![(200, 299), (1200, 1299), (2200, 2299)]);
+        // ART: 3 spliced of 1,503; REAL: 40 of 100; UNSEEN: no primary read carries its junction, so no verdict
+        let mut drop: Vec<String> =
+            spliced_share_drop(&l, &introns, &[(3, 1500), (40, 60), (0, 500)], 0.05).into_iter().collect();
+        drop.sort();
+        assert_eq!(drop, vec!["ART".to_string()]);
+        // exactly at the threshold is kept
+        assert!(spliced_share_drop(&l, &introns, &[(5, 95), (40, 60), (0, 500)], 0.05).is_empty());
+    }
+
+    #[test]
+    fn mono_shadow_ratio_spares_a_single_exon_transcript_with_more_reads_than_its_shadow() {
+        let args = |l: &[String], ratio: f64| {
+            polish_drop_set_with(l, "full", 0.0, 0.0, true, false, false, 1.0, false, 0, false, 0, 0.0, ratio)
+        };
+        let mut l = Vec::new();
+        l.extend(share_gtf("SPL", "+", 3, &[(1, 2521), (2562, 3996)])); // a 3-read spliced artefact
+        l.extend(share_gtf("BIG", "+", 500, &[(1, 3996)])); // the unspliced transcript under it
+        l.extend(share_gtf("ANTIBIG", "-", 500, &[(100, 900)])); // other strand, on SPL's exon
+        l.extend(share_gtf("WEAK", "-", 2, &[(3000, 3500)])); // other strand, fewer reads than SPL
+        let dropped = |ratio: f64| {
+            let mut d: Vec<String> = args(&l, ratio).0.into_iter().collect();
+            d.sort();
+            d
+        };
+        // ratio 0 = the rule as it was: every single-exon transcript in the shadow goes
+        assert_eq!(dropped(0.0), vec!["ANTIBIG", "BIG", "WEAK"]);
+        assert_eq!(args(&l, 0.0).1["BIG"], "shadow");
+        // ratio 1: spared when its reads reach those of the best-supported spliced transcript shadowing it
+        assert_eq!(dropped(1.0), vec!["WEAK"]);
+        // ratio 200: 500 < 200 x 3, so nothing is spared
+        assert_eq!(dropped(200.0), vec!["ANTIBIG", "BIG", "WEAK"]);
     }
 
     #[test]
@@ -15575,9 +15928,10 @@ mod tests {
 
     #[test]
     fn unspliced_rescues_group_by_copy_and_spliced_ones_by_chain() {
-        assert_ne!(super::rescue_key(&[], "0"), super::rescue_key(&[], "3"));
-        assert_eq!(super::rescue_key(&[], "3"), super::rescue_key(&[], "3"));
-        assert_eq!(super::rescue_key(&[(10, 20)], "0"), super::rescue_key(&[(10, 20)], "3"));
+        assert_ne!(super::rescue_key(&[], "F", "0"), super::rescue_key(&[], "F", "3"));
+        assert_eq!(super::rescue_key(&[], "F", "3"), super::rescue_key(&[], "F", "3"));
+        assert_ne!(super::rescue_key(&[], "F", "0"), super::rescue_key(&[], "G", "0")); // copy 0 of two families
+        assert_eq!(super::rescue_key(&[(10, 20)], "F", "0"), super::rescue_key(&[(10, 20)], "G", "3"));
     }
 
     /// Audit round 69: `--posterior`'s zone ended at the largest copy START, was empty for copy ids not named
@@ -15810,7 +16164,7 @@ mod tests {
         fam_b.copy_spans = vec![("chr1".to_string(), 1900, 2200)]; // contains the 2000-2100 placement
         fam_b.assignments = vec![(2, assign()), (3, assign())]; // indices of tied_b's two records
 
-        let tied = tie_partner_placements(&bam_reads);
+        let tied = tie_partner_placements(&bam_reads, (1.0, None));
         assert_eq!(
             tied.len(),
             2,
@@ -15829,7 +16183,7 @@ mod tests {
         };
         fam_a.assignments.extend([(4, assign()), (5, assign())]);
         fam_b.assignments.extend([(6, assign()), (7, assign())]);
-        let tied = tie_partner_placements(&bam_reads);
+        let tied = tie_partner_placements(&bam_reads, (1.0, None));
 
         let a = discover_copies_for_family(&fam_a, &bam_reads, &tied);
         let b = discover_copies_for_family(&fam_b, &bam_reads, &tied);

@@ -53,7 +53,10 @@ def load_annot(path):
                 gname[a["ID"]] = a.get("gene_name") or a.get("Name") or a.get("gene") or a["ID"]
     chains, gex = {}, collections.defaultdict(list)
     for t, ex in tex.items():
-        g = parent.get(t, t)  # RefSeq pseudogene exons hang off the gene itself
+        g = t  # up to the gene: RefSeq pseudogene exons hang off the gene itself, a miRNA's off a primary_transcript
+        seen = {t}
+        while parent.get(g, g) not in seen:   # a Parent cycle in a malformed file must not hang
+            g = parent[g]; seen.add(g)
         gname.setdefault(g, g)
         c, st = tloc[t]
         if len(ex) > 1:

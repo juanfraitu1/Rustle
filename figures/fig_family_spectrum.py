@@ -122,7 +122,7 @@ def _unit(w: Path, name: str, key, fn, budget, est_s: float):
             return j["value"]
     _o1.need(budget, est_s, name)
     v = fn()
-    p.write_text(json.dumps({"key": k, "value": v}))
+    tmp = p.with_suffix(".json.tmp"); tmp.write_text(json.dumps({"key": k, "value": v})); tmp.replace(p)   # whole or absent
     return v
 
 

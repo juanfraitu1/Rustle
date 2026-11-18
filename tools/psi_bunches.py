@@ -2,6 +2,7 @@
 """PSI of introns within bunches, with the range placement ties allow (driver stage `psi`; a report, nothing reads it).
 
     psi_bunches.py GTF BAM AS_TABLE OUT.tsv [--score ms|AS] [--window W | --ratio R] [--min-reads N] [--threads N] [--contigs A,B]
+                   [--introns OUT.introns.tsv]   the four counts of every intron, also those OUT.tsv drops
 
 Bunch = the introns that share a donor, or that share an acceptor, on one strand (MntJULiP's unit, Yang 2022; an intron
 can sit in one bunch of each kind). PSI of an intron = its reads over the reads of its bunch. Introns are read from the
@@ -31,7 +32,7 @@ def gtf_introns(gtf):
     for l in opn(gtf):
         f = l.rstrip("\n").split("\t")
         if len(f) > 8 and f[2] == "exon":
-            t = re.search(r'transcript_id "([^"]+)"', f[8]).group(1)
+            t = (f[0], re.search(r'transcript_id "([^"]+)"', f[8]).group(1))      # an id can recur on another contig
             ex[t].append((int(f[3]), int(f[4]))); loc[t] = (f[0], f[6], re.search(r'gene_id "([^"]+)"', f[8]).group(1))
     out = {}
     for t, e in ex.items():
@@ -120,6 +121,13 @@ def bunch_rows(cnt, known, min_reads=3):
 
 HEADER = "bunch anchor chrom strand start end locus in_gtf n_introns".split() + [c + s for s in ("", "_w") for c in "placed max psi_placed psi_lo psi_hi".split()]
 
+INTRON_HEADER = "chrom strand start end placed max placed_w max_w".split()
+
+def intron_rows(cnt):
+    """every intron some record in the wide band carries, with tally's four counts: what bunch_rows drops (under --min-reads,
+    or alone at its site) is here, for psi_family.py's rows of copies that barely use a junction."""
+    return [[k[0], k[1], k[2], k[3], *c] for k, c in sorted(cnt.items(), key=lambda kv: (kv[0][0], kv[0][2], kv[0][3], kv[0][1])) if c[3] >= 1]
+
 def summary(rows, slack=0.1):
     """one line per band: bunches, and those where some intron's [psi_lo, psi_hi] is wider than `slack`."""
     out = []
@@ -138,6 +146,7 @@ def main():
     p.add_argument("gtf"); p.add_argument("bam"); p.add_argument("as_table"); p.add_argument("out")
     p.add_argument("--score", choices=("ms", "AS"), default="ms"); p.add_argument("--window", type=float, default=10); p.add_argument("--ratio", type=float)
     p.add_argument("--min-reads", type=int, default=3); p.add_argument("--threads", type=int, default=4); p.add_argument("--contigs")
+    p.add_argument("--introns", help="also write the raw counts of every intron (INTRON_HEADER) to this file")
     a = p.parse_args()
     import pysam
     known = gtf_introns(a.gtf)
@@ -157,6 +166,11 @@ def main():
         fh.write("\t".join(HEADER) + "\n")
         fh.writelines("\t".join(map(fmt, r)) + "\n" for r in rows)
     os.replace(tmp, a.out)
+    if a.introns:
+        with open(a.introns + ".tmp", "w") as fh:
+            fh.write("\t".join(INTRON_HEADER) + "\n")
+            fh.writelines("\t".join(map(str, r)) + "\n" for r in intron_rows(cnt))
+        os.replace(a.introns + ".tmp", a.introns)
     kept = {tuple(r[2:6]) for r in rows}
     print(f"{len(cnt)} introns in the reads, {sum(1 for c in cnt.values() if c[3] >= a.min_reads)} with >= {a.min_reads} reads, {len(kept)} in bunches "
           f"({sum(1 for k in kept if k in known)} in the GTF); tied reads {len({q for q, _, _ in tied})}")

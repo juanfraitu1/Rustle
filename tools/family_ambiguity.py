@@ -51,7 +51,7 @@ def hits(idx, chrom, pos):
     starts, iv, maxlen = idx[chrom]
     out, i = [], bisect_right(starts, pos) - 1
     while i >= 0 and iv[i][0] >= pos - maxlen:
-        if iv[i][1] >= pos:
+        if iv[i][1] > pos:  # windows are 0-based half-open
             out.append(iv[i][2])
         i -= 1
     return out
@@ -76,7 +76,7 @@ def main(as_table, copies, out, exclude=None):
             p = line.rstrip("\n").split("\t")
             if p[15] == "NA":
                 continue
-            hs = hits(idx, p[4], int(p[15]))
+            hs = hits(idx, p[4], int(p[15]) - 1)  # primary_pos is 1-based
             if not hs:
                 continue
             add = (1,) + tuple(int(x) for x in classify(p))

@@ -11,7 +11,7 @@ kept next to the code and is pre-registered.
 |---|---|---|
 | **family definition** | multi-copy gene families from the reads and the genome — de novo (reads only) and guided (annotation), with the goal of closing the gap between them | `docs/seeded_family_definition.md`, `mcl_families`, `gw_family_catalog` |
 | **copy assignment** | each AS-tied multimapping read (a rival alignment within 10 AS of its best) to one of its very similar copies, or abstention: PSVs, junctions and divergence, never a 1/k split. A read minimap2 placed clearly is not O2's | `docs/copy_assignment_definition.md`, `copy_assign --families` |
-| **missing copies** | expressed copies the reference does not contain (diverged or with rearranged exons): detect, characterise, screen, and hand copy number to DNA | `docs/O3_STATUS.md`, `docs/archive/2026-09/PREREG_o3_rna_only_2026-09-23.md`, `missing_copy_flag` |
+| **missing copies** | expressed copies the reference does not contain (diverged or with rearranged exons): detect, characterise, screen, and hand copy number to DNA | `docs/archive/2026-11/O3_STATUS.md`, `docs/archive/2026-09/PREREG_o3_rna_only_2026-09-23.md`, `missing_copy_flag` |
 
 In the thesis record these are objectives O1, O2 and O3; the ledger, register and pre-registrations use those
 labels. `docs/THESIS_OBJECTIVES.md` states them in full.
@@ -19,8 +19,9 @@ labels. `docs/THESIS_OBJECTIVES.md` states them in full.
 ## Build, test, run
 
 ```bash
-cargo build --release          # binaries in target/release/ (real numbers always come from --release)
-cargo test --release           # ~1150 tests; fixtures are in tests/fixtures and src/rustle/vg_family/testdata
+cargo build --release          # binaries in target/release/, where the driver looks (real numbers always come from --release);
+                               # after `pixi run build` they are in ~/rustle_target/release: pass --bin ~/rustle_target/release to the driver
+cargo test --release           # ~1,600 tests; fixtures are in tests/fixtures and src/testdata
 cargo test --profile dev-opt   # the iteration loop: full suite in minutes (opt 2, no LTO; see AGENTS.md §4)
 ```
 
@@ -34,19 +35,19 @@ tools/rustle_pipeline.sh all --bam reads.bam --fasta genome.fa --out run/s1 --th
 Needs `minimap2` (2.30) on PATH (or `RUSTLE_MINIMAP2`); the driver checks before the first stage. The BAM must be indexed,
 minimap2 `-ax splice:hq -uf --eqx -Y -N 50 -p 0.1 --secondary=yes` (`docs/DATA.md`), and the FASTA must carry a `.fai`. Two
 sidecars are shared by every run when their directory takes files: `BAM.as_table.tsv` (else `--as-table PATH`) and
-`FASTA.splice.I8G.mmi` (else `RUSTLE_INDEX_DIR`). A119b (96 GB BAM, CHM13) runs in 22 min from scratch on 72 cores; `docs/PERFORMANCE.md`.
+`FASTA.splice.I8G.mmi` (not for a FASTA under $HOME: there each run builds `PREFIX.splice.mmi` unless `RUSTLE_INDEX_DIR` names a shared directory). A119b (96 GB BAM, CHM13) runs in 22 min from scratch on 72 cores; `docs/PERFORMANCE.md`.
 
 `REPRODUCE.md` is the recipe book: every shipped number, the command that produces it, and the expected
 output. `docs/DATA.md` lists the BAMs, genomes and annotations those recipes read (large inputs live outside
 the repository). `docs/MODULE_STATUS.md` says which modules are reachable at defaults, which are opt-in, and
-which only a side binary uses — enforced by a test.
+which only a side binary uses (a test checks that the nine modules of `src/family.rs` are listed; the status column is kept by hand).
 
-Main binaries (`src/`, nine): the pipeline stages — `copy_assign` (`--assemble-only --genome-wide`
+Main binaries (`src/`; five more are not pipeline stages: `copy_phasing`, `family_gfa`, `semisec`, `semifam`, `slimbam`): the pipeline stages — `copy_assign` (`--assemble-only --genome-wide`
 streams a whole BAM into loci and isoforms; `--families` is the copy assignment; `--flag-missing-copies` the
 pairwise missing-copy test), `mcl_families` (family definition; `--from-gtf` runs the de novo stage from an
 assembled GTF in one command, with the copy table the assignment consumes), `gw_family_catalog` (the LEGACY copy
 catalog, assigned only with the driver's `--legacy-catalog`), `candidate_copies` (the opt-in candidates stage: candidate
-copies absent from the reference, from each family's reads), `missing_copy_flag` (missing copies from RNA), `as_table` (one pass over a BAM → each molecule's genome-wide best alignment score; the pipeline's assemble stage seeds loci with the tied secondaries it names, `--no-seed-secondaries` to opt out) — the `utilities` binary (four converters as subcommands: `mcl-port`, `locus-bed`, `gff-to-gtf`, `parcn`), plus the standalone comparator `family_score` and filter `readthrough_filter`.
+copies absent from the reference, from each family's reads), `missing_copy_flag` (missing copies from RNA), `as_table` (one pass over a BAM → each molecule's genome-wide best alignment score; the pipeline's assemble stage seeds loci with the tied secondaries it names, `--no-seed-secondaries` to opt out) — the `utilities` binary (11 subcommands: the converters `mcl-port`, `locus-bed`, `gff-to-gtf`, `parcn`, and `guide`, `sd-scan`, `candidate-augment`, `sample-counts`, `end-artifacts`, `window-depth`, `psv-discover`), plus the standalone comparator `family_score` and filter `readthrough_filter`.
 `tools/rustle_pipeline.sh assemble|families|candidates|catalog|assign|merged|flag|all` runs any stage, or all of them (`all` =
 assemble, families, assign, flag); `merged` is the genome-wide entry point (assemble + families + assign on the families copy table, byte-identical, resumable — bench/MERGED_PIPELINE.md), with the shipped defaults (since 2026-09-29 these include bridge-aware regrouping,
 `copy_assign --bridge-regroup f1v2`, and the containment escape `mcl_families --min-cov-shorter 0.70`; since 2026-10-02
@@ -57,7 +58,7 @@ and the default flip was reverted the same day, `docs/archive/2026-10/O3_CANDIDA
 families did not finish in a 10-minute call, spec §9b, R23; the driver runs every family in one call, only the binary's `--families` batches, so its peak memory exceeds that batch's 10.7 GB). `RUSTLE_BRIDGE_REGROUP=off RUSTLE_MIN_COV_SHORTER=0 ... --legacy-catalog` is
 the earlier pipeline, byte for byte except `assign` on a catalog with cross-chromosome families (2026-10-02, `copy_assign
 --help`, `--families`) — `REPRODUCE.md` §5 and its driver section, `bench/ASSEMBLY_POLISH.md` addendum 3). `bench/` holds the
-9 Python files behind the record's analysis commands: the library `lib.py`, the subcommand scripts `score.py`,
+Python files behind the record's analysis commands, among them the library `lib.py`, the subcommand scripts `score.py`,
 `sim.py` and `truth.py`, `guided_pipeline.py`, `mcl_port.py`, and the `layer_order/` and `soto/` chains
 (`bench/README.md` lists each one, and maps every retired script name to its current command); `tools/` the pipeline
 driver and the cleanup-audit script.
@@ -67,7 +68,10 @@ driver and the cleanup-audit script.
 `all` now also writes two side files after its last stage, each a copy of `PREFIX.gtf` with extra models and nothing
 removed: `PREFIX.earlyends.gtf` (`RUSTLE_EARLYENDS=0` turns it off) and `PREFIX.capstarts.gtf` (`RUSTLE_CAPSTARTS=0`;
 refused, and reported, on a library without a usable cap G). `families` and `assign` use extra locus representatives
-(`famreps`, `RUSTLE_FAMREPS=0` off; needs `python3`). Everything else below is opt-in, runs only when named, and leaves
+(`famreps`, `RUSTLE_FAMREPS=0` off; needs `python3`). Two sidecars next to the FASTA change the defaults when present:
+`FASTA.sedef.bed` turns on SD damping in `families` and the `PREFIX.fam.sdcore.tsv` side table (`RUSTLE_SEDEF_BED=` off,
+`RUSTLE_SDCORE=0` off), and `FASTA.exclude.bed` makes `assign` skip the families inside it (`RUSTLE_EXCLUDE_BED=` off).
+Everything else below is opt-in, runs only when named, and leaves
 the default products untouched:
 
 | stage | product | register |
@@ -84,7 +88,7 @@ the default products untouched:
 | `assemble --names ANNOT` / `names` | `PREFIX.named.gtf`, `PREFIX.final.named.gtf` (the same models with the annotation's gene and transcript names as attributes; independent of `--guide`) | none |
 | `eqclasses` | `PREFIX.eq.classes.tsv`, `PREFIX.eq.loci.tsv` (sets of loci the alignment score does not separate; per locus the reads placed only there, the maximum with every tied read, an EM count between the two) | none |
 | `famwise` | `PREFIX.famwise.families.tsv`, `.tx.tsv`, `.classes.tsv`, `.reads.tsv`, `.gtf` (transcripts joined across loci by tied molecules, each molecule counted once; per transcript a count range and a status; reporting only) | none |
-| `psi` | `PREFIX.psi.tsv` (PSI of each intron among the introns sharing its donor or acceptor, with the range tied reads allow); after `exonmap` also `PREFIX.fam.psi.tsv` (the same junction across the copies of a family) | none |
+| `psi` | `PREFIX.psi.tsv` (PSI of each intron among the introns sharing its donor or acceptor, with the range tied reads allow); after `exonmap` also `PREFIX.fam.psi.tsv` (the same junction across the copies of a family, with added rows for copies whose junction the stage's read floors dropped or that never use it, and the columns `silent`, `n_eligible`, `range_lo`, `range_hi`, `gap`) and `PREFIX.psi.introns.tsv` | none |
 | `repeatloci` | `PREFIX.repeat_loci.tsv` | 1698, 1702 |
 | `exonmap` | `PREFIX.fam.exonmap.columns.tsv` + one GFA per family | 1595 |
 | `relatives` | `PREFIX.fam.relatives.tsv` | 1676, 1737 |

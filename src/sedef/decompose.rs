@@ -21,11 +21,9 @@
 
 use rayon::prelude::*;
 use std::collections::HashMap;
-use std::error::Error;
-use std::io::BufRead;
 
 use crate::sedef::anchors::BlockAnchors;
-use crate::sedef::refine::{best_run, extract_anchors};
+use crate::sedef::refine::best_run;
 
 pub struct DecomposeParams {
     pub k: usize,
@@ -34,16 +32,6 @@ pub struct DecomposeParams {
     /// Elementary segments shorter than this are not emitted.
     pub min_seg: u64,
     pub max_pairs: u64,
-}
-
-/// One refined block loaded from the stage-3 TSV (ok rows only).
-pub struct InBlock {
-    chr_a: String,
-    a0: u64,
-    a1: u64,
-    chr_b: String,
-    b0: u64,
-    b1: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -69,38 +57,6 @@ pub struct Family {
     pub span_bp: u64,
     /// Vendored change (2026-10-13): the family's distinct copies `(chrom, start, end)`, sorted.
     pub copies: Vec<(String, u64, u64)>,
-}
-
-pub fn load_ok_blocks(path: &std::path::Path) -> Result<Vec<InBlock>, Box<dyn Error>> {
-    let f = std::fs::File::open(path)?;
-    let reader = std::io::BufReader::new(f);
-    let mut out = Vec::new();
-    for line in reader.lines() {
-        let line = line?;
-        if line.starts_with('#') || line.is_empty() {
-            continue;
-        }
-        let t: Vec<&str> = line.split('\t').collect();
-        if t.len() < 11 || t[10] != "ok" {
-            continue;
-        }
-        out.push(InBlock {
-            chr_a: t[0].to_string(),
-            a0: t[1].parse()?,
-            a1: t[2].parse()?,
-            chr_b: t[3].to_string(),
-            b0: t[4].parse()?,
-            b1: t[5].parse()?,
-        });
-    }
-    Ok(out)
-}
-
-fn get_seq<'a>(seqs: &'a HashMap<String, Vec<u8>>, chr: &str) -> Option<&'a [u8]> {
-    seqs.get(chr).map(|v| v.as_slice()).or_else(|| {
-        let first = chr.split_whitespace().next()?;
-        seqs.get(first).map(|v| v.as_slice())
-    })
 }
 
 /// Normalise a segment pair so the two sides have a deterministic order
@@ -388,47 +344,6 @@ pub struct DecomposeStats {
     pub n_segments: usize,
     pub n_deduped: usize,
     pub n_families: usize,
-}
-
-/// Build anchor records the expensive way (from sequences) -- used when no
-/// anchors file is available.
-pub fn anchor_from_fasta(
-    blocks: Vec<InBlock>,
-    seqs: &HashMap<String, Vec<u8>>,
-    k: usize,
-    max_pairs: u64,
-) -> Vec<BlockAnchors> {
-    let out: Vec<BlockAnchors> = blocks
-        .par_iter()
-        .map(|b| {
-            let anchors = match (
-                get_seq(seqs, &b.chr_a),
-                get_seq(seqs, &b.chr_b),
-            ) {
-                (Some(sa), Some(sb)) => {
-                    let (a0, a1) = ((b.a0 as usize).min(sa.len()), (b.a1 as usize).min(sa.len()));
-                    let (b0, b1) = ((b.b0 as usize).min(sb.len()), (b.b1 as usize).min(sb.len()));
-                    if a1 > a0 && b1 > b0 {
-                        extract_anchors(&sa[a0..a1], &sb[b0..b1], k, max_pairs)
-                    } else {
-                        Vec::new()
-                    }
-                }
-                _ => Vec::new(),
-            };
-            BlockAnchors {
-                chr_a: b.chr_a.clone(),
-                a0: b.a0,
-                a1: b.a1,
-                chr_b: b.chr_b.clone(),
-                b0: b.b0,
-                b1: b.b1,
-                status: 1,
-                anchors,
-            }
-        })
-        .collect();
-    out
 }
 
 pub fn decompose(

@@ -16,7 +16,7 @@ def load(path):
         if len(f) < 9 or f[2] not in ('exon', 'transcript'): continue
         k = (f[0], f[6], re.search(r'transcript_id "([^"]+)"', f[8]).group(1))
         if f[2] == 'exon': ex[k].append((int(f[3]) - 1, int(f[4])))
-        else: at[k] = (float(re.search(r'reads "([^"]+)"', f[8]).group(1)), re.search(r'gene_id "([^"]+)"', f[8]).group(1))
+        else: at[k] = (float(re.search(r'\breads "([^"]+)"', f[8]).group(1)), re.search(r'gene_id "([^"]+)"', f[8]).group(1))
     T = {}
     for k, e in ex.items():
         if len(e) < 2: continue

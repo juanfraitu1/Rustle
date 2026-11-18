@@ -6,16 +6,8 @@ use std::process::Command;
 
 #[test]
 fn from_genome_recovers_family_and_excludes_decoys() {
-    if Command::new("minimap2").arg("--version").output().is_err() {
-        eprintln!("minimap2 absent; skip");
-        return;
-    }
     let fa = "tests/fixtures/from_genome/subset.fa";
     let win = "tests/fixtures/from_genome/windows.bed";
-    if std::fs::metadata(fa).is_err() || std::fs::metadata(win).is_err() {
-        eprintln!("fixture absent; skip");
-        return;
-    }
     let dir = std::env::temp_dir().join("rustle_from_genome_it");
     let _ = std::fs::create_dir_all(&dir);
     let out = dir.join("dna");

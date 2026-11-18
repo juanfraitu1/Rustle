@@ -499,7 +499,7 @@ class _Runs:
 def build(cfg: dict, data_dir: Path, force: bool = False):
     if assembly.plan_only(cfg):
         return plan(cfg)
-    budget = assembly.Budget(cfg, "fig1")
+    budget = assembly.Budget(cfg, "fig1", force)
     R = _Runs(cfg, force, budget)
     main = assembly.benchmark_samples(cfg)
     everyone = assembly.all_samples(cfg)

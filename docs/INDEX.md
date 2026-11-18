@@ -23,13 +23,21 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-18 | register ×1 |
 | [`seeded_family_definition.md`](seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-08 | — |
 
-## Open studies and current handoff (226)
+## Open studies and current handoff (227)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
 | [`PRECISION_RULES_2026-11-18.md`](PRECISION_RULES_2026-11-18.md) | Precision rules on 12 samples, and the new chain score default (17-18 Nov 2026) | 2026-11-18 | memory ×1 |
 | [`PREREG_family_ties_2026-11-18.md`](PREREG_family_ties_2026-11-18.md) | PREREG r1790: are the near-tied reads concentrated in a few families? (2026-11-18) | 2026-11-18 | register ×1 |
 | [`PREREG_famwise_origin_2026-11-18.md`](PREREG_famwise_origin_2026-11-18.md) | PREREG r1796 / r1794 / r1795: the family-wise layer against the origin of the reads (2026-11-18) | uncommitted | register ×1, memory ×1 |
+| [`PREREG_rule_ablation2_2026-11-19.md`](PREREG_rule_ablation2_2026-11-19.md) | Row 1811: second ablation at the toned-down defaults: primate-only levers (extension, seed pool) and untested levers (bridge regroup, layers) |
+| [`OVERFIT_LEVERS_2026-11-18.md`](OVERFIT_LEVERS_2026-11-18.md) | Which assembler levers are overfit to the primate samples, the evidence per lever, and what was toned down (rows 1779-1810) |
+| [`PREREG_one_read_promote_check_2026-11-18.md`](PREREG_one_read_promote_check_2026-11-18.md) | Row 1808: one-read chains seen in a second library and ranked high, checked against the two-read chains on three unused libraries |
+| [`PREREG_one_read_promote_2026-11-18.md`](PREREG_one_read_promote_2026-11-18.md) | Row 1807: which one-read chains can be promoted into the main output? Second library, strict tier, ranking and their combinations |
+| [`PREREG_one_read_score_2026-11-18.md`](PREREG_one_read_score_2026-11-18.md) | Row 1806: a score for one-read chains from read-level features, leave-one-dataset-out over seven datasets |
+| [`PREREG_one_read_chains_2026-11-18.md`](PREREG_one_read_chains_2026-11-18.md) | Row 1805: can a one-read chain be accepted on evidence other than its read count? Ceiling measurement on the row 1793 floor-1 arms |
+| [`PREREG_snap_ism_defaults_2026-11-18.md`](PREREG_snap_ism_defaults_2026-11-18.md) | Row 1800: polish junction snap on by default and ISM ratio re-set on non-primate data, checked on unused data (zebrafish simulated, ENCODE mouse tissue) |
+| [`PREREG_rule_ablation_2026-11-18.md`](PREREG_rule_ablation_2026-11-18.md) | Row 1793: which assembler rules are overfit to the primate samples? (pre-registered 2026-11-18) | uncommitted | register ×1 |
 | [`PREREG_splicesite_features_2026-11-18.md`](PREREG_splicesite_features_2026-11-18.md) | Row 1789: does splice-site sequence strength add precision? (pre-registered 2026-11-18) | 2026-11-18 | register ×1 |
 | [`PREREG_testis_replication_2026-11-18.md`](PREREG_testis_replication_2026-11-18.md) | Row 1792: are the "wrong" chains the score keeps in testis real transcripts RefSeq lacks? (pre-registered 2026-11-18, di | 2026-11-18 | register ×1 |
 | [`PREREG_tie_split_2026-11-18.md`](PREREG_tie_split_2026-11-18.md) | PREREG r1791: what the "true ties" of r1790 are (2026-11-18) | 2026-11-18 | register ×1 |

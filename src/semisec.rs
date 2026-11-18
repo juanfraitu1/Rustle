@@ -510,6 +510,13 @@ fn main() -> Result<()> {
                 let processed = p.spliced && !cig.iter().any(|(k, _)| *k == Kind::Skip);
                 let (o0, o1) = longest_orf(&read);
                 let (orf, cov) = if (o1 - o0) / 3 >= MIN_CODONS {
+                    // an unknown contig used to read as "no reference bases": every aligned base an insertion
+                    anyhow::ensure!(
+                        genome.contig_length(&contigs[c.ci]).is_some(),
+                        "contig {} is not in {} (its .fai): the FASTA and the BAM name contigs differently",
+                        contigs[c.ci],
+                        args.genome
+                    );
                     let ev = candidate_events(&cig, c.best.pos, c.best.rev, read.len(), &genome, &contigs[c.ci]);
                     orf_status(&ev, o0, o1)
                 } else {
@@ -562,4 +569,47 @@ fn main() -> Result<()> {
     writeln!(w, "seeds\t{}\nsecondaries\t{n_sec}\nkept_hits\t{n_kept}\nrepeat_hits_dropped\t{n_repeat}\ncandidates\t{}\nsilent\t{}\nratio\t{}", seeds.len(), cands.len(), silent.len(), args.ratio)?;
     eprintln!("[semisec] {} silent classed; done in {:.0} s", silent.len(), t0.elapsed().as_secs_f64());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ev(s: &str) -> Vec<(i64, Vec<u8>)> {
+        s.bytes().enumerate().map(|(i, b)| (2 * i as i64, vec![b])).collect()
+    }
+
+    #[test]
+    fn pure_rules() {
+        let m: [(u32, u32); 2] = [(10, 20), (30, 40)];
+        assert_eq!((repeat_bp(&m, 15, 35), repeat_bp(&m, 20, 30), repeat_bp(&m, 0, 100)), (10, 0, 20));
+        // (0,100) starts two records before s = 90 and must still count; touching is no overlap
+        let iv = Iv::new(vec![(200, 210), (50, 60), (0, 100)]);
+        assert_eq!((iv.count(90, 95), iv.count(55, 58), iv.count(100, 200), iv.count(60, 201)), (1, 2, 0, 2));
+        assert_eq!(longest_orf(b"CATGAAATAGATGTGA"), (1, 10)); // frame 1, stop included
+        assert_eq!(longest_orf(b"ATGTAAATGTAG"), (0, 6)); // the first longest wins
+        assert_eq!(longest_orf(b"ATGAAA"), (0, 0)); // no stop, no ORF
+        assert_eq!(orf_status(&ev("ATGAAATAA"), 0, 9), ("INTACT", 1.0));
+        assert_eq!(orf_status(&ev("ATGTAATAA"), 0, 9).0, "DISRUPTED"); // premature in-frame stop
+        let mut shift = ev("ATGAAATAA");
+        shift[4].1.clear(); // a read base with no reference base: frameshift
+        assert_eq!(orf_status(&shift, 0, 9), ("DISRUPTED", 8.0 / 9.0));
+        let mut del3 = ev("ATGAAATAA");
+        del3.insert(3, (5, b"CCC".to_vec())); // a 3-base deletion run keeps the frame
+        assert_eq!(orf_status(&del3, 0, 9), ("INTACT", 1.0));
+        assert_eq!(orf_status(&[], 0, 9), ("UNCOVERED", 0.0));
+    }
+
+    #[test]
+    fn candidate_events_positions_and_reverse() {
+        let d = tempfile::tempdir().unwrap();
+        let fa = d.path().join("g.fa");
+        std::fs::write(&fa, ">c\nACGTACGTAC\n").unwrap();
+        std::fs::write(d.path().join("g.fa.fai"), "c\t10\t3\t10\t11\n").unwrap();
+        let g = rustle::genome::IndexedFasta::open(fa.to_str().unwrap()).unwrap();
+        let cig = [(Kind::SoftClip, 1), (Kind::Match, 2), (Kind::Deletion, 1), (Kind::Insertion, 1), (Kind::Match, 1)];
+        let e = |v: &[(i64, &str)]| v.iter().map(|(p, b)| (*p, b.as_bytes().to_vec())).collect::<Vec<_>>();
+        assert_eq!(candidate_events(&cig, 2, false, 5, &g, "c"), e(&[(2, "G"), (4, "T"), (5, "A"), (6, ""), (8, "C")]));
+        assert_eq!(candidate_events(&cig, 2, true, 5, &g, "c"), e(&[(0, "G"), (2, ""), (3, "T"), (4, "A"), (6, "C")]));
+    }
 }

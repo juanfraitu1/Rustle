@@ -903,7 +903,7 @@ def build(cfg, data_dir, force):
     import samples
     if assembly.plan_only(cfg):
         return plan(cfg)
-    budget = assembly.Budget(cfg, "fig3")
+    budget = assembly.Budget(cfg, "fig3", force)
     all_rows: list = []
     infos: dict = {}
     inputs: dict = {}
@@ -976,6 +976,8 @@ def build(cfg, data_dir, force):
     extra = [f"{k}: genome-wide = every contig its annotation covers; not annotated, so left out for every method: "
              f"{', '.join(assembly.unannotated_contigs(cfg, k))}" for k in scopes if assembly.unannotated_contigs(cfg, k)]
     extra.append("mode: " + assembly.MODE_DENOVO_METHODS + "; " + assembly.guided_status(cfg))
+    extra += [f"provisional: {k} restricted to {scopes[k]} (development key eval_contigs_{samples.resolve(cfg, k)})"
+              for k in scopes if not assembly.is_genome_wide(cfg, k)]
     write_all(all_rows, infos, inputs, example, example_note, data_dir, notes_extra=extra, scopes=scopes)
     if guided_rows:
         figlib.write_table("fig3_guided_bins", BINS_HEADER + ["mode", "sample"], guided_rows,

@@ -1135,7 +1135,7 @@ def contig_names(cfg: dict, species: str) -> dict:
                 m = re.search(r"chromosome=([^;\n]+)", f[8])
                 if m:
                     names[f[0]] = f"chr{m.group(1)}"
-    p.write_text(json.dumps({"key": key, "names": names}))
+    tmp = p.with_suffix(".json.tmp"); tmp.write_text(json.dumps({"key": key, "names": names})); tmp.replace(p)
     return names
 
 

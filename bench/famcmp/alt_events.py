@@ -19,7 +19,7 @@ def load(path, want_attr=None):
         k = (f[0], f[6], m.group(1))
         if f[2] == 'exon': ex[k].append((int(f[3]) - 1, int(f[4])))
         elif f[2] == 'transcript' and want_attr:
-            a = re.search(want_attr + r' "?(\d+)', f[8]); at[k] = int(a.group(1)) if a else None
+            a = re.search(r'\b' + want_attr + r' "?(\d+)', f[8]); at[k] = int(a.group(1)) if a else None
     out = collections.defaultdict(lambda: collections.defaultdict(list))
     for k, e in ex.items():
         e.sort()

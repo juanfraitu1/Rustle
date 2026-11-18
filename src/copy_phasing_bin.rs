@@ -191,13 +191,21 @@ fn run(a: &Args) -> Result<()> {
     // the run's read table: every used net read, sorted, so ReadId order = name order
     let table: Vec<String> = net.values().flatten().cloned().collect::<BTreeSet<_>>().into_iter().collect();
     let names: HashMap<Vec<u8>, ReadId> = table.iter().enumerate().map(|(i, n)| (n.as_bytes().to_vec(), i as ReadId)).collect();
-    let bam = Bam::open(&a.bam)?;
-    let (prim, records) = bam.read_primaries(&names)?;
+    // cheap input checks before the whole-BAM pass and before any product is truncated
+    if let Some(f) = net.keys().find(|f| !by_fam.contains_key(*f)) {
+        anyhow::bail!("family {f} is in --net but not in --copies (tables from different runs?)");
+    }
     let genome = IndexedFasta::open(&a.genome).with_context(|| format!("opening --genome {} (and its .fai)", a.genome))?;
+    for c in net.keys().filter_map(|f| by_fam.get(f)).flatten() {
+        // a missing contig used to become an empty sequence: divergence 0.0, or an index panic under --semi
+        anyhow::ensure!(genome.contig_length(&c.chrom).is_some(), "copy {} is on {}, which --genome {} lacks", c.tid, c.chrom, a.genome);
+    }
     let iso = match &a.isocon {
         Some(prefix) => isocon_side(prefix, &a.net)?,
         None => BTreeMap::new(),
     };
+    let bam = Bam::open(&a.bam)?;
+    let (prim, records) = bam.read_primaries(&names)?;
     let out_dir = std::path::Path::new(&a.out).parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or(std::path::Path::new("."));
     let tmp = out_dir.join(format!(".copy_phasing.{}", std::process::id()));
     std::fs::create_dir_all(&tmp).with_context(|| format!("creating {}", tmp.display()))?;

@@ -9,7 +9,9 @@ use std::process::Command;
 #[test]
 fn cross_chrom_catalog_emits_same_chrom_family() {
     let bin = env!("CARGO_BIN_EXE_gw_family_catalog");
-    let out = "tests/fixtures/same_chrom_supplement/out";
+    let td = tempfile::tempdir().unwrap(); // not into the tracked fixtures: a stale product there passed the test
+    let out = td.path().join("out").to_str().unwrap().to_string();
+    let out = out.as_str();
     let status = Command::new(bin)
         .args([
             "--bam",

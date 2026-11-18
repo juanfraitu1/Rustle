@@ -198,7 +198,9 @@ fn main() -> Result<()> {
     }
     let mut names: Vec<&String> = mols.keys().collect();
     names.sort_unstable();
-    let mut out = std::io::BufWriter::with_capacity(1 << 20, std::fs::File::create(&args.out)?);
+    // tmp + rename: a killed run must not leave a table with a valid provenance line and half the molecules
+    let tmp = format!("{}.tmp", args.out);
+    let mut out = std::io::BufWriter::with_capacity(1 << 20, std::fs::File::create(&tmp)?);
     // provenance header (skipped by `global_best_as`): the driver reuses a table only when `bam=` is its BAM and
     // `bam_bytes=` its size (a BAM replaced at the same path by an older file kept its mtime: `cp -p`, `rsync -a`)
     let bam_abs = std::fs::canonicalize(&args.bam)
@@ -253,6 +255,7 @@ fn main() -> Result<()> {
     }
     out.flush()?;
     drop(out);
+    std::fs::rename(&tmp, &args.out)?;
     eprintln!(
         "[as-table] {n_records} records -> {} molecules -> {} in {:.0} s",
         mols.len(),

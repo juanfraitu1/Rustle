@@ -35,6 +35,8 @@ delete them without the user's confirmation.
 CARGO_TARGET_DIR=/mnt/linuxdisk/home/juanfraitu/rustle_target cargo build --release --bins > build.log 2>&1
 CARGO_TARGET_DIR=/mnt/linuxdisk/home/juanfraitu/rustle_target cargo test --release > test.log 2>&1
 ```
+(Those are the laptop's paths. On the Fritz cluster: `pixi run build` / `pixi run test`, target dir `$HOME/rustle_target`, and
+pass `--bin $HOME/rustle_target/release` to the driver, whose default is the repo's `target/release`.)
 Always `--release`; send cargo output to a file (a pipe hides the exit code). Behaviour-preserving changes are proven
 by `cmp` of the products against a build of the previous commit on the same inputs; `tools/identity_check.sh golden|check`
 (scripted version: full suite + an end-to-end MCL cmp; `FULL=1` adds a real-data slice) is the harness used for

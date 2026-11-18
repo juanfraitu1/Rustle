@@ -61,6 +61,9 @@
 #        [--seed-pool primary|good|all [--seed-as-ratio R]] [--as-table FILE] [--contig NAME[,NAME...]] [--no-seed-secondaries]
 #        [--no-cache] [--inspect] [--piecewise [--max-pieces N] [--budget-s S] [--piece-records R] [--piece LABEL]]
 #        [--candidates | --no-candidates] [--delta D] [--cand-max-reads N] [--legacy-catalog]
+#        [--to STAGE] [--from STAGE] [--low-mem] [--index-gb N] [--max-window-records N] [--no-flag] [--no-resume] [--cache]
+#        (stage `index` = the shared splice index alone, needs --fasta and --out; `flag_scan` / `flag_bg` are internal to `all`;
+#         RUSTLE_EXTEND_TRANSFRAGS=0 removes --extend-transfrags from assemble, default on)
 #        [--guide ANNOT.gtf]   assemble / all also write PREFIX.guided.gtf (stage `guided` alone rewrites it from PREFIX.gtf;
 #                              the de novo PREFIX.gtf and every later stage are unchanged; register 1622)
 #        [--names ANNOT.gff3|gtf[.gz]]   assemble / all also write PREFIX.named.gtf (and PREFIX.final.named.gtf): the same
@@ -74,6 +77,10 @@
 #     PREFIX.gtf and the score table). A report of one sample: no test between samples, intron retention not seen, nothing reads it.
 #     After stage `exonmap` it also writes PREFIX.fam.psi.tsv: the psi rows keyed by exon columns, so one junction is read across
 #     the copies of a family (tools/psi_family.py; `differs` = copies whose tie ranges do not overlap, a count, not a test).
+#     With PREFIX.fam.loci.gated.paf it also adds rows for each copy that has the junction's two exons and reads at its anchor
+#     but no row: its own junctions between those exons that the read floors dropped, else the junction carried over from the
+#     most-read copy (`silent`: no read carries it), and the columns n_eligible, range_lo, range_hi, gap;
+#     PREFIX.psi.introns.tsv = the raw counts of every intron, written for that purpose.
 #   tools/rustle_pipeline.sh eqclasses --bam B --fasta G --out PREFIX [--names ANNOT] [--threads N]   OPT-IN, named only:
 #     PREFIX.eq.classes.tsv (sets of loci minimap2's ms score does not separate, with their read count) and PREFIX.eq.loci.tsv (per
 #     locus of the assembly: reads placed only there, the maximum with every tied read, a counts-only EM estimate between the
@@ -117,7 +124,7 @@
 #   tools/rustle_pipeline.sh trunc5 --bam B --fasta G --out PREFIX [--threads N]   OPT-IN (register 1677): PREFIX.trunc5.gtf = PREFIX.gtf without
 #                              multi-exon chains that at least as many primary reads run through and continue 5' of as end with
 #   tools/rustle_pipeline.sh chainscore --bam B --fasta G --out PREFIX [--threads N]   (register 1761; applied to PREFIX.final.gtf by default since 2026-11-16, RUSTLE_CHAINSCORE=0 = off): PREFIX.chainscore.gtf = PREFIX.gtf without
-#                              multi-exon chains whose frozen chain score is below the fixed cut (tools/data/chainscore_r1769.json, cut 0.055; default model since 2026-11-18)
+#                              multi-exon chains whose frozen chain score is below the fixed cut (tools/data/chainscore_r1769.json, cut 0.02 since 2026-11-18, register 1810; RUSTLE_CHAINSCORE_TAU=0.055 = the earlier cut; default model since 2026-11-18)
 #                              RUSTLE_CHAINSCORE_MODEL=r1677 = the earlier weight file (register 1677, cut 0.061), also for assemble's filter on PREFIX.final.gtf
 #   tools/rustle_pipeline.sh capstarts --bam B --fasta G --out PREFIX [--threads N]   (register 1717 / 1720; also a last step of `all`, RUSTLE_CAPSTARTS=0 = off; writes nothing on a library without cap G): PREFIX.capstarts.gtf = PREFIX.gtf plus
 #                              nested starts backed by >= 3 capped reads (non-templated 5' G); refuses libraries without a usable cap G
@@ -224,7 +231,12 @@
 #   parallel run (default on; PREFIX.gtf / PREFIX.families.gtf unchanged by construction; registers 1487-1491);
 #   RUSTLE_POLISH_TES=tag|pas-end adds `--polish-tes` to `assemble` (default unset = off);
 #   RUSTLE_POLISH_MONO_PRIMED=0 adds `--no-polish-mono-primed` to `assemble` (default unset = 1 = on since 2026-10-26);
-#   RUSTLE_POLISH_JUNCTION_SNAP=equiv|reads adds `--polish-junction-snap` to `assemble` (default unset = off);
+#   RUSTLE_POLISH_JUNCTION_SNAP=off|equiv|reads sets `--polish-junction-snap` of `assemble` (default unset = reads since
+#     2026-11-18, row 1800; needs the BAM index);
+#   RUSTLE_POLISH_SPLICED_SHARE=X adds `--polish-spliced-share X` to `assemble` (opt-in, r1801; unset or 0 = off): drops a
+#     transcript with an intron spliced by less than X of the primary reads across it (0.05 in the r1801 diagnosis);
+#   RUSTLE_POLISH_MONO_SHADOW_RATIO=R adds `--polish-mono-shadow-ratio R` (opt-in, r1801; unset or 0 = off): the shadow rule
+#     keeps a single-exon transcript with at least R times the reads of the spliced transcript shadowing it;
 #   RUSTLE_GTF_REGROUP=1 adds `--gtf-regroup` to `assemble` (RG3 regroup after polish; default unset = off; needs
 #     RUSTLE_BRIDGE_REGROUP=off, whose default contains RG3's split);
 #   RUSTLE_BRIDGE_REGROUP=off|f1|f1v2|f1units sets `--bridge-regroup` on `assemble` (unset = f1v2, THE DEFAULT since
@@ -254,7 +266,7 @@
 #   RUSTLE_SEDEF_BED=FILE turns on SD damping in `families` (unset: FASTA.sedef.bed when that sidecar exists; empty: off) (`--sd-damp-bed FILE --sd-damp ${RUSTLE_SD_DAMP:-0.25}`): edges
 #     between loci no SEDEF pair links are down-weighted before MCL (row 1580: HG002 held-out +0.160 precision at equal
 #     recall; A119b .802/.740 -> .925/.718). Set it whenever the genome has a SEDEF build (human CHM13, gorilla; paths in
-#     docs/DATA.md); RUSTLE_SD_DAMP=1 keeps the BED but turns damping off. Unset = off, the earlier products.
+#     docs/DATA.md); RUSTLE_SD_DAMP=1 keeps the BED but turns damping off. Unset with no FASTA.sedef.bed sidecar, or set empty = off, the earlier products.
 # `families` is the DE NOVO mode (loci from the assembled GTF). The GUIDED mode (loci = the annotation's gene and
 # pseudogene bodies, PREREG_heldout_families_2026-09-20 §2) is not a driver stage: figures/_o1_recovery.py
 # (guided_families) runs its recipe step by step. Every product carries the PREFIX.
@@ -266,7 +278,8 @@ set -euo pipefail
 # A stage call of `all` runs the same snapshot (its $0 is RP_SNAPSHOT); a call of the repo file (a user, rustle_samples.sh) snapshots.
 if [ "${RP_SNAPSHOT:-}" != "$0" ]; then
   export RP_DRIVER_DIR RP_SNAPSHOT RP_OWNER_PID=$$; RP_DRIVER_DIR=$(cd "$(dirname "$0")" && pwd)
-  RP_SNAPSHOT=$(mktemp "${TMPDIR:-/tmp}/rustle_pipeline.XXXXXX") && cp -p "$0" "$RP_SNAPSHOT" && exec bash "$RP_SNAPSHOT" "$@"
+  RP_SNAPSHOT=$(mktemp "${TMPDIR:-/tmp}/rustle_pipeline.XXXXXX") && cp -p "$0" "$RP_SNAPSHOT" && exec bash "$RP_SNAPSHOT" "$@" \
+    || { echo "[rustle_pipeline] cannot write the driver snapshot in ${TMPDIR:-/tmp}" >&2; exit 1; }
 fi
 # the process that made the snapshot (exec keeps its pid) removes it at exit; stage calls (other pids) leave it to their parent
 if [ "${RP_OWNER_PID:-}" = "$$" ]; then trap 'rm -f "$RP_SNAPSHOT"' EXIT; fi
@@ -413,6 +426,16 @@ elif [ "$STAGE" = names ]; then
 else
   [ -n "$BAM" ] && [ -n "$FASTA" ] && [ -n "$OUT" ] || { echo "need --bam, --fasta, --out" >&2; exit 2; }
 fi
+# One writer per PREFIX (audit 2026-11-18): two sessions running `all --out X` deleted each other's X.final.* and both wrote
+# X.gtf. Only the invocation the user started takes the lock; the stages it runs as children inherit it. A `case "$STAGE"`
+# block at column 0, so figures/samples.py's driver_stage_code leaves it out of every stage's hash.
+# shortcut: a background index build of a failed run still holds the lock, so a rerun is refused until it ends.
+case "$STAGE" in
+  all|merged|assemble|families|assign) if [ "${RP_OWNER_PID:-}" = "$$" ]; then
+      mkdir -p "$(dirname "$OUT")"
+      exec 7>> "$OUT.lock"; flock -n 7 || { echo "[rustle_pipeline] another run is writing $OUT.* (lock $OUT.lock)" >&2; exit 2; }
+    fi;;
+esac
 # --low-mem (docs/archive/2026-11/LEDGER_O1.md:3502 (GENOMEWIDE_FAST_2026-10-12.md)): the splice index in 1-Gbp parts (flag holds one part at a time) and one
 # assign region at a time; MM_THREADS caps families' all-vs-all and flag's align at 16 threads (their minimap2 memory scales with
 # threads, outputs identical; gorilla families 38 -> 18 GB, flag align 44 -> 25 GB; audit rounds 43, 45); every other setting unchanged
@@ -473,7 +496,10 @@ if [ "$INSPECT" = 1 ]; then
   INSPECT_CAT=("RUSTLE_ER_EDGE_DUMP=$OUT.cache/inspect/catalog" RUSTLE_COLLAPSE_STATS=1)
   INSPECT_ASSIGN=(--dump-psv --posterior)
 fi
-POLISH="--assembly-polish full --polish-isoform-fraction 0.02 --polish-mono-shadow --polish-mono-quantile 0.82 --polish-ism-ratio 0.7 --polish-retained-ratio ${RUSTLE_POLISH_RETAINED_RATIO:-10}"
+POLISH="--assembly-polish full --polish-isoform-fraction 0.02 --polish-mono-shadow --polish-mono-quantile 0.82 --polish-ism-ratio ${RUSTLE_POLISH_ISM_RATIO:-0.3} --polish-retained-ratio ${RUSTLE_POLISH_RETAINED_RATIO:-10}"
+# RUSTLE_POLISH_ISM_RATIO=R (register 1810; unset = 0.3 since 2026-11-18, 0.7 = the command before): a transcript whose intron chain is a
+# contiguous part of a longer assembled chain is kept when it has at least R times that chain's reads. 0.7 was overfit to the primate
+# samples (register 1793: it cost 9-10% of the correct chains on mouse); 0.1 is the non-primate choice of register 1800.
 # RUSTLE_POLISH_RETAINED_RATIO=R (register 1745; unset = 10, the same command): a transcript whose exon contains an intron of its
 # gene is dropped when that intron has >= R x the transcript's reads; 0 turns the retained-intron filter off.
 # RUSTLE_POLISH_SUBCHAIN=tag|drop (opt-in; unset = off, the same command): copy_assign --polish-subchain, which tags
@@ -589,15 +615,19 @@ case "${RUSTLE_TRANSFER_ENDS:-}" in ""|0) ;; 1) POLISH="$POLISH --transfer-ends"
   *) echo "[rustle_pipeline] RUSTLE_TRANSFER_ENDS must be 0 or 1 (got '$RUSTLE_TRANSFER_ENDS')" >&2; exit 2 ;; esac
 case "${RUSTLE_READ_ISOFORM_K:-}" in ""|0) ;; *[!0-9]*) echo "[rustle_pipeline] RUSTLE_READ_ISOFORM_K must be a whole number (got '$RUSTLE_READ_ISOFORM_K')" >&2; exit 2 ;;
   *) POLISH="$POLISH --read-isoform-k $RUSTLE_READ_ISOFORM_K" ;; esac
-# RUSTLE_POLISH_JUNCTION_SNAP=equiv|reads (opt-in; unset = off, the same command): copy_assign --polish-junction-snap,
+# RUSTLE_POLISH_JUNCTION_SNAP=off|equiv|reads (unset = reads, the default since row 1800; off = the command before it): copy_assign --polish-junction-snap,
 # the fuzzy-junction merge that keeps read-proven splice sites (reads: a junction within 10 bp of a better-supported one
-# in its locus moves onto it only when its own reads do not prove it and the other's reads do). Dev-only, in-sample
-# evidence: see its --help
-case "${RUSTLE_POLISH_JUNCTION_SNAP:-}" in
-  "") ;;
+# in its locus moves onto it only when its own reads do not prove it and the other's reads do). Evidence: rows 1793 and
+# 1800 (docs/PREREG_snap_ism_defaults_2026-11-18.md); the chain score filter was fitted without it
+case "${RUSTLE_POLISH_JUNCTION_SNAP:=reads}" in
   off|equiv|reads) POLISH="$POLISH --polish-junction-snap $RUSTLE_POLISH_JUNCTION_SNAP" ;;
   *) echo "[rustle_pipeline] RUSTLE_POLISH_JUNCTION_SNAP must be off, equiv or reads (got '$RUSTLE_POLISH_JUNCTION_SNAP')" >&2; exit 2 ;;
 esac
+# RUSTLE_POLISH_SPLICED_SHARE / RUSTLE_POLISH_MONO_SHADOW_RATIO (opt-in, r1801; unset or 0 = off, the same command)
+case "${RUSTLE_POLISH_SPLICED_SHARE:-}" in ""|0) ;; *[!0-9.]*) echo "[rustle_pipeline] RUSTLE_POLISH_SPLICED_SHARE must be a number >= 0 (got '$RUSTLE_POLISH_SPLICED_SHARE')" >&2; exit 2 ;;
+  *) POLISH="$POLISH --polish-spliced-share $RUSTLE_POLISH_SPLICED_SHARE" ;; esac
+case "${RUSTLE_POLISH_MONO_SHADOW_RATIO:-}" in ""|0) ;; *[!0-9.]*) echo "[rustle_pipeline] RUSTLE_POLISH_MONO_SHADOW_RATIO must be a number >= 0 (got '$RUSTLE_POLISH_MONO_SHADOW_RATIO')" >&2; exit 2 ;;
+  *) POLISH="$POLISH --polish-mono-shadow-ratio $RUSTLE_POLISH_MONO_SHADOW_RATIO" ;; esac
 # RUSTLE_GTF_REGROUP=1 (opt-in; unset or 0 = off, the same command): copy_assign --gtf-regroup, RG3 — after every polish
 # step, split a gene_id whose surviving transcripts share no same-strand exonic base (a dropped readthrough bridge, or
 # two pre-polish components that collided on one base tid); split-only, intron chains unchanged, the deeper piece keeps
@@ -744,7 +774,7 @@ stage_assemble() {
         [ -e "$tmp.asbin" ] && mv -f "$tmp.asbin" "$table.asbin"
         mv -f "$tmp" "$table"
       else
-        rm -f "$tmp" "$tmp.asbin"
+        rm -f "$tmp" "$tmp.tmp" "$tmp.asbin"
         echo "[rustle_pipeline] as_table failed (see $OUT.as_table.log)" >&2; exit 3
       fi
     fi
@@ -803,7 +833,8 @@ stage_assemble() {
   # 2,588 -> 1,685 s, six products byte-identical, RSS 16 GB. The read budget is 20M records here (80M on a large node, round 58), not assign's 4M:
   # at 4M chr1/chr2/chr13 (5-6M records each) run alone and the sweep stays near serial.
   local fin_pid=""
-  rm -f "$OUT.final.gtf" "$OUT.final.pid" "$OUT".final_run.*
+  # the side products of the previous assembly go too: a failed or switched-off step must not leave them beside the new GTF
+  rm -f "$OUT.final.gtf" "$OUT.final.pid" "$OUT".final_run.* "$OUT.final.named.gtf" "$OUT.named.gtf" "$OUT.chainscore.gtf" "$OUT.earlyends.gtf" "$OUT.capstarts.gtf"
   if [ "${#layers[@]}" -gt 0 ]; then
     # one subshell = the run, then its product under its final name (a rename, so PREFIX.final.gtf is whole or absent)
     ( env "${seed_env[@]}" RUSTLE_REGION_READ_BUDGET="$ASM_BUDGET" "$BIN/copy_assign" --assemble-only --region-threads "${RUSTLE_REGION_THREADS:-$ASM_REGIONS}" "${scope[@]}" --assembly-junctions strict $POLISH "${layers[@]}" --gtf-tpm \
@@ -847,7 +878,7 @@ stage_assemble() {
 # pysam, say) is reported and leaves $OUT.final.gtf unfiltered.
 # shortcut: one more BAM pass after every assemble (1-2 min on a 12M-read sample); fold the features into copy_assign if it matters
 # RUSTLE_CHAINSCORE_MODEL picks the weight file of the chain score filter: unset or r1769 = the default since 2026-11-18 (user;
-# register 1769: decile model fit on 11 samples of six species, no ORF feature, cut 0.055 = at least 0.95 of the correct chains kept
+# register 1769: decile model fit on 11 samples of six species, no ORF feature, cut 0.02 since register 1810 (was 0.055 = at least 0.95 of the correct chains kept
 # on each of the 12 samples; HG002 unseen keeps 0.978 at precision 0.280 against 0.970 at 0.259 for r1677); r1677 = the default
 # until then (fit on OR6737 + A119b, cut 0.061); or a path to a model file.
 chainscore_model() {
@@ -869,19 +900,38 @@ final_chainscore() {
 # $OUT.oneread.gtf = one-read chains the default lacks that pass tools/oneread.py: every junction also in another read, > 0.05 of the
 # reads on each junction colinear, no longer read, ORF >= 900 nt with no early stop. Costs a second assemble at a 1-read floor
 # ($OUT.oneread.d/) and one BAM pass. $OUT.gtf and the families input are untouched.
+# $OUT.oneread.ranked.gtf (register 1806) = ALL one-read chains the default lacks, best oneread_score first (bench/famcmp/oneread_tier.py,
+# model tools/data/oneread_r1806.json): a separate tier to browse, not a filter; one more BAM pass.
 stage_oneread() {
   [ -s "$OUT.gtf" ] && [ -s "$BAM" ] && [ -s "$FASTA" ] || { echo "[rustle_pipeline] oneread needs $OUT.gtf (run assemble first), --bam and --fasta" >&2; return 2; }
   mkdir -p "$OUT.oneread.d"
-  { RUSTLE_MIN_CHAIN_READS=1 RUSTLE_ASSEMBLY_LAYERS=off RUSTLE_ONEREAD=0 bash "$RP_DRIVER_DIR/rustle_pipeline.sh" assemble --bam "$BAM" --fasta "$FASTA" \
-      --out "$OUT.oneread.d/f1" --threads "$THREADS" ${BIN:+--bin "$BIN"} ${CONTIG:+--contig "$CONTIG"} \
+  { RUSTLE_MIN_CHAIN_READS=1 RUSTLE_ASSEMBLY_LAYERS=off RUSTLE_ONEREAD=0 RUSTLE_SEED_POOL="$SEED_POOL" RUSTLE_SEED_AS_RATIO="$SEED_RATIO" bash "$0" assemble --bam "$BAM" --fasta "$FASTA" \
+      --out "$OUT.oneread.d/f1" --threads "$THREADS" ${BIN:+--bin "$BIN"} ${CONTIG:+--contig "$CONTIG"} ${AS_TABLE:+--as-table "$AS_TABLE"} \
       && ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/oneread.py" "$OUT.gtf" "$OUT.oneread.d/f1.gtf" "$BAM" "$FASTA" "$OUT.oneread.gtf.tmp"; } > "$OUT.oneread.log" 2>&1 \
     || { echo "[rustle_pipeline] oneread failed (see $OUT.oneread.log); $OUT.gtf is unaffected" >&2; rm -f "$OUT.oneread.gtf.tmp"; return 1; }
   mv -f "$OUT.oneread.gtf.tmp" "$OUT.oneread.gtf"
+  # register 1806: every one-read chain the default lacks, ranked (a ranking, not a filter; never appended to final.gtf)
+  if ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/../bench/famcmp/oneread_tier.py" apply "$RP_DRIVER_DIR/data/oneread_r1806.json" "$OUT.gtf" "$OUT.oneread.d/f1.gtf" \
+       "$BAM" "$FASTA" "$OUT.oneread.ranked.gtf.tmp" "$THREADS" > "$OUT.oneread.ranked.log" 2>&1; then
+    mv -f "$OUT.oneread.ranked.gtf.tmp" "$OUT.oneread.ranked.gtf"; say "oneread: $(tail -1 "$OUT.oneread.ranked.log") -> $OUT.oneread.ranked.gtf"
+  else rm -f "$OUT.oneread.ranked.gtf.tmp"; say "oneread: WARNING the ranked tier failed (see $OUT.oneread.ranked.log); $OUT.oneread.gtf is unaffected"; fi
+  # register 1808, OPT-IN: RUSTLE_ONEREAD_PARTNERS = colon-separated BAMs of OTHER libraries of the same species. Ranked chains in the
+  # best 20% that a partner read also carries -> $OUT.oneread.promoted.gtf (oneread_promoted "1"; as precise as the default's two-read
+  # chains or better on three unused libraries, below the default overall). Never the default: it needs a second library.
+  rm -f "$OUT.oneread.promoted.gtf"
+  if [ -n "${RUSTLE_ONEREAD_PARTNERS:-}" ] && [ -s "$OUT.oneread.ranked.gtf" ]; then
+    local IFS=:; local partners=($RUSTLE_ONEREAD_PARTNERS); unset IFS
+    if ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/../bench/famcmp/oneread_tier.py" promote "$OUT.oneread.ranked.gtf" "$OUT.oneread.gtf" "$OUT.oneread.promoted.gtf.tmp" \
+         "${partners[@]}" > "$OUT.oneread.promoted.log" 2>&1; then
+      mv -f "$OUT.oneread.promoted.gtf.tmp" "$OUT.oneread.promoted.gtf"; say "oneread: $(tail -1 "$OUT.oneread.promoted.log") -> $OUT.oneread.promoted.gtf"
+    else rm -f "$OUT.oneread.promoted.gtf.tmp"; say "oneread: WARNING the promotion failed (see $OUT.oneread.promoted.log)"; fi
+  fi
   say "oneread: $(tail -1 "$OUT.oneread.log") -> $OUT.oneread.gtf"
 }
 final_oneread() {
   [ "${RUSTLE_ONEREAD:-0}" = 1 ] || return 0
   if stage_oneread; then cat "$OUT.oneread.gtf" >> "$OUT.final.gtf"; say "assemble: one-read models appended to $OUT.final.gtf"
+    if [ -s "$OUT.oneread.promoted.gtf" ]; then cat "$OUT.oneread.promoted.gtf" >> "$OUT.final.gtf"; say "assemble: promoted one-read models (oneread_promoted \"1\") appended to $OUT.final.gtf"; fi
   else say "assemble: WARNING the one-read step failed; $OUT.final.gtf has no one-read models"; fi
 }
 # Register 1766 (user 2026-11-16): transcript lines of $OUT.final.gtf get orf_len and ptc attributes (tools/gtf_ptc.py; ptc "1" = the
@@ -961,7 +1011,7 @@ stage_famreps() {
   local py=${RUSTLE_PYTHON:-python3} d="$RP_DRIVER_DIR" r="$OUT.famreps" e   # the four helpers sit beside the driver, like annotated_families.py
   $py "$d/locus_reps.py" "$FAM_GTF" "$r.families.gtf" --disjoint > "$OUT.famreps.log" 2>&1 \
     || { echo "[rustle_pipeline] famreps failed (see $OUT.famreps.log); $A.tsv is unaffected" >&2; exit 1; }
-  ( RUSTLE_FAMREPS=0; RUSTLE_SDCORE=0; FAM_GTF=$r.families.gtf; OUT=$r; stage_families ) || exit 1
+  ( RUSTLE_FAMREPS=0; RUSTLE_SDCORE=0; FAM_GTF=$r.families.gtf; OUT=$r; stage_families )  # no `|| exit 1`: it switches set -e off inside
   { $py "$d/piece_merge.py" "$r" "$r.merged.copies.tsv" \
       && $py "$d/piece_attach.py" "$A.tsv" "$r" "$r.merged.copies.tsv" "$r.attached.tsv" --keep-all --direct \
       && $py "$d/reps_table.py" "$A" "$r.fam.copies" "$r.merged.copies.tsv" "$r.attached.tsv" "$r.table"; } >> "$OUT.famreps.log" 2>&1 \
@@ -971,7 +1021,7 @@ stage_famreps() {
   say "famreps: $(awk 'NR>1' "$OUT.fam.base.copies.tsv" | wc -l) -> $(awk 'NR>1' "$OUT.fam.copies.tsv" | wc -l) copies ($OUT.fam.copies.tsv; the first run's table is $OUT.fam.base.copies.tsv)"
 }
 # chainscore: the named stage (register 1761); the same filter is applied to $OUT.final.gtf by default, see final_chainscore. $OUT.chainscore.gtf = $OUT.gtf minus the multi-exon chains the
-# frozen r1677 logistic score (fit on OR6737 + A119b, cut 0.061 fixed there) puts below the cut; $OUT.gtf is not touched.
+# frozen logistic score (tools/data/chainscore_*.json; the default model and its cut are named in final_chainscore) puts below the cut; $OUT.gtf is not touched.
 # HG002 held out: keeps 0.972 of the correct chains, precision +0.026 over a read-count cut at equal correct chains.
 stage_chainscore() {
   [ -s "$OUT.gtf" ] && [ -s "$BAM" ] && [ -s "$FASTA" ] || { echo "[rustle_pipeline] chainscore needs $OUT.gtf (run assemble first), --bam and --fasta" >&2; exit 2; }
@@ -1001,7 +1051,7 @@ stage_shortexons() {
     && bash "$0" assemble --bam "$d/reads.bam" --fasta "$FASTA" --out "$d/run" --threads "$THREADS" --bin "$BIN" > "$OUT.shortexons.assemble.log" 2>&1 \
     && [ -s "$d/run.gtf" ] \
     || { [ -n "${RUSTLE_SHORTEXONS_KEEP:-}" ] || rm -rf "${d:?}"; echo "[rustle_pipeline] shortexons failed (see $OUT.shortexons.log, $OUT.shortexons.assemble.log); $OUT.gtf is unaffected" >&2; exit 1; }
-  mv -f "$d/run.gtf" "$OUT.shortexons.gtf"; [ ! -s "$d/run.final.gtf" ] || mv -f "$d/run.final.gtf" "$OUT.shortexons.final.gtf"
+  rm -f "$OUT.shortexons.final.gtf"; mv -f "$d/run.gtf" "$OUT.shortexons.gtf"; [ ! -s "$d/run.final.gtf" ] || mv -f "$d/run.final.gtf" "$OUT.shortexons.final.gtf"
   [ -n "${RUSTLE_SHORTEXONS_KEEP:-}" ] || rm -rf "${d:?}"
   say "shortexons: $(tail -1 "$OUT.shortexons.log") -> $OUT.shortexons.gtf"
 }
@@ -1094,23 +1144,32 @@ stage_psi() {
   [ -s "$OUT.gtf" ] || { echo "[rustle_pipeline] psi needs $OUT.gtf (run assemble first)" >&2; exit 2; }
   [ -s "$tab" ] || tab=$BAM.as_table.tsv
   [ -s "$tab" ] || { echo "[rustle_pipeline] psi needs the score table $OUT.molecules.tsv or $BAM.as_table.tsv (assemble writes it)" >&2; exit 2; }
-  ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/psi_bunches.py" "$OUT.gtf" "$BAM" "$tab" "$OUT.psi.tsv" --window "${RUSTLE_EQ_WINDOW:-10}" ${RUSTLE_EQ_RATIO:+--ratio "$RUSTLE_EQ_RATIO"} --threads "$JOB_THREADS" > "$OUT.psi.log" 2>&1 \
+  # with exon columns, also the raw count of every intron: the family view's rows for copies under the 3-read floor
+  local famview="" dump=() extra=()
+  if [ -s "$OUT.fam.exonmap.columns.tsv" ] && [ -s "$OUT.fam.loci.gff3" ] && [ ! "$OUT.fam.exonmap.columns.tsv" -ot "$OUT.fam.loci.gff3" ]; then
+    famview=1; dump=(--introns "$OUT.psi.introns.tsv")
+  fi
+  ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/psi_bunches.py" "$OUT.gtf" "$BAM" "$tab" "$OUT.psi.tsv" --window "${RUSTLE_EQ_WINDOW:-10}" ${RUSTLE_EQ_RATIO:+--ratio "$RUSTLE_EQ_RATIO"} --threads "$JOB_THREADS" ${dump[@]+"${dump[@]}"} > "$OUT.psi.log" 2>&1 \
     || { echo "[rustle_pipeline] psi failed (see $OUT.psi.log); no other product is affected" >&2; rm -f "$OUT.psi.tsv.tmp"; exit 1; }
   say "psi: $(tr '\n' ' ' < "$OUT.psi.log")-> $OUT.psi.tsv"
   # the same junction across the copies of a family, when stage `exonmap` has written its columns (else skipped)
-  if [ -s "$OUT.fam.exonmap.columns.tsv" ] && [ -s "$OUT.fam.loci.gff3" ]; then
-    ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/psi_family.py" "$OUT.psi.tsv" "$OUT.fam.exonmap.columns.tsv" "$OUT.fam.loci.gff3" "$OUT.fam.psi.tsv" > "$OUT.fam.psi.log" 2>&1 \
+  if [ -n "$famview" ]; then
+    if [ -s "$OUT.fam.loci.gated.paf" ]; then extra=(--introns "$OUT.psi.introns.tsv" --paf "$OUT.fam.loci.gated.paf")
+    else say "psi: no $OUT.fam.loci.gated.paf (the families stage writes it): no added rows for copies under the read floor"; fi
+    ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/psi_family.py" "$OUT.psi.tsv" "$OUT.fam.exonmap.columns.tsv" "$OUT.fam.loci.gff3" "$OUT.fam.psi.tsv" ${extra[@]+"${extra[@]}"} > "$OUT.fam.psi.log" 2>&1 \
       || { echo "[rustle_pipeline] psi: the family view failed (see $OUT.fam.psi.log); $OUT.psi.tsv is complete" >&2; rm -f "$OUT.fam.psi.tsv.tmp"; exit 1; }
-    say "psi: $(tail -1 "$OUT.fam.psi.log") -> $OUT.fam.psi.tsv"
+    say "psi: $(tr '\n' ' ' < "$OUT.fam.psi.log")-> $OUT.fam.psi.tsv"
   else
-    say "psi: no $OUT.fam.exonmap.columns.tsv (stage exonmap), family view skipped"
+    rm -f "$OUT.fam.psi.tsv"
+    say "psi: no $OUT.fam.exonmap.columns.tsv newer than $OUT.fam.loci.gff3 (run stage exonmap), family view skipped"
   fi
 }
 # eqclasses: OPT-IN, named only (2026-11-16). One BAM pass over the loci `families` reads; nothing reads its tables.
 # Ties are read on minimap2's ms (not AS, which ties spliced genes with processed pseudogenes); the score table needs its ms columns.
 stage_eqclasses() {
   fam_gtf_guard eqclasses
-  local tab=$OUT.molecules.tsv gtf=$FAM_GTF bed=${RUSTLE_EXCLUDE_BED:-$FASTA.exclude.bed}
+  local tab=$OUT.molecules.tsv gtf=$FAM_GTF bed=${RUSTLE_EXCLUDE_BED-$FASTA.exclude.bed}   # set empty = off, as in assign
+  local excl=(); [ ! -s "$bed" ] || excl=(--exclude "$bed")
   local fw=(); [ -z "${RP_FAMWISE:-}" ] || fw=(--famwise "$OUT.eq.tmp.fw")   # stage famwise: the same pass also writes its two tables
   [ -s "$tab" ] || tab=$BAM.as_table.tsv
   [ -s "$tab" ] || { echo "[rustle_pipeline] eqclasses needs the score table $OUT.molecules.tsv or $BAM.as_table.tsv (assemble writes it)" >&2; exit 2; }
@@ -1120,7 +1179,7 @@ stage_eqclasses() {
     gtf=$OUT.eq.named.gtf
   fi
   ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/eq_classes.py" "$gtf" "$BAM" "$tab" "$OUT.eq.tmp" --window "${RUSTLE_EQ_WINDOW:-10}" ${RUSTLE_EQ_RATIO:+--ratio "$RUSTLE_EQ_RATIO"} --threads "$JOB_THREADS" \
-    $([ -s "$bed" ] && printf -- '--exclude %s' "$bed") "${fw[@]}" >> "$OUT.eq.log" 2>&1 \
+    "${excl[@]}" "${fw[@]}" >> "$OUT.eq.log" 2>&1 \
     || { echo "[rustle_pipeline] eqclasses failed (see $OUT.eq.log); no other product is affected" >&2; rm -f "$OUT.eq.tmp".*; exit 1; }
   mv -f "$OUT.eq.tmp.loci.tsv" "$OUT.eq.loci.tsv"; mv -f "$OUT.eq.tmp.classes.tsv" "$OUT.eq.classes.tsv"
   say "eqclasses: $(tail -2 "$OUT.eq.log" | tr '\n' ' ')-> $OUT.eq.loci.tsv, $OUT.eq.classes.tsv"
@@ -1242,7 +1301,7 @@ stage_families() {
     say "families: SD damping ${RUSTLE_SD_DAMP:-0.25} with $RUSTLE_SEDEF_BED"
   fi
   # an earlier run's copy table must not survive a run that writes none (a binary older than the copy table): assign would read it
-  rm -f "$OUT".fam.copies.{tsv,fa,regions,merged.tsv} "$OUT".fam.base.copies.{tsv,fa,regions}
+  rm -f "$OUT".fam.copies.{tsv,fa,regions,merged.tsv} "$OUT".fam.base.copies.{tsv,fa,regions} "$OUT.fam.sdcore.tsv"
   # threads: JOB_THREADS (the all-vs-all is ~98% of this stage; A119b 72 threads 410 s, the same families as 12 threads, 2026-11-09)
   local fth=$MM_THREADS
   say "families: $fth threads"
@@ -1581,8 +1640,10 @@ merged_env() {
   done; true
 }
 stage_merged() {
-  local env_ok=0
-  if [ -f "$OUT.merged.env" ] && [ "$(cat "$OUT.merged.env")" = "$(merged_env)" ]; then env_ok=1; fi
+  # computed once, before stage_families sets RUSTLE_SEDEF_BED from the sidecar: the record written at the end used to lack
+  # the sedef_sidecar line the next run's check has, so a genome with FASTA.sedef.bed never resumed
+  local env_ok=0 env_now; env_now=$(merged_env)
+  if [ -f "$OUT.merged.env" ] && [ "$(cat "$OUT.merged.env")" = "$env_now" ]; then env_ok=1; fi
   # removed before any phase runs (a run that dies midway must not leave the record vouching for its products), and once one
   # phase runs every later phase runs too (its input changed), as in stage_all
   rm -f "$OUT.merged.env"
@@ -1601,7 +1662,7 @@ stage_merged() {
   else
     stage_assign_fam
   fi
-  merged_env > "$OUT.merged.env"
+  printf '%s\n' "$env_now" > "$OUT.merged.env"
   say "merged: done (env recorded in $OUT.merged.env; phases skip on the next identical run)"
 }
 # flag's first step alone: the loci's reads, mixture test and consensus (PREFIX.flag_scan.*). It reads only the BAM and the
@@ -1696,7 +1757,7 @@ stage_all() {
   # row 1662: so do families' extra representatives (inline, as stage_all is also run on its own by the dispatch tests)
   [ "${RUSTLE_FAMREPS:-1}" = 0 ] || command -v "${RUSTLE_PYTHON:-python3}" > /dev/null \
     || { echo "[rustle_pipeline] no ${RUSTLE_PYTHON:-python3} on PATH (families adds extra locus representatives with it); set RUSTLE_PYTHON or PATH, or RUSTLE_FAMREPS=0" >&2; exit 2; }
-  if [ -z "${RUSTLE_EXCLUDE_BED+x}" ] && [ -s "$FASTA.exclude.bed" ]; then export RUSTLE_EXCLUDE_BED=$FASTA.exclude.bed; fi   # the sidecar, as assign resolves it
+  if [ "$CANDIDATES" = 0 ] && [ -z "${RUSTLE_EXCLUDE_BED+x}" ] && [ -s "$FASTA.exclude.bed" ]; then export RUSTLE_EXCLUDE_BED=$FASTA.exclude.bed; fi   # the sidecar, as assign resolves it
   local v; for v in RUSTLE_EXCLUDE_BED RUSTLE_EXCLUDE_SOFTMASK RUSTLE_EXCLUDE_FASTA RUSTLE_ANNOTATED_ONLY; do
     if [ -n "${!v:-}" ] && ! command -v "${RUSTLE_PYTHON:-python3}" > /dev/null; then
       echo "[rustle_pipeline] no ${RUSTLE_PYTHON:-python3} on PATH ($v needs it for assign's skip list); set RUSTLE_PYTHON or PATH, or unset $v" >&2; exit 2
@@ -1709,6 +1770,9 @@ stage_all() {
     elif [ -z "$INDEX" ]; then INDEX=$(index_path); plan+=(index:"$INDEX"); args+=(--index "$INDEX"); fi
     plan+=(flag:"$OUT.flag.missing_copy.tsv")
   fi
+  local v; for v in "$FROM_STAGE" "$TO_STAGE"; do   # a misspelled --to ran every stage, a misspelled --from none
+    [ -z "$v" ] || [[ " ${plan[*]%%:*} " == *" $v "* ]] || { echo "[rustle_pipeline] --from/--to '$v' is not a stage of this run (${plan[*]%%:*})" >&2; exit 2; }
+  done
   local started=1; [ -n "$FROM_STAGE" ] && started=0
   # round-38 audit: the index depends on the FASTA alone, so a missing or stale one is built in the background from the start
   # (under assemble, which is BAM-bound) instead of after assign: ~130 s off a new genome's first run. Its step below waits.
@@ -1733,11 +1797,16 @@ stage_all() {
   all_layers_wait() {
     [ -s "$OUT.final.pid" ] || return 0
     local p; p=$(cat "$OUT.final.pid"); while kill -0 "$p" 2>/dev/null; do sleep 0.2; done
-    rm -f "$OUT.final.pid"; layered_report
+    layered_report; rm -f "$OUT.final.pid"   # the pid file goes last: a run killed in the post-steps redoes them
   }
+  time_record() { { cat "$OUT.$1.time.tmp" 2>/dev/null | grep -E '^(wall_s|peak_rss_kb)' || true; printf 'exit\t%s\n' "$2"; } > "$OUT.$1.time"; rm -f "$OUT.$1.time.tmp"; }
   all_bg_stop() {
     if [ -n "$scan_pid" ]; then kill_tree "$scan_pid"; fi
-    if [ -s "$OUT.final.pid" ]; then kill_tree "$(cat "$OUT.final.pid")"; rm -f "$OUT.final.pid" "$OUT".final_run.*; fi
+    # only a layered run that is still going is stopped, and then assemble must run again (its record goes); a finished one
+    # keeps its pid file, so the rerun's all_layers_wait still applies the chain score and ptc steps to PREFIX.final.gtf
+    if [ -s "$OUT.final.pid" ] && kill -0 "$(cat "$OUT.final.pid")" 2>/dev/null; then
+      kill_tree "$(cat "$OUT.final.pid")"; rm -f "$OUT.final.pid" "$OUT".final_run.* "$OUT.assemble.env"
+    fi
   }
   all_guided() {
     guided_due=0
@@ -1780,7 +1849,7 @@ stage_all() {
     if [ "$st" = index ] && [ -n "$idx_pid" ]; then
       ran=1; rm -f "$OUT.$st.env"; say "all: index (waiting for the background build)"
       local rc=0; wait "$idx_pid" || rc=$?; cat "$OUT.index.bg.err" >&2; rm -f "$OUT.index.bg.err"
-      { cat "$OUT.$st.time.tmp" 2>/dev/null | grep -E '^(wall_s|peak_rss_kb)'; printf 'exit\t%s\n' "$rc"; } > "$OUT.$st.time"; rm -f "$OUT.$st.time.tmp"
+      time_record "$st" "$rc"
       if [ "$rc" != 0 ]; then
         all_bg_stop   # round 41
         say "all: $st FAILED (exit $rc); see $OUT.$st.time and $OUT.index.log"; exit "$rc"
@@ -1792,7 +1861,7 @@ stage_all() {
       if [ "$flag_bg" = 1 ]; then
         # round 55: the background job was the whole stage (scan, align, verdict); its wall is the align + verdict part
         ran=1; rm -f "$OUT.$st.env"
-        { cat "$OUT.$st.time.tmp" 2>/dev/null | grep -E '^(wall_s|peak_rss_kb)' || true; printf 'exit\t%s\n' "$src"; } > "$OUT.$st.time"; rm -f "$OUT.$st.time.tmp"
+        time_record "$st" "$src"
         [ "$src" = 0 ] || { all_bg_stop; say "all: flag FAILED in the background (exit $src); see $OUT.flag_scan.log and $OUT.flag.log"; exit "$src"; }
         say "all: flag ran in the background"; printf '%s\n' "$env_now" > "$OUT.$st.env"; continue
       fi
@@ -1816,7 +1885,7 @@ stage_all() {
       # compute nodes without GNU time (r1543 e2e, 2026-11-06): wall only, no peak RSS
       local st0=$SECONDS; bash "$0" "$st" "${args[@]}" || rc=$?; printf 'wall_s\t%s\n' "$(( SECONDS - st0 ))" > "$OUT.$st.time.tmp"
     fi
-    { cat "$OUT.$st.time.tmp" 2>/dev/null | grep -E '^(wall_s|peak_rss_kb)'; printf 'exit\t%s\n' "$rc"; } > "$OUT.$st.time"; rm -f "$OUT.$st.time.tmp"
+    time_record "$st" "$rc"
     if [ "$rc" != 0 ]; then
       # round-41 audit: a background scan must not outlive the run (it writes PREFIX.flag_scan.* in place; a rerun's own scan
       # would race it). A background index build is left to finish: it writes a temporary name and renames.

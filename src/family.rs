@@ -4892,9 +4892,11 @@ pub mod arms {
 
             /// Every AS-tied read in the region, with all of its own max-AS placements as aligned blocks.
             ///
-            /// A read is AS-tied here iff at least two of its non-supplementary records share its maximum `AS`.
+            /// A read is AS-tied here iff at least two of its non-supplementary records are tied placements at `tie` =
+            /// `(--as-tie-ratio, --tie-ms)`, the gate's own rule; `(1.0, None)` is "share its maximum `AS`".
             pub fn tie_partner_placements(
                 bam_reads: &[BamRead],
+                tie: (f64, Option<i32>),
             ) -> Vec<(String, Vec<TiePlacement>)> {
                 let mut by_name: HashMap<&str, Vec<&BamRead>> = HashMap::new();
                 for br in bam_reads.iter().filter(|b| !b.is_supplementary) {
@@ -4906,10 +4908,11 @@ pub mod arms {
                         continue;
                     }
                     let max_as = placements.iter().map(|b| b.as_score).max().unwrap();
+                    let max_ms = placements.iter().map(|b| b.ms).max().unwrap();
                     let tied: Vec<&BamRead> = placements
                         .iter()
                         .copied()
-                        .filter(|b| b.as_score == max_as)
+                        .filter(|b| crate::denovo_pipeline::is_tied_placement((b.as_score, b.ms), (max_as, max_ms), tie.0, tie.1))
                         .collect();
                     if tied.len() >= 2 {
                         out.push((
@@ -5167,7 +5170,7 @@ pub mod arms {
                         mk("tied_read", "chr1", 9000, 150),   // worse, not part of the tie
                         mk("unique_read", "chr1", 2000, 300), // only one placement, never tied
                     ];
-                    let out = tie_partner_placements(&reads);
+                    let out = tie_partner_placements(&reads, (1.0, None));
                     assert_eq!(out.len(), 1);
                     assert_eq!(out[0].0, "tied_read");
                     assert_eq!(
@@ -5204,7 +5207,7 @@ pub mod arms {
                         reverse,
                         ts: None,
                     };
-                    let out = tie_partner_placements(&[mk(100, false), mk(9000, true)]);
+                    let out = tie_partner_placements(&[mk(100, false), mk(9000, true)], (1.0, None));
                     assert_eq!(out.len(), 1);
                     let p = &out[0].1;
                     assert_eq!(p.len(), 2);
@@ -39781,8 +39784,7 @@ pub mod denovo_pipeline {
                 .output()
                 .is_err()
             {
-                eprintln!("minimap2 absent; skip");
-                return;
+                panic!("minimap2 is not on PATH: run the tests under pixi (a silent skip counted as passed)");
             }
             let fa = concat!(
                 env!("CARGO_MANIFEST_DIR"),
@@ -44446,10 +44448,7 @@ pub mod denovo_pipeline {
                 .output()
                 .is_err()
             {
-                eprintln!(
-                    "minimap2 absent; skipping the real homology_edges_all_reps confirmation"
-                );
-                return;
+                panic!("minimap2 is not on PATH: run the tests under pixi (a silent skip counted as passed)");
             }
             // Two reps, near-identical (~4% divergence, so minimap2 finds a genuine homology edge) but placed
             // on DIFFERENT chroms so no read could ever place ambiguously between them -- a uniquely-mappable
@@ -44509,8 +44508,7 @@ pub mod denovo_pipeline {
                 .output()
                 .is_err()
             {
-                eprintln!("minimap2 absent; skipping");
-                return;
+                panic!("minimap2 is not on PATH: run the tests under pixi (a silent skip counted as passed)");
             }
             // rep 0 and rep 1: same 900bp sequence with ~5% mismatch (an ancient paralog); rep 2: random (unrelated).
             let base = rand_seq(900, 0x11);
@@ -44677,18 +44675,14 @@ pub mod denovo_pipeline {
                 .output()
                 .is_err()
             {
-                eprintln!(
-                "mmseqs absent; skipping (protein-tail rescue NOT verified in this environment)"
-            );
-                return;
+                panic!("mmseqs is not on PATH: run the tests under pixi (a silent skip counted as passed)");
             }
             if std::process::Command::new("minimap2")
                 .arg("--version")
                 .output()
                 .is_err()
             {
-                eprintln!("minimap2 absent; skipping");
-                return;
+                panic!("minimap2 is not on PATH: run the tests under pixi (a silent skip counted as passed)");
             }
             // Build a ~250-codon (750 nt) random coding sequence (seq_a), and a sibling (seq_b) that: (i) at
             // ~85% of codons keeps the SAME amino acid but recodes to the synonymous codon MAXIMALLY divergent
@@ -46421,10 +46415,10 @@ pub mod denovo_pipeline {
                 } else {
                     std::collections::HashMap::new()
                 };
-                // `--extend-transfrags` needs every group after admission
-                let ext_groups = if opts.extend { Some(groups.clone()) } else { None };
+                // by reference: `--extend-transfrags` reads every group after admission (a clone of the whole map was
+                // a second copy of every chain of the contig, singletons included)
                 let mut skels: Vec<Skeleton> = groups
-                    .into_iter()
+                    .iter()
                     .filter(|((chrom, introns), (n, _, _, _))| {
                         if direct {
                             // only maximal transfrags whose transferred abundance reaches the floor
@@ -46442,11 +46436,12 @@ pub mod denovo_pipeline {
                                 }))
                     })
                     .map(|((chrom, introns), (n, starts, ends, n_rev))| {
+                        let (chrom, introns, n, n_rev) = (chrom.clone(), introns.clone(), *n, *n_rev);
                         let (starts, ends) = match (!pooled.is_empty())
                             .then(|| pooled.get(&(chrom.clone(), introns.clone())))
                             .flatten()
                         {
-                            Some((s, e)) => (s.clone(), e.clone()),
+                            Some((s, e)) => (s, e),
                             None => (starts, ends),
                         };
                         // robust boundary = the k-th supported value (or the outermost available if the group is
@@ -46494,8 +46489,8 @@ pub mod denovo_pipeline {
                         }
                     })
                     .collect();
-                if let Some(g) = ext_groups {
-                    let more = extend_admitted_chains(&g, &skels, smin, k);
+                if opts.extend {
+                    let more = extend_admitted_chains(&groups, &skels, smin, k);
                     skels.extend(more);
                 }
                 // position-aware seeding of the unspliced reads (the fix): single-linkage span-overlap clustering
@@ -46578,7 +46573,7 @@ pub mod denovo_pipeline {
         /// How pass 1 admits intron-chain groups. `Exact` (default): a chain with `>= min_reads` identical reads.
         /// `Compat` (`--compat-support`): also a chain whose every junction has `>= min_reads` compatible reads
         /// ([`compatible_support`]). `Direct` (`--direct-transfrags`): only MAXIMAL transfrags, with the reads of the
-        /// transfrags they contain transferred to them ([`direct_transfrag_abundance`]).
+        /// transfrags they contain transferred to them (`direct_transfrag_abundance_impl`).
         /// `DirectUnion` (`--direct-transfrags-union`): every `Exact` chain plus every `Direct` maximal transfrag
         /// (`docs/archive/2026-11/LEDGER_O1.md:3196 (PREREG_direct_transfrags_union_2026-10-11.md)`).
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -46929,7 +46924,7 @@ pub mod denovo_pipeline {
             let mut out_pos: Pass1AllPos = std::collections::BTreeMap::new();
             for ((chrom, chain), (n, starts, ends, n_rev)) in groups {
                 let snapped: Vec<(u64, u64)> = chain.iter().map(|&j| resolve(&chrom, j)).collect();
-                let ok = snapped.windows(2).all(|p| p[0].1 <= p[1].0 && p[0] != p[1]);
+                let ok = snapped.windows(2).all(|p| p[0].1 < p[1].0); // strictly: acceptor == next donor is a zero-length exon
                 let key_old = (chrom.clone(), chain.clone());
                 let key = (chrom, if ok { snapped } else { chain });
                 let e = out.entry(key.clone()).or_insert((0, Vec::new(), Vec::new(), 0));
@@ -46950,7 +46945,7 @@ pub mod denovo_pipeline {
             (out, out_pos)
         }
 
-        /// [`direct_transfrag_abundance`] with the split rule of [`TransferCredit`].
+        /// `direct_transfrag_abundance_impl` with the split rule of [`TransferCredit`].
         pub fn direct_transfrag_abundance_with(
             groups: &Pass1Groups,
             min_reads: u32,
@@ -46965,13 +46960,6 @@ pub mod denovo_pipeline {
         /// MAXIMAL; every other transfrag transfers its reads to the maximal transfrags containing it (through intermediate
         /// containers when none contains it directly), split in proportion to their own reads. Returns the maximal
         /// transfrags whose abundance (own + received) reaches `min_reads`, with the rounded abundance.
-        pub fn direct_transfrag_abundance(
-            groups: &std::collections::BTreeMap<(String, Vec<(u64, u64)>), (u32, Vec<u64>, Vec<u64>, u32)>,
-            min_reads: u32,
-        ) -> std::collections::BTreeMap<(String, Vec<(u64, u64)>), u32> {
-            direct_transfrag_abundance_impl(groups, min_reads, TransferCredit::Split)
-        }
-
         fn direct_transfrag_abundance_impl(
             groups: &Pass1Groups,
             min_reads: u32,
@@ -48327,15 +48315,9 @@ pub mod denovo_pipeline {
         /// post-collapse pass (`build_read_placements`, `locus_core_bp`, `locus_has_spliced_evidence`, the extent and
         /// linkage options), none of which reads `.seq`/`.qual` — this skips the sequence/quality decode and copies
         /// that dominated that pass (human chr16: 155 s and most of a 13.8 GB peak).
-        pub fn aligned_reads_from_bam_coords(
-            bam_path: &str,
-            threads: usize,
-        ) -> Result<Vec<BamRead>> {
-            aligned_reads_from_bam_coords_in(bam_path, threads, None)
-        }
-
-        /// [`aligned_reads_from_bam_coords`] over the whole BAM (`None`, the same code path as always) or over ONE contig
-        /// or contig sub-range (`Some`), positioned and bounded exactly as [`primary_reads_from_bam_in`] is.
+        ///
+        /// Over the whole BAM (`None`) or over ONE contig or contig sub-range (`Some`), positioned and bounded exactly as
+        /// [`primary_reads_from_bam_in`] is.
         pub fn aligned_reads_from_bam_coords_in(
             bam_path: &str,
             threads: usize,
@@ -58204,7 +58186,9 @@ pub mod fam_from_gtf {
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
             Err(err) => return Err(err).with_context(|| format!("removing {paf}")),
         }
-        let out_paf = std::fs::File::create(&paf)?;
+        // tmp + rename: a killed minimap2 must not leave a truncated PAF under the final name
+        let paf_tmp = format!("{paf}.tmp");
+        let out_paf = std::fs::File::create(&paf_tmp)?;
         let status = std::process::Command::new(&mm2)
             .args(&mm_args)
             .arg(&fa_path)
@@ -58220,6 +58204,7 @@ pub mod fam_from_gtf {
             status.status,
             tail.into_iter().rev().collect::<Vec<_>>().join(" | ")
         );
+        std::fs::rename(&paf_tmp, &paf)?;
         clock.lap("minimap2 all-vs-all");
         if let Some(e) = paf_entry.as_ref() {
             let stored = e.staging().and_then(|st| {
@@ -62513,10 +62498,9 @@ pub mod fam_from_gtf {
                                 cov_eff = cov_shorter;
                             }
                         }
-                        if cov_eff < p.min_cov_longer && cov_eff < p.min_cov_shorter {
-                            return Verdict::Below;
-                        }
-                        if p.min_cov_shorter <= 0.0 && cov_eff < p.min_cov_longer {
+                        // not contained = the longer-side floor decides (a --min-cov-shorter below --min-cov-longer used to
+                        // admit a pair that passed neither rule)
+                        if !contained && cov_longer < p.min_cov_longer {
                             return Verdict::Below;
                         }
                         let identity = nmatch as f64 / blocklen.max(1) as f64;
@@ -62793,7 +62777,11 @@ pub mod fam_from_gtf {
                     };
                     for &(s, e, ..) in self.overlapping(c, lo, hi) {
                         if Self::holds(bl, s, e) {
-                            inside.entry((c, s, e)).or_default().push(i);
+                            // a BED repeats an interval in up to 223 rows: list the node once (nodes come in index order)
+                            let v = inside.entry((c, s, e)).or_default();
+                            if v.last() != Some(&i) {
+                                v.push(i);
+                            }
                         }
                     }
                 }
@@ -73548,6 +73536,10 @@ pub mod missing_copy {
                 anyhow::bail!("{path}: locus id {} is on {c} and {} (ids must be unique)", l.0, l.1);
             }
         }
+        anyhow::ensure!(!loci.is_empty(), "{path}: no locus read (tab-separated BED, GTF exon/transcript lines or GFF gene lines)");
+        if let Some(l) = loci.iter().find(|l| l.0.contains(char::is_whitespace)) {
+            anyhow::bail!("{path}: locus id {:?} contains whitespace (it names a FASTA record)", l.0);
+        }
         Ok(loci)
     }
 
@@ -73564,6 +73556,7 @@ pub mod missing_copy {
         anyhow::ensure!(!gff.ends_with(".gz"), "{gff}: gzipped annotation is not read here; gunzip it first");
         let f = std::fs::File::open(gff).map_err(|e| anyhow::anyhow!("opening {gff}: {e}"))?;
         let mut out: DetHashMap<String, Vec<(u64, u64)>> = DetHashMap::default();
+        let mut n_named = 0usize;
         for line in std::io::BufReader::new(f).lines() {
             let line = line?;
             if line.starts_with('#') {
@@ -73583,6 +73576,7 @@ pub mod missing_copy {
                 .copied()
                 .unwrap_or("");
             let desc = attrs.get("description").copied().unwrap_or("");
+            n_named += !name.is_empty() as usize;
             if is_ig_tr(name, desc) {
                 if let (Ok(s), Ok(e)) = (fs[3].parse::<u64>(), fs[4].parse::<u64>()) {
                     out.entry(fs[0].to_string())
@@ -73591,7 +73585,21 @@ pub mod missing_copy {
                 }
             }
         }
+        // a GTF has no gene line with Name= : the screen would be silently off
+        anyhow::ensure!(n_named > 0, "{gff}: no GFF3 gene/pseudogene line with Name= or gene= (a GTF?): the IG/TR screen would be off");
         Ok(out)
+    }
+
+    #[cfg(test)]
+    #[test]
+    fn load_ig_tr_reads_gff_and_refuses_gtf() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("a.gff");
+        std::fs::write(&p, "c\t.\tgene\t101\t200\t.\t+\t.\tID=g1;Name=IGHV1-2\nc\t.\tgene\t301\t400\t.\t+\t.\tID=g2;Name=ACTB\n").unwrap();
+        let m = load_ig_tr(p.to_str().unwrap()).unwrap();
+        assert_eq!(m.get("c"), Some(&vec![(100, 200)]));
+        std::fs::write(&p, "c\t.\ttranscript\t101\t200\t.\t+\t.\tgene_id \"g1\";\n").unwrap();
+        assert!(load_ig_tr(p.to_str().unwrap()).is_err());
     }
 
     #[cfg(test)]
@@ -75170,20 +75178,25 @@ pub mod missing_copy {
             let mut order: Vec<usize> = (0..names.len()).collect();
             order.sort_by(|&a, &b| vec[b].len().cmp(&vec[a].len()).then_with(|| names[a].cmp(&names[b])));
             let mut clusters: Vec<Cl> = Vec::new();
+            let mut cons = Vec::new(); // each cluster's consensus, rebuilt when it gains a read (not per read x cluster)
             for &r in &order {
                 let v = &vec[r];
                 let mut best: Option<(usize, usize)> = None;
-                for (i, cl) in clusters.iter().enumerate() {
-                    let (co, conf) = fit(v, &cl.cons());
+                for (i, cc) in cons.iter().enumerate() {
+                    let (co, conf) = fit(v, cc);
                     if ok(co, conf) && best.map_or(true, |b| co > b.1) {
                         best = Some((i, co));
                     }
                 }
                 match best {
-                    Some((i, _)) => clusters[i].add(r, v),
+                    Some((i, _)) => {
+                        clusters[i].add(r, v);
+                        cons[i] = clusters[i].cons();
+                    }
                     None => {
                         let mut c = Cl::default();
                         c.add(r, v);
+                        cons.push(c.cons());
                         clusters.push(c);
                     }
                 }
@@ -76101,12 +76114,19 @@ pub mod candidates {
                 .args(["-cx", "splice", "--eqx", "--secondary=no", "-t", "1"])
                 .arg(&target)
                 .arg(&qpath)
-                .output()
-                .ok()?;
-
-            if !out.status.success() {
-                return None;
-            }
+                .output();
+            // a failed minimap2 used to read as "no homology on remap" with nothing on stderr
+            let out = match out {
+                Ok(o) if o.status.success() => o,
+                Ok(o) => {
+                    eprintln!("[absent_copy] minimap2 remap failed ({}): {}", o.status, String::from_utf8_lossy(&o.stderr).trim());
+                    return None;
+                }
+                Err(e) => {
+                    eprintln!("[absent_copy] cannot run minimap2: {e} (RUSTLE_MINIMAP2)");
+                    return None;
+                }
+            };
 
             let text = String::from_utf8_lossy(&out.stdout);
             let mut best_id: Option<f64> = None;
@@ -76252,7 +76272,10 @@ pub mod candidates {
                 .output()
             {
                 Ok(o) if o.status.success() => o,
-                _ => return vec![None; reads.len()],
+                other => {
+                    eprintln!("[absent_copy] minimap2 pool realignment failed: {:?}", other.map(|o| o.status));
+                    return vec![None; reads.len()];
+                }
             };
 
             paf_primary_hits(&String::from_utf8_lossy(&out.stdout), reads.len())
@@ -77112,6 +77135,7 @@ pub mod candidates {
         }
         impl StructuralScore {
             /// The mean d over its aligned partners; `None` without one.
+            #[cfg(test)]
             pub fn mean_d(&self) -> Option<f64> {
                 (self.aligned > 0).then(|| self.sum_d as f64 / self.aligned as f64)
             }
@@ -77649,6 +77673,7 @@ pub mod candidates {
         /// order) cannot all be read from the union: the out-of-order exon is inserted again, a duplicate. Alternative first (last) exons end up side
         /// by side at `ts` (`te`). A piece that the aligner left unaligned through divergence rather than structure is inserted although the union
         /// has it, and a long unaligned end of a member (junk, a primer remnant) is taken like an exon: the rule is length only.
+        #[cfg(test)]
         pub fn union_sequence(
             members_longest_first: &[Vec<u8>],
             hits_vs_current: impl FnMut(&[u8], &[u8]) -> Option<PafHit>,
@@ -83667,6 +83692,7 @@ pub struct Permits {
 }
 impl Permits {
     pub fn new(cap: usize) -> Self {
+        let cap = cap.max(1); // a 0 budget (RUSTLE_REGION_READ_BUDGET=0) made acquire() wait forever
         Permits { free: std::sync::Mutex::new(cap), cap, cv: std::sync::Condvar::new() }
     }
     pub fn acquire(&'static self, n: usize) -> PermitGuard {

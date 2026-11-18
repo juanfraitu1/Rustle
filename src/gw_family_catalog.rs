@@ -1004,13 +1004,6 @@ fn main() -> Result<()> {
     // there the definition is already γ-quasi-clique(E_r), and refine would append a second, undocumented
     // clustering stage over a different edge set. See `refine_enabled` for the measurements.
     let refine = refine_enabled(o1_homology, args.no_refine);
-    if o1_homology && refine {
-        eprintln!(
-            "[gw-catalog] NOTE: --refine on the homology catalog appends a SECOND clustering stage \
-             (core + genomic-span substrates, connected components) on top of γ-quasi-clique(E_r). \
-             The emitted object is then no longer the definition in docs/seeded_family_definition.md §1."
-        );
-    }
     // The λ certificate describes the γ-quasi-clique(E_r) families. `--refine` re-clusters them over a
     // DIFFERENT edge set, so the pre-refine certificates would no longer describe the emitted rows and
     // are never carried across — a wrong λ is worse than an absent one. Since 2026-08-19 they are

@@ -664,7 +664,7 @@ def _unit(w: Path, name: str, key, fn, budget, est_s: float):
             return j["value"]
     R._o1.need(budget, est_s, name)
     v = fn()
-    p.write_text(json.dumps({"key": k, "value": v}))
+    tmp = p.with_suffix(".json.tmp"); tmp.write_text(json.dumps({"key": k, "value": v})); tmp.replace(p)   # whole or absent
     return v
 
 
@@ -857,6 +857,7 @@ def build_genome(cfg: dict, data_dir: Path, force: bool = False):
             bridge_key.append(figlib.file_fingerprint(o1.annotation_gff(cfg, sp)))
         except o1.NotBuilt:
             pass
+        bridge_key.append(str(cfg.get(f"{sp}_fasta", "")))   # rows cached without this genome must not hide it later
     bridge = _unit(w, "bridge", bridge_key,
                    lambda: _bridge_rows(cfg, budget, missing), budget, 400)
     if not arms:

@@ -823,7 +823,11 @@ fn refine_block(b: &Block, seqs: &HashMap<String, Vec<u8>>, p: &RefineParams) ->
             };
             let ra1_c = (r.ra1 as usize).min(sa_full.len());
             let rb1_c = (r.rb1 as usize).min(sb_full.len());
-            let anchors = extract_anchors(&sa_full[r.ra0 as usize..ra1_c], &sb_full[r.rb0 as usize..rb1_c], k, p.max_pairs);
+            let anchors = if status == 1 {
+                extract_anchors(&sa_full[r.ra0 as usize..ra1_c], &sb_full[r.rb0 as usize..rb1_c], k, p.max_pairs)
+            } else {
+                Vec::new() // decompose reads ok records only
+            };
             let ba = BlockAnchors {
                 chr_a: r.chr_a.clone(),
                 a0: r.ra0,

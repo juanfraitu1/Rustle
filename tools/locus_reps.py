@@ -20,6 +20,16 @@ def shared(a, b):
     return sum(max(0, min(e, e2) - max(s, s2)) for s, e in a for s2, e2 in b)
 
 
+def union(g, tx):
+    out = []
+    for s, e in sorted(x for t in g for x in tx[t][0]):
+        if out and s <= out[-1][1]:
+            out[-1][1] = max(out[-1][1], e)
+        else:
+            out.append([s, e])
+    return out
+
+
 def reps(tx, min_reads=MIN_READS):
     """tx: {tid: ([(s, e)], reads)} -> representatives, primary first."""
     span = lambda t: max(e for _, e in tx[t][0]) - min(s for s, _ in tx[t][0])
@@ -44,12 +54,14 @@ def groups(tx, min_reads=MIN_READS, disjoint=False):
             continue
         out[max(range(len(r)), key=lambda k: (sh[k], -k))].append(t)
     while disjoint:
+        un = [union(g, tx) for g in out]  # against each group's merged exons: per transcript x transcript was quadratic per locus
         bad = [t for k, g in enumerate(out) for t in g if t not in r
-               and any(shared(tx[t][0], tx[u][0]) for j, h in enumerate(out) if j != k for u in h)]
+               and any(shared(tx[t][0], un[j]) for j in range(len(out)) if j != k)]
         if not bad:
             break
         dropped += bad
-        out = [[t for t in g if t not in bad] for g in out]
+        gone = set(bad)
+        out = [[t for t in g if t not in gone] for g in out]
     return (out, dropped) if disjoint else out
 
 

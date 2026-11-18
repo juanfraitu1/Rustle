@@ -265,7 +265,7 @@
   -0.010027099355019291,
   -5.5698099459808565
  ],
- "tau": 0.055,
+ "tau": 0.02,
  "fit": [
   "A119b",
   "OR6737",
@@ -279,5 +279,5 @@
   "PAB_mm",
   "PAB_AG06213_fib_mm"
  ],
- "tau_rule": "0.055 since 2026-11-18 (user, with this file becoming the default model): loosest cut on a 0.005 grid at which every one of the 12 samples keeps at least 0.95 of its correct default chains (lowest: A119b 0.955). Until then 0.074 = largest cut (grid 0.001) at which the 11 fit samples together keep at least as many correct default chains as the r1677 filter"
+ "tau_rule": "0.02 since 2026-11-18 (user, register 1810): toned down because the earlier cut was overfit to real primate libraries (register 1793: it dropped 13-16% of the correct chains on simulated reads, 8% on real mouse); at 0.02 fly / mouse / zebrafish simulated keep 0.94 / 0.94 / 0.89, mouse ES and heart 0.98 / 0.97, A119b 0.99. RUSTLE_CHAINSCORE_TAU=0.055 gives the earlier cut. Before: 0.055 since 2026-11-18 (user, with this file becoming the default model): loosest cut on a 0.005 grid at which every one of the 12 samples keeps at least 0.95 of its correct default chains (lowest: A119b 0.955). Until then 0.074 = largest cut (grid 0.001) at which the 11 fit samples together keep at least as many correct default chains as the r1677 filter"
 }

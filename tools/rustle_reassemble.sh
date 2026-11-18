@@ -59,7 +59,7 @@ say() { echo "[rustle_reassemble] $(date +%H:%M:%S) $*" >&2; }
 
 stage_union() {
   for f in "$UNITS" "$UNITS_FA"; do
-    [ -s "$f" ] || { echo "missing $f: run the families stage with --bam (units in the copy_assign contract), or pass --units/--units-fa" >&2; exit 2; }
+    [ -s "$f" ] || { echo "missing $f: pass --units/--units-fa (mcl_families writes them only when run with --bam; the driver's families stage does not)" >&2; exit 2; }
   done
   say "union: copy assignment with the union certificate on $UNITS"
   samtools view -H "$BAM" | awk '$1=="@SQ"{sub("SN:","",$2); sub("LN:","",$3); print $2":1-"$3}' > "$OUT.loop.regions.txt"

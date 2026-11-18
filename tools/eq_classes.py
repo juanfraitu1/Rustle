@@ -68,7 +68,7 @@ def load_ties(as_table, floor, score="ms"):
             if len(f) <= ip:
                 sys.exit(f"eq_classes: {as_table} has no {score} columns ({len(f)} fields); rebuild it with as_table or pass --score AS")
             b, s = int(f[ib]), int(f[i2])
-            if b > 0 and (s >= floor(b) or int(f[ip]) < b):
+            if b > 0 and (s >= floor(b) or f[ip] == "NA" or int(f[ip]) < b):  # NA: the BAM holds only secondaries of the molecule
                 out[f[0]] = b
     return out
 
@@ -159,22 +159,12 @@ def summarise(placed, classes, meta, repeat=frozenset()):
     return loci, cls
 
 def repeat_loci(meta, gex, bed):
-    iv = collections.defaultdict(list)
-    for l in open(bed):
-        f = l.split("\t")
-        if len(f) > 2 and f[1].isdigit():
-            iv[f[0]].append((int(f[1]) + 1, int(f[2]), "x"))
-    cov, size = collections.Counter(), collections.Counter()
+    from gtf_exclude_bed import load_bed, covered  # merged intervals: nested BED elements used to count a base twice
+    b, cov, size = load_bed(bed), collections.Counter(), collections.Counter()
     for (c, _), exs in gex.items():
-        if c not in iv:
-            continue
-        ivs = sorted(iv[c]); starts = [a for a, _, _ in ivs]; longest = max(b - a for a, b, _ in ivs)
-        for a, b, g in exs:
-            cov[g] += sum(overlap_genes([(a, b)], ivs, starts, longest).values())
-    for exs in gex.values():
-        for a, b, g in exs:
-            size[g] += b - a + 1
-    return frozenset(g for g in cov if cov[g] >= 0.5 * size[g])
+        for s, e, g in exs:
+            cov[g] += covered(b, c, s, e); size[g] += e - s + 1
+    return frozenset(g for g in cov if cov[g] and cov[g] >= 0.5 * size[g])
 
 def main():
     global G_GEX, G_BAM, G_TIES, G_FLOOR, G_TAG, G_NODES, G_WIDE

@@ -285,7 +285,7 @@ def cmd_missing_copy(a):
     with open(out + '.genes.txt', 'w') as fh:
         for g in chosen:
             fh.write(g + '\n')
-    subprocess.run(f"{MM2} -t {a.threads} {fa_p} {out}.fq 2>/dev/null | samtools sort -@2 -o {out}.bam - && samtools index {out}.bam", shell=True, check=True)
+    _map_verified(out + '.fq', out + '.bam', fa_p, a.threads, out + '.mm2.log'); subprocess.run(['samtools', 'index', out + '.bam'], check=True)
     if MODE == 'genomic':
         subprocess.run(f"minimap2 -x splice:hq -t {a.threads} -d {out}.copies.mmi {out}.copies.fa 2>/dev/null", shell=True, check=True)
     print(f'[missing_copy_sim {MODE} d={div}] {len(chosen)} genes, {n} reads -> {out}.bam', flush=True)
@@ -301,7 +301,7 @@ def cmd_missing_copy(a):
         rs = recs.get(rid, []); prim = [r for r in rs if not r.is_secondary and not r.is_supplementary and not r.is_unmapped]
         if not prim:
             S[kind]['unmapped'] += 1; continue
-        p = prim[0]; at = p.reference_start + 1 <= ge and p.reference_end >= gs
+        p = prim[0]; at = p.reference_name == CHROM and p.reference_start + 1 <= ge and p.reference_end >= gs
         S[kind]['absorbed at template locus' if at else 'primary elsewhere'] += 1
         secs = [r for r in rs if r.is_secondary]; pas = p.get_tag('AS') if p.has_tag('AS') else 0
         if any((r.get_tag('AS') if r.has_tag('AS') else 0) >= 0.98 * pas for r in secs) or p.mapping_quality == 0:
@@ -534,7 +534,7 @@ def cmd_tandem(a):
                 for n, (rd, q) in enumerate(simulate_reads(c['tx'], a.reads, err=0.001, indel=0.0003, seed=a.seed * 31 + i, trunc_frac=0.10)):
                     rd, q = jitter(rd, q, rng)
                     name = f"copy{i}|{n}"; fq.write(f"@{name}\n{rd}\n+\n{q}\n"); truth_src[name] = i
-        subprocess.run(f"{MM2} -t {a.threads} {prefix}.fa {prefix}.fq 2>/dev/null | samtools sort -o {prefix}.bam - 2>/dev/null && samtools index {prefix}.bam", shell=True, check=True)
+        _map_verified(prefix + '.fq', prefix + '.bam', prefix + '.fa', a.threads, prefix + '.mm2.log'); subprocess.run(['samtools', 'index', prefix + '.bam'], check=True)
         rows = tandem_classify(prefix + '.bam', copies)
         with open(prefix + '.reads.tsv', 'w') as f:
             f.write('read\tsource_copy\tclass\tmapq\ttied\tsupplementary\n')

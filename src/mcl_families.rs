@@ -196,7 +196,7 @@ struct Args {
     #[arg(long)]
     sedef: Option<String>,
     /// Measurement scaffolding (§6iz proposal #4, `docs/o1_ledger.md`): dump the PRE-MCL homology graph
-    /// (`node<TAB>weight` self-row per node, then `u<TAB>v<TAB>weight` per edge, nodes as
+    /// (`u<TAB>v<TAB>weight` per edge, nodes as
     /// `chrom:start-end`) to this path before partitioning, so a controlled ablation can feed the SAME
     /// graph into a different partitioner (e.g. `gamma_refine`) instead of re-deriving it. Not consumed by
     /// any shipped pipeline; default off, no effect on any existing output.
@@ -534,12 +534,6 @@ struct Args {
     /// a universal default; turning it on is a per-run decision until the loss is understood.
     #[arg(long, default_value_t = false)]
     no_cross_family_exon_overlap: bool,
-    /// Escape hatch: permit two units of different families to claim the same exon bases, reproducing every
-    /// catalog built before 2026-09-08. ⚠ With overlap allowed, an ordinary intron of one gene is reported as
-    /// a read-through out of its neighbour — 32 of 42 guarded read-throughs were exactly that (register 754).
-    #[arg(long, default_value_t = false)]
-    allow_cross_family_exon_overlap: bool,
-
     #[arg(long)]
     out: String,
 }
@@ -731,8 +725,7 @@ fn leaving_introns(
     if chain.is_empty() {
         return Vec::new();
     }
-    let (clo, chi) = (chain[0].0, chain.last().unwrap().1);
-    let _ = clo;
+    let chi = chain.last().unwrap().1;
     if !blocks
         .iter()
         .any(|&(bs, be)| chain.iter().any(|&(s, e)| be > s && bs < e))
@@ -1441,6 +1434,9 @@ fn main() -> Result<()> {
         args.min_exon_share == 0.0 || args.min_exonic_bp >= 1,
         "--min-exon-share needs --min-exonic-bp 1 (the exon-to-exon pass that reads each record's CIGAR)"
     );
+    if args.min_exonic_bp == 0 && !args.exonic_overlap {
+        eprintln!("[mcl_families] WARNING: --min-exonic-bp 0: --exonic-both-sides, --min-shared-exon-frac and --min-cov-shorter are NOT applied (they need --min-exonic-bp 1)");
+    }
     let p = GraphParams {
         min_identity: args.min_identity,
         min_cov_longer: args.min_cov_longer,
@@ -1730,7 +1726,7 @@ fn main() -> Result<()> {
                 .with_context(|| format!("reading {}:{}-{}", m.0, m.1, m.2))?;
                 let n = reads
                     .iter()
-                    .filter(|br| !br.is_supplementary && has_block_in(br, m))
+                    .filter(|br| !br.is_supplementary && !br.is_secondary && has_block_in(br, m)) // primaries, as the flag says
                     .count();
                 if n >= args.min_reads {
                     ok.insert(m.clone());
@@ -1853,9 +1849,7 @@ fn main() -> Result<()> {
                 sd
             }
             None => {
-                let text = std::fs::read_to_string(&args.paf)
-                    .with_context(|| format!("reading {}", args.paf))?;
-                let sd = SdPairs::from_paf_str(&text);
+                let sd = SdPairs::from_paf_str(&paf);
                 eprintln!("[mcl_families] core-refine: {} pair(s) derived from the input PAF (--core-from-paf)", sd.n_pairs());
                 sd
             }
@@ -2060,7 +2054,7 @@ fn main() -> Result<()> {
              an assembled transcript of its own, not a unit to add"
         );
         anyhow::ensure!(
-            !(args.no_cross_family_exon_overlap && !args.allow_cross_family_exon_overlap),
+            !args.no_cross_family_exon_overlap,
             "--no-cross-family-exon-overlap is not available with --from-gtf (a copy is the locus representative \
              as assembled; it is never trimmed)"
         );
@@ -2379,7 +2373,7 @@ fn main() -> Result<()> {
         // whose own annotated member span contains them, else to the unit with more reads; the loser's exons
         // are trimmed. Within one family the §6fb merge already handles overlap, so same-family pairs are skipped.
         let mut cross_trimmed = 0usize;
-        if args.no_cross_family_exon_overlap && !args.allow_cross_family_exon_overlap {
+        if args.no_cross_family_exon_overlap {
             let mut by_ctg: BTreeMap<String, Vec<(usize, usize)>> = BTreeMap::new();
             for (fi, (_, pending, _)) in staged.iter().enumerate() {
                 for (k, u) in pending.iter().enumerate() {
@@ -2953,8 +2947,7 @@ fn main() -> Result<()> {
         ("coding_core".to_string(), args.coding_core.to_string()),
         (
             "no_cross_family_exon_overlap".to_string(),
-            (args.no_cross_family_exon_overlap && !args.allow_cross_family_exon_overlap)
-                .to_string(),
+            args.no_cross_family_exon_overlap.to_string(),
         ),
         ("noncoding_units".to_string(), noncoding_units.to_string()),
         (

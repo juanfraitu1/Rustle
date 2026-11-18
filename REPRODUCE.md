@@ -23,7 +23,7 @@ git clone <this repo> && cd Rustle
 cargo build --release            # binaries land in target/release/
 cargo test  --release --lib --bins
 ```
-Expected: **883 passed / 0 failed** (lib) and **28 / 0** (bins); 19 ignored.
+Expected: 0 failed (about 1,400 lib and bin tests, about 15 ignored, on 2026-11-18; read the totals from the `test result:` lines).
 
 On a WSL2 machine with a small VHDX, build onto the big disk instead:
 ```sh
@@ -204,7 +204,7 @@ importable (a stdlib one otherwise), numpy and scipy.
 component split) — close the gap to their Table S1C. Both are opt-in flags; the chain above is unchanged.
 
 ```sh
-S=bench/soto/soto_replication.py; W=/mnt/linuxdisk/home/juanfraitu/winloci_data/soto_replication
+S=bench/soto/soto_replication.py; W=/mnt/linuxdisk/home/juanfraitu/winloci_data/soto_replication   # laptop path; elsewhere <winloci_data>/soto_replication (docs/DATA.md)
 python3 $S genesets --out-eligible g1793.tsv --out-full g2334.tsv
 bash tools/rlock.sh heavy python3 $S edges --exon-mapback --cat-bed $W/cat_v4.bed --sd98-bed $W/sd98_v1.bed \
     --genome $W/t2t-chm13-v1.0.fa.gz --threads 5 --out-shared exon_edges.tsv     # 12,231 edges; ~8 GB, 2-8 min
@@ -379,7 +379,7 @@ tools/rustle_pipeline.sh all --bam READS.bam --fasta GENOME.fa --out run --index
     [--confirm pat=PAT.splice.mmi --confirm mat=MAT.splice.mmi] [--foreign human=CHM13.splice.mmi] [--threads 4]
 # stages, each also runnable alone: assemble -> families (mcl_families --from-gtf; its copy table run.fam.copies.* is what
 #   assign reads since 2026-10-02) -> assign (copy_assign --families) -> flag (missing_copy_flag scan + align). OPT-IN:
-#   candidates (o3_candidates + augmentation + patch realignment, between families and assign; `--candidates` runs it in
+#   candidates (candidate_copies + augmentation + patch realignment, between families and assign; `--candidates` runs it in
 #   `all` and makes assign and flag use it; ruling R14: its first acceptance failed, docs/archive/2026-10/O3_CANDIDATES_ACCEPTANCE_2026-10-02.md (the re-run passed: A13, docs/archive/2026-10/O3_CANDIDATES_ACCEPTANCE_A13_2026-10-03.md), and
 #   Amendment 14's no-deletion control failed, docs/archive/2026-10/O3_CANDIDATES_CONTROL_A14_2026-10-03.md).
 #   LEGACY: catalog (gw_family_catalog), which `--legacy-catalog` builds in `all` and assign then reads (refused together
@@ -405,7 +405,7 @@ RUSTLE_BRIDGE_REGROUP=f1units RUSTLE_FAMILY_RELATIONS=1 tools/rustle_pipeline.sh
 RUSTLE_BRIDGE_REGROUP=off tools/rustle_pipeline.sh assemble --bam READS.bam --fasta GENOME.fa --out pass1
 python3 bench/units_from_annotation.py ANNOT.gff pass1.gtf --report run.units.uncuttable.tsv --out run.units.list.tsv
 RUSTLE_BRIDGE_REGROUP=f1units RUSTLE_BRIDGE_UNITS_LIST=run.units.list.tsv RUSTLE_FAMILY_RELATIONS=1 tools/rustle_pipeline.sh all --bam READS.bam --fasta GENOME.fa --out run ...
-python3 bench/test_units_from_annotation.py                                                # the helper's 10 tests
+python3 bench/test_units_from_annotation.py                                                # the helper's 17 tests
 ```
 
 ### Driver stages added in November 2026
@@ -428,7 +428,7 @@ tools/rustle_pipeline.sh capstarts $A --threads 72       # run.capstarts.gtf alo
 tools/rustle_pipeline.sh repeatloci $A                   # run.repeat_loci.tsv (r1698 / r1702); marks loci, drops nothing
 tools/rustle_pipeline.sh exonmap $A --threads 72         # run.fam.exonmap.columns.tsv + run.fam.exonmap.gfa/ (r1595)
 RUSTLE_SEDEF_BED=GENOME.sedef.bed RUSTLE_EXCLUDE_BED=SATELLITES.bed tools/rustle_pipeline.sh relatives $A   # run.fam.relatives.tsv (r1676 / r1737)
-# assign skip lists, opt-in: soft-masked families (r1690) and families covered by an rDNA unit (r1691)
+# assign skip lists: FASTA.exclude.bed is applied by default when present (RUSTLE_EXCLUDE_BED= off); opt-in: soft-masked families (r1690) and families covered by an rDNA unit (r1691)
 RUSTLE_EXCLUDE_SOFTMASK=0.9 RUSTLE_EXCLUDE_FASTA=tools/data/rdna_human.fa tools/rustle_pipeline.sh assign $A
 # back to the pre-November defaults: no extra locus representatives, sole-candidate promotion on
 RUSTLE_FAMREPS=0 RUSTLE_SOLE_CANDIDATE=1 tools/rustle_pipeline.sh all $A

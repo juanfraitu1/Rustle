@@ -410,6 +410,10 @@ fn end_artifacts_run(gtf: &str, fasta: &str, out: &str, mode: &str, flags: Optio
             _ => writeln!(o, "{line}")?,
         }
     }
+    o.flush()?; // a dropped BufWriter swallows the last write's error
+    if let Some(w) = w.as_mut() {
+        w.flush()?;
+    }
     eprintln!(
         "[end-artifacts] {} models: RTS {n_rts}, A-run > {}% {n_a} (with PAS {n_pas}, rule k); rule {} (reads <= {}) {} {}",
         ids.len(), ea::POLYA_MAX_PCT, rule.to_uppercase(), ea::MAX_READS, flagged.len(), if mode == "drop" { "dropped" } else { "tagged" }
@@ -450,7 +454,7 @@ fn sample_counts_run(gtf: &str, bams: &str, samples: &str, out: &str) -> Result<
         .collect();
     let mut cols = Vec::new();
     for (bam, name) in bams.iter().zip(&names) {
-        let mut reader = noodles_bam::io::reader::Builder::default().build_from_path(bam).with_context(|| format!("open {bam}"))?;
+        let mut reader = rustle::bam::open_bam(bam, rustle::bam::bgzf_workers()).with_context(|| format!("open {bam}"))?;
         let header = reader.read_header()?;
         let refs: Vec<String> = header.reference_sequences().keys().map(|k| String::from_utf8_lossy(k).to_string()).collect();
         let reads = reader.records().filter_map(|r| {
@@ -492,6 +496,7 @@ fn sample_counts_run(gtf: &str, bams: &str, samples: &str, out: &str) -> Result<
         }
         writeln!(w)?;
     }
+    w.flush()?;
     Ok(())
 }
 
@@ -698,6 +703,7 @@ mod locus_bed {
             };
             writeln!(fo, "{c}\t{s}\t{e}\t{g}\t{}\t{strand}", (*r).min(1000))?;
         }
+        fo.flush()?;
         Ok(())
     }
 
@@ -1949,6 +1955,9 @@ fn psv_discover(
         wt.write_all(lt.as_bytes())?;
         total += lt.trim_end().rsplit('\t').next().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
     }
+    for w in [&mut wc, &mut wk, &mut wp, &mut wt] {
+        w.flush()?;
+    }
     eprintln!("[psv-discover] {} families, engine {engine:?}, blocks {blocks}: {total:.2} s summed over families", fams.len());
     Ok(())
 }
@@ -2115,6 +2124,9 @@ fn guide_run(gtf: &str, guide: &str, bam: &str, out: &str, threads: usize) -> Re
         let mut w = w.clone();
         let mut reader = rustle::bam::open_bam(bam, 1).with_context(|| format!("open {bam}"))?;
         let header = reader.read_header()?;
+        if header.reference_sequences().get_index_of(c.as_bytes()).is_none() {
+            return Ok(w); // a guide contig the BAM lacks (alt, patch, chrM) has no alignments
+        }
         let Some(id) = rustle::bam::seek_to_contig(&mut reader, &header, bam, c)? else { return Ok(w) };
         for r in reader.records() {
             let r = r.with_context(|| format!("guide: read {bam}"))?;
@@ -2216,6 +2228,7 @@ fn guide_run(gtf: &str, guide: &str, bam: &str, out: &str, threads: usize) -> Re
             writeln!(w, "{c}\tguide\texon\t{}\t{y}\t.\t{s}\t.\t{a}", x + 1)?;
         }
     }
+    w.flush()?;
     eprintln!("[guide] de novo models {}: {tally:?}; guide transcripts added {added} (full-chain primary alignments, chain not assembled)", order.len());
     Ok(())
 }

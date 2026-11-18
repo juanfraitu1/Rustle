@@ -201,7 +201,7 @@ def _cached(cfg, tag: str, path, compute):
     if f.exists():
         return json.loads(f.read_text())
     v = compute(path)
-    f.write_text(json.dumps(v))
+    tmp = f.with_suffix(".tmp"); tmp.write_text(json.dumps(v)); tmp.replace(f)   # whole or absent
     return v
 
 
@@ -512,6 +512,10 @@ def _stage_inputs(cfg, row, stage) -> tuple[dict, list, str | None]:
                 name, _, p = spec.strip().partition("=")
                 inputs[f"confirm_{name}"] = p
                 extra += ["--confirm", f"{name}={p}"]
+    if stage.startswith("families"):   # the driver's SD-damping input: the variable, else the genome's sidecar
+        bed = os.environ.get("RUSTLE_SEDEF_BED", (row["fasta"] or "") + ".sedef.bed")
+        if bed and Path(bed).exists():
+            inputs["sedef_bed"] = bed
     for label, p in inputs.items():
         if label == "splice_mmi":
             continue
@@ -523,6 +527,11 @@ def _stage_inputs(cfg, row, stage) -> tuple[dict, list, str | None]:
 _STAGE_FN = re.compile(r"^stage_(\w+)\(\)\s*\{")
 _VAR_REF = re.compile(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)")
 _ASSIGN = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\+?=")
+
+
+# stage_* functions a stage calls and whose products it owns: an edit of stage_famreps used to leave `families` fresh
+SUBSTAGES = {"families": ("famreps", "sdcore"), "flag": ("flag_scan",)}
+FAMILIES_PY = ("locus_reps.py", "piece_merge.py", "piece_attach.py", "reps_table.py")   # run by stage_famreps
 
 
 def driver_stage_code(path, stage: str) -> str:
@@ -544,7 +553,7 @@ def driver_stage_code(path, stage: str) -> str:
         if m:
             fn = m.group(1)
         if fn is not None:
-            if fn == stage:
+            if fn == stage or fn in SUBSTAGES.get(stage, ()):
                 kept.append((i, t))
             if raw == "}":
                 fn = None
@@ -618,6 +627,8 @@ def _key(cfg, row, stage, inputs, extra, upstream: dict) -> dict:
          "upstream": upstream}
     if spec["driver"]:
         k["driver_code"] = driver_stage_code(cfg["driver"], spec["driver"])
+    if stage.startswith("families"):
+        k["py"] = {p: _sha1(figlib.REPO / "tools" / p) for p in FAMILIES_PY}
     if spec["mm2"]:
         k["minimap2"] = _minimap2_version(cfg)
     return k
@@ -692,6 +703,10 @@ def _plan(cfg, key, stage, _memo=None) -> dict:
                            + (" (re-stamped from a proof)" if stamp.get("restamped") else ""))
             elif stamp:
                 changed = sorted(f for f in set(k) | set(old) if k.get(f) != old.get(f))
+                # stamps from before 2026-11-18 did not record the SEDEF BED: its absence alone is not a changed input
+                ki = k.get("inputs") or {}; oi = old.get("inputs") or {}
+                if "sedef_bed" in ki and "sedef_bed" not in oi and {l: v for l, v in ki.items() if l != "sedef_bed"} == oi:
+                    changed = [f for f in changed if f != "inputs"]
                 out.update(state="stale", reason=f"key changed: {', '.join(changed)}", changed=changed,
                            old_digest=stamp.get("digest"))
             elif pending_up:
@@ -904,7 +919,7 @@ def ensure(cfg: dict, key: str, stage: str, *, force: bool = False, ignore_busy:
                      + (f"env\t{' '.join(f'{k}={v}' for k, v in env.items())}\n" if env else ""))
         print(f"[runs] {sid} {stage}: {' '.join(f'{k}={v}' for k, v in env.items())}{' ' if env else ''}"
               f"{' '.join(cmd)}", file=sys.stderr)
-        rc = figlib.run(["/usr/bin/time", "-a", "-o", str(timef), "-f", TIME_FMT] + cmd,
+        rc = figlib.run([shutil.which("time") or "/usr/bin/time", "-a", "-o", str(timef), "-f", TIME_FMT] + cmd,
                         log=d / f"{stage}.driver.log", env=env, check=False)
         with open(timef, "a") as fh:
             fh.write(f"finished\t{_dt.datetime.now().isoformat(timespec='seconds')}\n")
@@ -944,7 +959,7 @@ def ensure(cfg: dict, key: str, stage: str, *, force: bool = False, ignore_busy:
 
 # ---------------------------------------------------------------- re-stamp from a proof (no run)
 # key fields a proof may bridge: the code that made the products changed, not what they were made from
-RESTAMP_FIELDS = {"bins", "driver_code", "minimap2", "upstream"}
+RESTAMP_FIELDS = {"bins", "driver_code", "minimap2", "upstream", "py"}
 
 
 def _file_sha1_full(path) -> str:
@@ -1276,7 +1291,8 @@ def cli_runs(cfg, sample: str, stage: str, dry_run: bool, max_stages: int | None
         if p["state"] == "blocked":
             print(f"[runs] {p['sample']} {p['stage']}: blocked — {p['reason']}", file=sys.stderr)
             continue
-        if p["state"] in ("fresh",) and not force:
+        f = force and p["stage"] in asked   # --force redoes the selected stages, not their upstream (a shared index)
+        if p["state"] in ("fresh",) and not f:
             continue
         if max_stages is not None and n >= max_stages and p["state"] != "adopt":
             print(f"[runs] --max-stages {max_stages} reached; re-run to continue (exit {PIECES_PENDING_EXIT})",
@@ -1284,10 +1300,10 @@ def cli_runs(cfg, sample: str, stage: str, dry_run: bool, max_stages: int | None
             return PIECES_PENDING_EXIT
         # re-plan: an upstream stage run earlier in this call changes this one's key
         cur = _plan(cfg, p["sample"], p["stage"])
-        if cur["state"] == "fresh" and not force:
+        if cur["state"] == "fresh" and not f:
             continue
         try:
-            ensure(cfg, p["sample"], p["stage"], force=force, ignore_busy=ignore_busy)
+            ensure(cfg, p["sample"], p["stage"], force=f, ignore_busy=ignore_busy)
         except StagePending as e:  # one bounded call per stage run; its downstream stages must wait
             print(f"[runs] {e} (exit {PIECES_PENDING_EXIT})", file=sys.stderr)
             return PIECES_PENDING_EXIT

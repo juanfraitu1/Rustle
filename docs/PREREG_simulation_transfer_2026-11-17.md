@@ -61,3 +61,53 @@ reads cover one 4.9 kb stretch (transcript 34.4-39.3 kb), yet it is simulated as
 simulated bases. Left as is: it is the LRGASP recipe and every tool gets the same reads. Consequence: for transcripts > 15 kb the
 simulated mouse set is easier than real data, and their "correct" chains say little. Recall is also reported with transcripts
 > 15 kb left out; the bars stay on the full set.
+
+**Noted before any result (2026-11-18): read numbers, and a restart.** Simulated reads handed to the tools: mouse 8,409,652
+(47,461 truth transcripts), fly 2,357,595 (13,397). The fly set is smaller than "the real pooled read count" above: the
+simulator takes the per-transcript counts as they are, and the fly draw holds 41,610 of the 142,434 mouse values (29% of the
+reads). Left as is; the fly set is the same recipe at about 0.29 of the depth. The preparation job was restarted once more
+(job 4480691): its FASTA-to-FASTQ step would have passed the 8 h limit; the replacement writes the same bytes (md5 on a 400 MB
+sample), and the finished mouse simulation was kept. No read had been mapped.
+
+## Result (2026-11-18): does not transfer as registered
+
+Jobs 4480434 / 4480436 / 4480438, every arm finished (`bad=0`). Scripts and tables: workspace `r1779_simulated_reads/score/`
+(`bars.py`, `extras.py`; `dme.txt`, `mmu.txt`, `mmu_es.txt`, `sirv.txt`, `*.extras.txt`).
+
+| dataset | B1 | B2 | B3 |
+|---|---|---|---|
+| fly, simulated | PASS | FAIL, every cut | FAIL: 0.833 -> 0.974, kept 0.842 |
+| mouse, simulated | PASS | FAIL, every cut | FAIL: 0.821 -> 0.916, kept 0.842 |
+| mouse ES, real | PASS | FAIL at cov >= 3, 4, 6, 11 | FAIL: 0.320 -> 0.411, kept 0.916 |
+| SIRV-Set 4 | PASS | FAIL, every cut | not judged |
+
+Correct chains / precision, de novo:
+
+| arm | fly (truth 9,379) | mouse sim (43,423) | mouse ES (114,584) | SIRV (60) |
+|---|---|---|---|---|
+| ours `PREFIX.gtf` | 7,058 / 0.833 | 27,175 / 0.821 | 17,714 / 0.320 | 47 / 0.398 |
+| ours `PREFIX.final.gtf` | 5,945 / 0.974 | 22,892 / 0.916 | 16,233 / 0.411 | 41 / 0.547 |
+| StringTie | 6,549 / 0.963 | 23,705 / 0.959 | 16,401 / 0.368 | 35 / 0.814 |
+| IsoQuant | 6,592 / 0.972 | 24,098 / 0.967 | 13,443 / 0.472 | 39 / 0.848 |
+| FLAIR | 6,614 / 0.720 | 27,048 / 0.535 | 16,686 / 0.096 | 48 / 0.081 |
+
+**The limit.** Ours has the most correct chains on every dataset but SIRV (one fewer than FLAIR), and is never dominated. Its
+precision is below StringTie and IsoQuant on all four, at every read-count cut on the simulated sets and SIRV. The filter trained
+on the 12 primate samples raises precision everywhere but drops 16% of the correct chains on simulated reads (8% on real mouse),
+more than the 7% allowed.
+
+Recall by simulated reads of the chain (mouse; 1 / 2 / 3-5 / 6-20 / > 20): ours 0.006 / 0.433 / 0.583 / 0.699 / 0.910;
+StringTie 0.016 / 0.346 / 0.409 / 0.533 / 0.858; IsoQuant 0.003 / 0.376 / 0.457 / 0.579 / 0.844; FLAIR 0.023 / 0.060 / 0.715 /
+0.772 / 0.907. Fly, same order: ours 0.006 / 0.711 / 0.850 / 0.934 / 0.977; StringTie 0.012 / 0.649 / 0.704 / 0.818 / 0.951;
+IsoQuant 0.004 / 0.683 / 0.749 / 0.841 / 0.936; FLAIR 0.033 / 0.059 / 0.937 / 0.952 / 0.960.
+Without transcripts > 15 kb recall moves by at most 0.001 for every arm (117 mouse chains, 51 fly chains leave).
+
+Wrong chains of ours `PREFIX.gtf`, first class that fits. Mouse, 5,940: new intron within 10 bp of a true one 3,075; contiguous
+piece of a true chain 1,275; true introns in a combination not simulated 1,036; new intron elsewhere 298; no true intron 256.
+Fly, 1,418: no true intron 835; within 10 bp 278; piece 195; combination 56; new intron elsewhere 54.
+Not examined further: these samples are not mined.
+
+Guided block (not judged; guide = truth with 5/16 hidden; hidden chains found / precision of non-guide chains). Fly, 2,901 hidden:
+ours 1,714 / 0.656; StringTie 1,743 / 0.907; IsoQuant 1,992 / 0.964; FLAIR 134 / 0.635. Mouse simulated, 13,430 hidden: ours
+6,109 / 0.763; StringTie 5,749 / 0.900; IsoQuant 7,185 / 0.961; FLAIR 2,054 / 0.717. Mouse ES, 35,741 hidden: ours 4,274 / 0.230;
+StringTie 3,847 / 0.299; IsoQuant 4,085 / 0.220; FLAIR 2,322 / 0.055.

@@ -266,6 +266,8 @@ pub fn homology(home: &Copy, others: &[&Copy], genome: &IndexedFasta, tmpdir: &P
         .stderr(std::process::Stdio::null())
         .output()
         .with_context(|| format!("starting {mm2}"))?;
+    // a killed minimap2 (empty stdout) used to read as "no reference copy explains this haplotype"
+    anyhow::ensure!(out.status.success(), "{mm2} failed ({}) on {}", out.status, t.display());
     let paf = String::from_utf8_lossy(&out.stdout);
     let start: HashMap<&str, i64> = others.iter().map(|c| (c.tid.as_str(), c.start)).collect();
     let mut lines: Vec<Vec<&str>> = paf.lines().map(|l| l.split('\t').collect()).collect();

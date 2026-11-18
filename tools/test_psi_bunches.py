@@ -1,7 +1,7 @@
 """tools/psi_bunches.py: introns from CIGARs, placed <= max per band, PSI ranges hold psi_placed, bunches by shared site."""
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from psi_bunches import introns_of, gtf_introns, tally, bunch_rows, psi, summary, HEADER
+from psi_bunches import introns_of, gtf_introns, tally, bunch_rows, psi, summary, HEADER, intron_rows, INTRON_HEADER
 
 A, B, C, X = ("c1", "+", 101, 200), ("c1", "+", 101, 300), ("c1", "+", 251, 300), ("c2", "+", 11, 90)
 
@@ -38,3 +38,15 @@ def test_bunches_and_ranges():
     assert bunch_rows({("c1", "-", 101, 200): [3] * 4, ("c1", "-", 101, 300): [3] * 4}, {})[0][:2] == ["c1:-:A:101", "acceptor"]
     assert psi(0, 0, 0, 0) == (None, None, None) and psi(0, 4, 3, 7) == (0.0, 0.0, 4 / 7)
     assert summary(rows)[0].startswith("exact: 1 bunches, 0 ") and summary(bunch_rows({A: [0, 4, 0, 4], B: [3] * 4}, {}))[0].startswith("exact: 1 bunches, 1 ")
+
+def test_intron_rows_keep_what_bunches_drop():
+    cnt = {A: [12, 14, 11, 14], B: [2, 3, 2, 3], C: [0, 1, 0, 1], X: [5, 5, 5, 5], ("c1", "-", 5, 9): [0, 0, 0, 0]}
+    rows = intron_rows(cnt)
+    assert [tuple(r[:4]) for r in rows] == [("c1", "+", 101, 200), ("c1", "+", 101, 300), ("c1", "+", 251, 300), ("c2", "+", 11, 90)]
+    assert rows[2][4:] == [0, 1, 0, 1] and len(INTRON_HEADER) == len(rows[0]) == 8   # C: under the 3-read floor, kept here
+
+def test_gtf_introns_keep_contigs_apart(tmp_path):
+    from psi_bunches import gtf_introns
+    ex = lambda c, s, e: f'{c}\tx\texon\t{s}\t{e}\t.\t+\t.\tgene_id "g"; transcript_id "t1";\n'
+    (tmp_path / "g.gtf").write_text(ex("c1", 1, 100) + ex("c1", 201, 300) + ex("c2", 151, 180) + ex("c2", 401, 500))   # one transcript id on two contigs
+    assert set(gtf_introns(str(tmp_path / "g.gtf"))) == {("c1", "+", 101, 200), ("c2", "+", 181, 400)}

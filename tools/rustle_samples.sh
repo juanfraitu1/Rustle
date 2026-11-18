@@ -83,7 +83,7 @@ for i in "${!B[@]}"; do
   sq0=$sq
   [ "$(samtools idxstats "$b" | awk '{m += $3} END {print m + 0}')" -gt 0 ] || die "BAM '$b' (${S[$i]}) holds no mapped reads"
 done
-key=$(for b in "${B[@]}"; do printf '%s\t%s\t%s\n' "$(readlink -f "$b")" "$(stat -c %s "$b")" "$(stat -c %Y "$b")"; done)
+key=$(for b in "${B[@]}"; do printf '%s\t%s\t%s\n' "$(readlink -f "$b")" "$(stat -Lc %s "$b")" "$(stat -Lc %Y "$b")"; done)
 POOLED=$OUT.pooled.bam
 if [ -s "$POOLED" ] && [ -f "$POOLED.bai" ] && [ "$(cat "$OUT.pool.key" 2>/dev/null)" = "$key" ]; then
   say "pool: $POOLED reused (same BAMs)"

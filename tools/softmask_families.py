@@ -27,7 +27,7 @@ def listed(copies, fasta, frac):
             if r['chrom'] not in fai: die(f"contig {r['chrom']} of {copies} is not in {fasta}.fai")
             low = tot = 0
             for e in r['exons'].split(','):
-                a, b = e.split('-'); s = fetch(r['chrom'], int(a) - 1, int(b))
+                a, b = e.split('-'); s = fetch(r['chrom'], int(a), int(b))  # the exons column is 0-based half-open (mcl_families unit_seq)
                 tot += len(s); low += sum(1 for c in s if 97 <= c <= 122)
             n[r['family_id']] += 1; hit[r['family_id']] += tot > 0 and low >= frac * tot
     return sorted(f for f in n if hit[f] * 2 > n[f]), len(n)

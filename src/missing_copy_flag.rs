@@ -59,6 +59,11 @@ struct Args {
     index_gb: Option<u32>,
 }
 
+const VALUE_FLAGS: [&str; 18] = [
+    "--bam", "--fasta", "--loci", "--index", "--out", "--gff", "--m-min", "--delta-min", "--min-reads", "--min-sub",
+    "--max-reads", "--pi", "--threads", "--contigs", "--from-scan", "--candidates", "--assignments", "--index-gb",
+];
+
 fn parse_args() -> Result<Args> {
     let a: Vec<String> = std::env::args().skip(1).collect();
     let get = |k: &str| -> Option<String> {
@@ -82,6 +87,10 @@ fn parse_args() -> Result<Args> {
                 foreign.push((n.to_string(), p.to_string()))
             }
             i += 1;
+        } else if VALUE_FLAGS.contains(&a[i].as_str()) {
+            i += 1;
+        } else if a[i] != "--scan-only" {
+            anyhow::bail!("unknown argument {}", a[i]); // a misspelled flag used to run with the default
         }
         i += 1;
     }
@@ -615,6 +624,13 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
     let header = open_reader(1)?.read_header()?;
     let index = noodles_bam::bai::read(&bai)?;
     let cons_path = format!("{}.consensus.fa", args.out);
+    // an earlier scan table must not outlive its consensus: a killed re-scan would leave it beside an emptied FASTA
+    let scan_path = format!("{}.scan.tsv", args.out);
+    match std::fs::remove_file(&scan_path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e.into()),
+    }
     let mut cons_fa = std::fs::File::create(&cons_path)?;
     let mut rows: Vec<Row> = Vec::new();
     let (mut n_scanned, mut n_enough, mut n_fired) = (0usize, 0usize, 0usize);
@@ -1121,7 +1137,6 @@ fn scan(args: &Args) -> Result<Vec<Row>> {
         "[missing_copy_flag] scanned {n_scanned}, with >= {} reads {n_enough}, fired {n_fired}",
         args.min_reads
     );
-    let scan_path = format!("{}.scan.tsv", args.out);
     let mut f = std::fs::File::create(&scan_path)?;
     writeln!(f, "{SCAN_HEAD}")?;
     for r in &rows {
@@ -1143,7 +1158,8 @@ fn main() -> Result<()> {
     // phase 1: scan (this call's batch), unless resuming from earlier scans
     let (rows, cons_fasta): (Vec<Row>, std::path::PathBuf) = match &args.from_scan {
         None => {
-            let rows = scan(&args)?;
+            // judged from the written precision, as the resumed (--from-scan) path does: one verdict per row either way
+            let rows: Vec<Row> = scan(&args)?.iter().filter_map(|r| Row::from_scan_line(&r.to_scan_line())).collect();
             if args.scan_only {
                 return Ok(());
             }
@@ -1156,6 +1172,11 @@ fn main() -> Result<()> {
             use std::io::BufRead;
             let mut rows = Vec::new();
             let merged = std::path::PathBuf::from(format!("{}.consensus.fa", args.out));
+            anyhow::ensure!(
+                !prefixes.contains(&args.out),
+                "--from-scan {} is also --out: the merged consensus would overwrite that scan's; use another --out",
+                args.out
+            );
             let mut out_fa = std::fs::File::create(&merged)?;
             for p in prefixes {
                 let f = std::fs::File::open(format!("{p}.scan.tsv"))
