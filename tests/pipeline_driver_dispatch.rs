@@ -769,3 +769,72 @@ fn the_final_gtf_is_filtered_by_the_chain_score_unless_switched_off_or_failing()
     assert_eq!(kept, "layered\n");
     assert!(said.contains("WARNING the chain score filter failed"), "{said}");
 }
+
+/// Opt-in `famwise` (2026-11-18): `eqclasses` with its `--famwise` switch, then tools/famwise.py on the tables it wrote; refuses
+/// the ratio band; plain `eqclasses` is called exactly as before.
+#[test]
+fn famwise_runs_eqclasses_with_the_switch_then_the_layer() {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("pipeline_driver_dispatch").join("famwise");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("create scratch dir");
+    let (out, py, inp) = (dir.join("run"), dir.join("py.sh"), dir.join("in"));
+    // stand-in for both tools: logs its arguments and writes the files each would write
+    std::fs::write(
+        &py,
+        "#!/bin/bash\necho \"$*\" >> \"$(dirname \"$0\")/calls.txt\"\ncase \"$1\" in\n  *eq_classes.py) echo exact; echo wide; : > \"$5.loci.tsv\"; : > \"$5.classes.tsv\"\n    while [ $# -gt 1 ]; do if [ \"$1\" = --famwise ]; then : > \"$2.reads.tsv\"; : > \"$2.placed.tsv\"; fi; shift; done;;\n  *famwise.py) [ -z \"${FAIL_LAYER:-}\" ] || exit 3; for x in tx.tsv classes.tsv families.tsv gtf; do : > \"$3.$x\"; done; echo layer;;\nesac\n",
+    )
+    .unwrap();
+    std::fs::write(&inp, "x\n").unwrap();
+    std::fs::write(format!("{}.families.gtf", out.display()), "loci\n").unwrap();
+    std::fs::write(format!("{}.molecules.tsv", out.display()), "scores\n").unwrap();
+    let script = |call: &str| {
+        format!(
+            "set -euo pipefail\nexport RUSTLE_PYTHON='bash {py}'\nOUT={out}; BAM={inp}; FASTA={inp}; FAM_GTF=$OUT.families.gtf; BRIDGE_MODE=f1v2; JOB_THREADS=2; NAMES=; RP_DRIVER_DIR=tools; RUSTLE_EXCLUDE_BED=\nsay() {{ :; }}\n{}\n{}\n{}\n{call}\n",
+            function_block("fam_gtf_guard"),
+            function_block("stage_eqclasses"),
+            function_block("stage_famwise"),
+            py = py.display(),
+            out = out.display(),
+            inp = inp.display()
+        )
+    };
+    let run_env = |call: &str, var: Option<(&str, &str)>| {
+        let mut c = std::process::Command::new("bash");
+        c.arg("-c").arg(script(call)).env_remove("RUSTLE_EQ_RATIO").env_remove("RP_FAMWISE").env_remove("FAIL_LAYER");
+        if let Some((k, v)) = var {
+            c.env(k, v);
+        }
+        c.output().expect("run bash")
+    };
+    let run = |call: &str, ratio: Option<&str>| run_env(call, ratio.map(|r| ("RUSTLE_EQ_RATIO", r)));
+    let calls = || std::fs::read_to_string(dir.join("calls.txt")).unwrap_or_default();
+    let o = run("stage_famwise", Some("0.98"));
+    assert_eq!(o.status.code(), Some(2), "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("famwise needs the window band"));
+    assert_eq!(calls(), "", "nothing may run before the refusal");
+    let o = run("stage_famwise", None);
+    assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stderr));
+    let c = calls();
+    let lines: Vec<&str> = c.lines().collect();
+    assert_eq!(lines.len(), 2, "{c}");
+    assert!(lines[0].contains("eq_classes.py") && lines[0].contains("--famwise"), "{c}");
+    assert!(lines[1].contains("famwise.py") && lines[1].contains("--eq-loci") && lines[1].contains("--min-link 1"), "{c}");
+    for f in ["famwise.reads.tsv", "famwise.placed.tsv", "famwise.tx.tsv", "famwise.classes.tsv", "famwise.families.tsv", "famwise.gtf", "eq.loci.tsv", "eq.classes.tsv"] {
+        assert!(std::path::Path::new(&format!("{}.{f}", out.display())).exists(), "{f} missing");
+    }
+    let left: Vec<_> = std::fs::read_dir(&dir).unwrap().filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().into_owned()).filter(|n| n.contains(".eq.tmp")).collect();
+    assert!(left.is_empty(), "temporary files left: {left:?}");
+    std::fs::remove_file(dir.join("calls.txt")).unwrap();
+    let o = run("stage_eqclasses", None);
+    assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(!calls().contains("--famwise"), "plain eqclasses must not pass the switch: {}", calls());
+    // the layer fails: the tables of the BAM pass stay for inspection, no derived product (stale or partial) is left
+    let o = run_env("stage_famwise", Some(("FAIL_LAYER", "1")));
+    assert_eq!(o.status.code(), Some(1), "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("famwise failed"));
+    let has = |f: &str| std::path::Path::new(&format!("{}.{f}", out.display())).exists();
+    assert!(has("famwise.reads.tsv") && has("famwise.placed.tsv"), "the BAM-pass tables must be kept");
+    for f in ["famwise.tx.tsv", "famwise.classes.tsv", "famwise.families.tsv", "famwise.gtf"] {
+        assert!(!has(f), "{f} of the earlier run left beside a failed one");
+    }
+}

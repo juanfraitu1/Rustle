@@ -83,6 +83,7 @@ the default products untouched:
 | `oneread` | `PREFIX.oneread.gtf` (one-read chains with every junction in another read and a clean reading frame; `RUSTLE_ONEREAD=1` appends them to `PREFIX.final.gtf`; default test failed its yield bar) | 1766 |
 | `assemble --names ANNOT` / `names` | `PREFIX.named.gtf`, `PREFIX.final.named.gtf` (the same models with the annotation's gene and transcript names as attributes; independent of `--guide`) | none |
 | `eqclasses` | `PREFIX.eq.classes.tsv`, `PREFIX.eq.loci.tsv` (sets of loci the alignment score does not separate; per locus the reads placed only there, the maximum with every tied read, an EM count between the two) | none |
+| `famwise` | `PREFIX.famwise.families.tsv`, `.tx.tsv`, `.classes.tsv`, `.reads.tsv`, `.gtf` (transcripts joined across loci by tied molecules, each molecule counted once; per transcript a count range and a status; reporting only) | none |
 | `psi` | `PREFIX.psi.tsv` (PSI of each intron among the introns sharing its donor or acceptor, with the range tied reads allow); after `exonmap` also `PREFIX.fam.psi.tsv` (the same junction across the copies of a family) | none |
 | `repeatloci` | `PREFIX.repeat_loci.tsv` | 1698, 1702 |
 | `exonmap` | `PREFIX.fam.exonmap.columns.tsv` + one GFA per family | 1595 |

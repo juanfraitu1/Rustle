@@ -81,6 +81,13 @@
 #     (tools/eq_classes.py). Two bands side by side: exact score ties, and (columns _w) scores within RUSTLE_EQ_WINDOW of the
 #     best (default 10 ms; or >= RUSTLE_EQ_RATIO x the best when that is set); neither is validated, so read where they disagree. Loci mostly
 #     inside the exclude BED (RUSTLE_EXCLUDE_BED or FASTA.exclude.bed) are labelled repeat and join no group.
+#   tools/rustle_pipeline.sh famwise --bam B --fasta G --out PREFIX [--names ANNOT] [--threads N]   OPT-IN, named only:
+#     `eqclasses` plus PREFIX.famwise.*: transcripts of different loci that the same tied molecule carries are joined into
+#     family transcripts (families.tsv: copy set, each molecule once); per transcript the molecules placed only there and
+#     the maximum with every tied one (tx.tsv), and a status: certified, best_only, tied_only, near_only, no_band_record.
+#     Bands on minimap2's ms (exact, and within RUSTLE_EQ_WINDOW); every record row also carries AS (reads.tsv, within 20).
+#     Reporting only: no read is assigned, no transcript added or dropped, no other product changes (tools/famwise.py).
+#     RUSTLE_FW_MIN_LINK (default 1) = tied molecules needed to join two transcripts; RUSTLE_EQ_RATIO is refused.
 #   tools/rustle_pipeline.sh siblings --bam B --fasta G --out PREFIX   OPT-IN (register 1628): PREFIX.sibling.gtf = PREFIX.gtf +
 #                              one-read chains a family sibling's model confirms; after assemble and families
 #   tools/rustle_pipeline.sh oneread --bam B --fasta G --out PREFIX [--threads N]   OPT-IN (register 1766; RUSTLE_ONEREAD=1 = also appended to PREFIX.final.gtf by assemble): PREFIX.oneread.gtf =
@@ -1104,6 +1111,7 @@ stage_psi() {
 stage_eqclasses() {
   fam_gtf_guard eqclasses
   local tab=$OUT.molecules.tsv gtf=$FAM_GTF bed=${RUSTLE_EXCLUDE_BED:-$FASTA.exclude.bed}
+  local fw=(); [ -z "${RP_FAMWISE:-}" ] || fw=(--famwise "$OUT.eq.tmp.fw")   # stage famwise: the same pass also writes its two tables
   [ -s "$tab" ] || tab=$BAM.as_table.tsv
   [ -s "$tab" ] || { echo "[rustle_pipeline] eqclasses needs the score table $OUT.molecules.tsv or $BAM.as_table.tsv (assemble writes it)" >&2; exit 2; }
   if [ -n "${NAMES:-}" ]; then
@@ -1112,10 +1120,24 @@ stage_eqclasses() {
     gtf=$OUT.eq.named.gtf
   fi
   ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/eq_classes.py" "$gtf" "$BAM" "$tab" "$OUT.eq.tmp" --window "${RUSTLE_EQ_WINDOW:-10}" ${RUSTLE_EQ_RATIO:+--ratio "$RUSTLE_EQ_RATIO"} --threads "$JOB_THREADS" \
-    $([ -s "$bed" ] && printf -- '--exclude %s' "$bed") >> "$OUT.eq.log" 2>&1 \
+    $([ -s "$bed" ] && printf -- '--exclude %s' "$bed") "${fw[@]}" >> "$OUT.eq.log" 2>&1 \
     || { echo "[rustle_pipeline] eqclasses failed (see $OUT.eq.log); no other product is affected" >&2; rm -f "$OUT.eq.tmp".*; exit 1; }
   mv -f "$OUT.eq.tmp.loci.tsv" "$OUT.eq.loci.tsv"; mv -f "$OUT.eq.tmp.classes.tsv" "$OUT.eq.classes.tsv"
   say "eqclasses: $(tail -2 "$OUT.eq.log" | tr '\n' ' ')-> $OUT.eq.loci.tsv, $OUT.eq.classes.tsv"
+}
+# famwise: OPT-IN, named only (2026-11-18; docs/superpowers/specs/2026-11-18-family-wise-assembly-design.md). `eqclasses` with its
+# --famwise switch (one BAM pass; the eq tables are byte-identical), then tools/famwise.py on the tables. Nothing reads its products.
+stage_famwise() {
+  [ -z "${RUSTLE_EQ_RATIO:-}" ] || { echo "[rustle_pipeline] famwise needs the window band: unset RUSTLE_EQ_RATIO (RUSTLE_EQ_WINDOW sets the band)" >&2; exit 2; }
+  RP_FAMWISE=1 stage_eqclasses
+  local gtf=$FAM_GTF fw=$OUT.famwise
+  [ -z "${NAMES:-}" ] || gtf=$OUT.eq.named.gtf
+  # the two tables of the BAM pass are kept whatever the layer does; its own four are never left stale or partial
+  mv -f "$OUT.eq.tmp.fw.reads.tsv" "$fw.reads.tsv"; mv -f "$OUT.eq.tmp.fw.placed.tsv" "$fw.placed.tsv"
+  rm -f "$fw.tx.tsv" "$fw.classes.tsv" "$fw.families.tsv" "$fw.gtf"
+  ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/famwise.py" "$gtf" "$fw" --eq-loci "$OUT.eq.loci.tsv" --window "${RUSTLE_EQ_WINDOW:-10}" --min-link "${RUSTLE_FW_MIN_LINK:-1}" > "$OUT.famwise.log" 2>&1 \
+    || { echo "[rustle_pipeline] famwise failed (see $OUT.famwise.log); $fw.reads.tsv and .placed.tsv are kept, no other product is affected" >&2; rm -f "$fw.tx.tsv" "$fw.classes.tsv" "$fw.families.tsv" "$fw.gtf"; exit 1; }
+  say "famwise: $(tail -3 "$OUT.famwise.log" | tr '\n' ' ')-> $OUT.famwise.families.tsv, .tx.tsv, .classes.tsv, .reads.tsv, .gtf"
 }
 # names: --names ANNOT (opt-in). Copies of the assemblies with the annotation's names as extra attributes; nothing reads them.
 stage_names() {
@@ -1830,7 +1852,7 @@ stage_all() {
 }
 case "$STAGE" in
   merged) stage_merged;;
-  assemble) stage_assemble; if [ -n "${GUIDE:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_guided; fi; if [ -n "${NAMES:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_names; fi;; guided) stage_guided;; names) stage_names;; eqclasses) stage_eqclasses;; psi) stage_psi;; siblings) stage_siblings;; oneread) stage_oneread || exit $?;; flairlike) stage_flairlike;; altends) stage_altends;; trunc5) stage_trunc5;; chainscore) stage_chainscore;; shiftdrop) stage_shiftdrop;; shortexons) stage_shortexons;; capstarts) stage_capstarts;; earlyends) stage_earlyends;; repeatloci) stage_repeatloci;; exonmap) stage_exonmap;; relatives) stage_relatives;; sdcore) stage_sdcore;; famreps) stage_famreps;; families) stage_families;; candidates) stage_candidates;; catalog) stage_catalog;;
+  assemble) stage_assemble; if [ -n "${GUIDE:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_guided; fi; if [ -n "${NAMES:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_names; fi;; guided) stage_guided;; names) stage_names;; eqclasses) stage_eqclasses;; famwise) stage_famwise;; psi) stage_psi;; siblings) stage_siblings;; oneread) stage_oneread || exit $?;; flairlike) stage_flairlike;; altends) stage_altends;; trunc5) stage_trunc5;; chainscore) stage_chainscore;; shiftdrop) stage_shiftdrop;; shortexons) stage_shortexons;; capstarts) stage_capstarts;; earlyends) stage_earlyends;; repeatloci) stage_repeatloci;; exonmap) stage_exonmap;; relatives) stage_relatives;; sdcore) stage_sdcore;; famreps) stage_famreps;; families) stage_families;; candidates) stage_candidates;; catalog) stage_catalog;;
   assign) stage_assign;; flag) stage_flag;; flag_scan) stage_flag_scan;; index) stage_index;;
   # `all`'s background flag stage: the scan, then align + verdict, whose wall goes to PREFIX.flag.time
   flag_bg) stage_flag_scan; export RP_FLAG_SCAN_DONE=1; fb0=$SECONDS; stage_flag; printf 'wall_s\t%s\n' "$(( SECONDS - fb0 ))" > "$OUT.flag.time.tmp";;

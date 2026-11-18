@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Equivalence classes of reads over the loci of an assembly, with per-locus count ranges (driver stage `eqclasses`).
 
-    eq_classes.py GTF BAM AS_TABLE OUT_PREFIX [--score ms|AS] [--window W | --ratio R] [--threads N] [--exclude BED] [--contigs A,B]
+    eq_classes.py GTF BAM AS_TABLE OUT_PREFIX [--score ms|AS] [--window W | --ratio R] [--threads N] [--exclude BED] [--contigs A,B] [--famwise FW_PREFIX]
 
 A read's placements = the loci (gene_id of GTF, on the record's strand, most exon bases shared) of its records whose
 score ties its best (primary or secondary alike). The score is minimap2's `ms` (max-scoring segment, the one it ranks
@@ -21,12 +21,16 @@ Per locus:  placed  reads whose best-scoring placement(s) are all here. A lower 
             em      counts-only EM over the classes (abundance prior; quantification only, no read is assigned).
                     Where a tie group has no placed read (`group_placed` 0) em is the starting equal split.
 Tie groups = components of loci sharing >= 2 class reads; loci mostly inside --exclude BED are `repeat` and link nothing.
-Writes OUT_PREFIX.classes.tsv (column band) and OUT_PREFIX.loci.tsv; prints one summary line per band."""
+Writes OUT_PREFIX.classes.tsv (column band) and OUT_PREFIX.loci.tsv; prints one summary line per band.
+--famwise FW_PREFIX (driver stage `famwise`; the two tables above stay byte-identical) also writes, for tools/famwise.py,
+FW_PREFIX.reads.tsv (every record within 20 of the best, with ms and AS, of each molecule tied that closely) and
+FW_PREFIX.placed.tsv (the other molecules per locus and transcript of their primary record)."""
 import argparse, collections, multiprocessing, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gtf_names import overlap_genes, opn
 
 OUTSIDE = "outside"
+G_NODES = None  # {locus: {intron chain: node}} with --famwise
 
 def load_loci(gtf):
     """-> meta {locus: [chrom, start, end, strand, name]}, gex {(chrom, strand): sorted [(s, e, locus)]} (1-based closed)."""
@@ -70,7 +74,9 @@ def load_ties(as_table, floor, score="ms"):
 
 def scan(contig):
     import pysam
-    placed, pairs = collections.Counter(), []
+    placed, pairs, members = collections.Counter(), [], collections.Counter()
+    if G_NODES is not None:
+        import famwise
     idx = {s: ([a for a, _, _ in G_GEX[(contig, s)]], max(b - a for a, b, _ in G_GEX[(contig, s)])) for s in "+-" if (contig, s) in G_GEX}
     for r in pysam.AlignmentFile(G_BAM).fetch(contig):
         if r.is_unmapped or r.is_supplementary:
@@ -84,11 +90,18 @@ def scan(contig):
         s = "-" if r.is_reverse else "+"
         ov = overlap_genes([(a + 1, b) for a, b in r.get_blocks()], G_GEX[(contig, s)], *idx[s]) if s in idx else None
         g = max(ov, key=lambda k: (ov[k], k)) if ov else OUTSIDE
+        m = None if G_NODES is None else famwise.member_of(g, famwise.record_chain(r.reference_start, r.cigartuples), G_NODES)
         if best is None:
             placed[g] += 1
-        else:
+            if m is not None:
+                members[(g, m)] += 1
+        elif m is None:
             pairs.append((r.query_name, g, not r.is_secondary or r.get_tag(G_TAG) == best))
-    return placed, pairs
+        else:
+            t = r.get_tag(G_TAG)
+            pairs.append((r.query_name, g, not r.is_secondary or t == best, not r.is_secondary or t >= G_WIDE(best), m, best - t,
+                          *(r.get_tag(x) if r.has_tag(x) else "NA" for x in ("ms", "AS")), int(not r.is_secondary)))
+    return placed, pairs, members
 
 def em(classes, placed, rounds=500, tol=1e-6):
     """counts-only EM: theta = placed + expected class reads; classes {frozenset: n}."""
@@ -164,26 +177,36 @@ def repeat_loci(meta, gex, bed):
     return frozenset(g for g in cov if cov[g] >= 0.5 * size[g])
 
 def main():
-    global G_GEX, G_BAM, G_TIES, G_FLOOR, G_TAG
+    global G_GEX, G_BAM, G_TIES, G_FLOOR, G_TAG, G_NODES, G_WIDE
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("gtf"); p.add_argument("bam"); p.add_argument("as_table"); p.add_argument("out")
     p.add_argument("--score", choices=("ms", "AS"), default="ms"); p.add_argument("--window", type=float, default=10); p.add_argument("--ratio", type=float); p.add_argument("--threads", type=int, default=4)
-    p.add_argument("--exclude"); p.add_argument("--contigs")
+    p.add_argument("--exclude"); p.add_argument("--contigs"); p.add_argument("--famwise")
     a = p.parse_args()
     import pysam
     meta, G_GEX = load_loci(a.gtf)
     G_FLOOR = floor_fn(a.window, a.ratio)
+    if a.famwise:
+        if a.ratio is not None:
+            p.error("--famwise needs the window band (no --ratio)")
+        import famwise
+        G_NODES, G_WIDE = famwise.load_nodes(a.gtf)[0], G_FLOOR
+        G_FLOOR = floor_fn(max(a.window, famwise.FW_WINDOW))  # records down to here are written; the bands below still stop at --window
     G_BAM, G_TAG, G_TIES = a.bam, a.score, load_ties(a.as_table, G_FLOOR, a.score)
     contigs = a.contigs.split(",") if a.contigs else list(pysam.AlignmentFile(a.bam).references)
     with multiprocessing.get_context("fork").Pool(a.threads) as pool:
         res = pool.map(scan, contigs, chunksize=1)
     base, sets = collections.Counter(), {"exact": collections.defaultdict(set), "wide": collections.defaultdict(set)}
-    for pl, pairs in res:
-        base.update(pl)
-        for q, g, exact in pairs:
-            sets["wide"][q].add(g)
+    recs, members = collections.defaultdict(list), collections.Counter()
+    for pl, pairs, mem in res:
+        base.update(pl); members.update(mem)
+        for q, g, exact, *x in pairs:
+            if not x or x[0]:
+                sets["wide"][q].add(g)
             if exact:
                 sets["exact"][q].add(g)
+            if x:
+                recs[q].append((g, *x[1:]))
     base.pop(OUTSIDE, None)
     repeat = repeat_loci(meta, G_GEX, a.exclude) if a.exclude else frozenset()
     rows, cls_all = {}, []
@@ -212,6 +235,27 @@ def main():
     with open(a.out + ".classes.tsv", "w") as fh:
         fh.write("band\treads\tsize\tloci\tgroup\n")
         fh.writelines("\t".join(map(str, r)) + "\n" for r in cls_all)
+    if a.famwise:
+        _, i2, ip = COLS[a.score]
+        second = {f[0]: (int(f[i2]), f[ip]) for f in (l.rstrip("\n").split("\t") for l in open(a.as_table) if l[0] != "#") if f[0] in recs}
+        with open(a.famwise + ".reads.tsv", "w") as fh:
+            fh.write("read\tlocus\tmember\tgap\tms\tAS\tprimary\n")
+            for q in sorted(recs):
+                rs, b, (s2, pr) = list(recs[q]), G_TIES[q], second[q]
+                # records the scan never met (--contigs panel) get an `unseen` row: without it the molecule would read as placed.
+                # The primary (a band member whatever its score), the best record, the second-best when it is within reach.
+                # shortcut: the table holds no third score, so a panel of 3-copy ties should scan all three contigs
+                unseen = lambda score, prim: rs.append((famwise.UNSEEN, ".", b - score, *((score, "NA") if a.score == "ms" else ("NA", score)), prim))
+                if pr != "NA" and not any(r[-1] for r in rs):
+                    unseen(int(pr), 1)
+                if not any(r[2] == 0 for r in rs):
+                    unseen(b, 0)
+                if s2 >= G_FLOOR(b) and sum(b - r[2] >= s2 for r in rs) < 2:
+                    unseen(s2, 0)
+                fh.writelines("\t".join(map(str, (q, *r))) + "\n" for r in sorted(rs, key=lambda r: (r[2], r[0], r[1], str(r[3:]))))
+        with open(a.famwise + ".placed.tsv", "w") as fh:
+            fh.write("locus\tmember\tn\n")
+            fh.writelines(f"{l}\t{m}\t{n}\n" for (l, m), n in sorted(members.items()))
 
 if __name__ == "__main__":
     main()
