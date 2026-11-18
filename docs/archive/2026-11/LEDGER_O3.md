@@ -8356,7 +8356,7 @@ and 945.
 
 *(original: `docs/archive/2026-10/merged/PREREG_o3_graph_round21_2026-10-19.md`)*
 
-## Round 21: O2 only on ambiguous reads, by Eichler's rule (within 10 AS), on fresh multigene families (2026-10-19)
+## Round 21: O2 only on ambiguous reads, by the adapted Eichler filter (within 10 AS), on fresh multigene families (2026-10-19)
 
 This pre-registration was written before any world of round 21's families was built; no read of these families has been
 simulated. Code: branch `o3-fast`, frozen at the commit that adds this file.
@@ -8370,7 +8370,7 @@ simulated. Code: branch `o3-fast`, frozen at the commit that adds this file.
   meaningless need O2"
 - "according to the Eichler paper, their definition of a well placed multimapper is that where the AS is within 10"
 
-**Eichler's rule, as implemented here before** (register 935): a read is placed on its best-AS alignment iff no other
+**The adapted Eichler filter, as implemented here before** (register 935): a read is placed on its best-AS alignment iff no other
 alignment scores within 10 AS units of it.
 - Under splice:hq a substitution moves AS by 5 (+1 match, -4 mismatch), so 10 is two sequence differences.
 - On HG002's untied reads (development, register 1330 data), minimap2's copy at a margin of 5-9 was wrong 46.5% of the time,
@@ -8520,7 +8520,7 @@ done
 
 ### What a PASS would and would not claim
 
-**A correctness PASS** would claim that O2 confined to ambiguous reads (within 10 AS, Eichler's rule), with minimap2's
+**A correctness PASS** would claim that O2 confined to ambiguous reads (within 10 AS, the adapted Eichler filter), with minimap2's
 placement for the rest, does at least as well as the current method in every world type. It would hold on 37 held-out
 multigene families, half of them with non-coding members.
 
@@ -8611,7 +8611,7 @@ simulated. Code: branch `o3-fast`, frozen at the commit that adds this file.
   minimap2's, and it went to the copy that explains less of the read.
 
 **The user (2026-10-19), on the proposed fix:** "ok, lets do that". A read is ambiguous, and so O2's, when its AS is within
-10 of the best (Eichler's rule), or when an alignment on another locus explains it with no more edits than the best-AS one,
+10 of the best (the adapted Eichler filter), or when an alignment on another locus explains it with no more edits than the best-AS one,
 counting every base it leaves unaligned (`veto_distance`).
 
 **Development (all spent):**
@@ -8767,7 +8767,7 @@ Amendment-1 rerun, with no crash.
   O2 can be shown to work. The round's cost bar is therefore UNDECIDED.
 - Rounds 19-21 passed C1, and the scope step adds about 5 s.
 
-**What it means.** With ambiguity defined by Eichler's within-10 rule plus sequence ties, O2 confined to the ambiguous reads
+**What it means.** With ambiguity defined by the 10-point window of the Eichler lab's filter, adapted to one reference plus sequence ties, O2 confined to the ambiguous reads
 does at least as well as the current method in every world type, on 26 held-out families that are mostly processed
 pseudogenes. Adoption as the default needs the cost bar's public profile.
 

@@ -159,7 +159,7 @@ def o2_homes(rows, spans, truth=None):
 
 def pass2_homes(prim, rows, spans, truth=None):
     """{read: (chrom, start, end, source, copy)} for the second round: every read of the family once -- O2's copy when the
-    corrector decided it, minimap2's primary copy when it was not tied within 10 AS (Eichler: minimap2's call stands) --
+    corrector decided it, minimap2's primary copy when it was not tied within 10 AS (adapted Eichler filter: minimap2's call stands) --
     and no home for a tie O2 could not break (it echoes at its tied copies, as in pass 1). With truth, the ORACLE: the
     donor's copy wherever the truth class is unique / unique_elsewhere, minimap2's primary for an untied read without one,
     and no home for a tie without one (O2's calls are never used). prim: {read: primary copy}."""

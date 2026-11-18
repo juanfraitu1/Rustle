@@ -4,7 +4,7 @@
 usage: prune_good.py --good GOOD.gtf --primary PRIMARY.gtf --ref REF.gtf[.gz] --genes A.genes.tsv[,B.genes.tsv] --rule o2|eichler --out OUT.gtf
 Drops every GOOD transcript that touches an exon of a gene the rule calls contradicted AND is good-pool-only: its intron chain is
 absent from PRIMARY on that chromosome (mono-exon: no PRIMARY exon overlaps it). Genes come from s1_o2.py's genes.tsv (`class` for
-O2, `eichler_class` for Eichler)."""
+O2, `eichler_class` for the adapted Eichler filter)."""
 import argparse
 import collections
 import gzip

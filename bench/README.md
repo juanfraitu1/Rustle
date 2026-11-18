@@ -163,7 +163,7 @@ inside the subcommands that use them.
 | `score.py members` | `member_completeness.py` | gffcompare `=` per universe gene. | register 1102 |
 | `score.py adjudicated` | `adjudicated_truth.py score` | Catalogs vs the AK adjudicated two-annotation truth. | `PREREG_core_definition_2026-09-12` Addendum AK |
 | `score.py protein` | `protein_families.py score` | Cross-annotation protein-family scoring by CDS overlap. | Addendum AN; ledger §6ko |
-| `score.py eichler` | `eichler_compare.py` | The Eichler-style AS-margin assignment, compared with ours. | register 935-936; `EICHLER_COMPARISON_2026-09-21` |
+| `score.py eichler` | `eichler_compare.py` | The AS-margin assignment adapted from the Eichler lab's filter, compared with ours. | register 935-936; `EICHLER_COMPARISON_2026-09-21` |
 | `score.py reads` | `copy_assign_read_truth.py score` | Copy assignment against per-read truth: OWN / PRIMARY / ANY readings, per divergence bin. Opt-in `--per-read OUT.tsv`: one row per scored read with its verdict under each reading (stdout unchanged). | §6zf; `PREREG_o2_read_truth_2026-09-23`; REPRODUCE |
 | `score.py bakeoff-calls` | `copy_assign_tool_bakeoff.py calls` | Per-molecule copy calls derived from a tool's GTF. Opt-in `--tx-out OUT.tsv`: per in-copy transcript, the molecules whose chain it carries. | §6hz; `PREREG_tool_bakeoff_2026-09-08` |
 | `score.py bakeoff-compare` | `copy_assign_tool_bakeoff.py compare` | Compares the per-tool calls on the hard (AS-tied) vs easy molecules. Opt-in `--tx-support LABEL=TX.tsv` (repeatable): the precision-side section (in-copy transcripts carrying >= 1 molecule / >= 1 hard molecule). | PREREG hard_locus_bakeoff (5ca5c7e4) |

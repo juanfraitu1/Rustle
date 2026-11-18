@@ -4,6 +4,10 @@ Compact version (2026-11-01). The verbatim ledger is `docs/archive/2026-11/LEDGE
 
 ## Current state (2026-11-03)
 
+- **2026-11-17, placement on the catalogue-free truth (rows 1775-1778, 1781, 1783): `docs/NEUTRAL_TRUTH_PLACEMENT_2026-11-17.md`.** No rule beats the primary alignment on HG002's 710 decidable near ties; the default assign stage abstains safely. The truth has a defect (span overlap without strand or exons; unlocatable placements dropped), found on chr1: do not score another arm or quote the table before the repair.
+- **2026-11-17 / 18, Winnowmap and the size of the problem (rows 1782, 1784, 1787, 1790, 1791): `docs/WINNOWMAP_AND_FAMILY_TIES_2026-11-18.md`.** Winnowmap, stock or with its copy-aware method patched on for spliced reads, is worse than minimap2's primary on HG002's decidable near ties (605 and 609 right against 639 / 638) and has no effect at tandem copies; it fixes seeding, families need ranking. Near ties are 5.7% of HG002's family reads and fixable primary errors 0.05%, but 14 of 155 expressed families have >= 20% of their reads near-tied (81% of all near ties). A `tie` of the neutral truth is SEVERAL COPIES (unplaceable; 44% of those families' near ties) or ONE PLACE (the truth cannot judge; 15%): do not call a tie undecidable without that split.
+- **2026-11-17 / 18, truth repair, the 10-point filter's reach, and its name (rows 1785, 1786):** the truth is repaired under `NT_REPAIR=1` (opt-in): HG002 near ties 600 decidable, primary 553 right / 47 wrong; every rule re-scored, none gains, verdicts unchanged. The adapted Eichler filter: "take the best AS above 10" is wrong on 16.7% (HG002) / 40.0% (KB3781) of reads with a lead of 11-50, "keep the primary" on 0.9% / 0.08%; no threshold at 10; primary right 98% at a lead of 6-10. The source (Guitart 2024) was re-read: its filter compares primary alignments of separate haplotype mappings per paralog cluster, so everything here is an adaptation to one reference. Definition and wording in `copy_assignment_definition.md`; all docs, comments, tool output and Fig. 5s reworded 2026-11-18 (identifiers keep the name, user's decision). Summary: `NEUTRAL_TRUTH_PLACEMENT_2026-11-17.md`.
+
 - **Scope (user, 2026-11-03):** O2 is only for reads minimap2 could not place. The contested set = molecules whose runner-up is within 10 on `ms` (the score minimap2 ranks by), any AS, minus the K = 0 wall (same scores, same shape, same chromosome: nothing to decide). The AS-gap class (spliced primary vs unspliced higher-AS rival, ms margin > 10) is OUT (r1403/1404: primary right 99.6%). Sizes: A119b 283,924 molecules (wall 27%), HG002 197,872 (22%), OR6737 15,964 (25%), KB3781 52,061 (17%) (r1508 census, post hoc amendment).
 - **Default `copy_assign`:** exact AS ties with the PSV certificate (`as_margin` 0), unchanged. **Opt-in:** `--tie-ms W` (ms gate; ms columns only under the flag; never fires on ms 0; needs an indexed BAM), `--primary-on-family` (r1514), `--tie-structure`, `--certify-all-records`, `--union-certificate` (r1481 FAIL), `RUSTLE_PSV_BLOCKS=1`, candidates stage.
 - **rDNA exclusion on HG002 (row 1741, 2026-11-15; `PREREG_rdna_sequence_rule_2026-11-13.md` Amendment 2):** confirming run through the driver, INCOMPLETE as registered: the default arm was OOM-killed (239.8 GB), the arm with `RUSTLE_EXCLUDE_FASTA=tools/data/rdna_human.fa` finished in 1,631 s at 31.5 GB with 2,898 assigned rows. Not a held-out test; row 1691 stays FAIL. On the older completed default run the listed families hold 0 of 17,960 assigned rows (descriptive). Still opt-in; open = a completed default arm on today's binaries (1 TB node), then the user's decision.
@@ -38,8 +42,8 @@ KB3781. T1 discordance dev 0.00099, held-out 872/883,715 -> 1,850/1,285,832 = 0.
 Descriptive. Full population (Amendment 1): gorilla 49,444 multi-placement: moved 519 (1.0%), confirmed 76.4%, identical 7.9%, undecided 14.7%; human 532,876: moved 14,945 (2.8%), 62.5% / 10.6% / 24.2%. Many moved reads are the r1270 retrocopy pattern. (full: archive/2026-11/LEDGER_O2.md:339)
 
 ## PREREG_o2_pruning_and_eichler_2026-10-12.md
-## O2 on the coin-toss genes, O2-pruned good pool, and Eichler's AS-margin rule, 2026-10-12
-E1 holds (tied S2 secondaries certified to primary copy 41,569 vs 75 gorilla; 82,882 vs 386 human). E3 "agree mostly" FAILS: Eichler-O2 agreement S1 0.356/0.540, S2 0.141/0.300; disagreements are spliced parent reads aligning unspliced to retrocopies (no intron in 95%/92%). (full: archive/2026-11/LEDGER_O2.md:422)
+## O2 on the coin-toss genes, O2-pruned good pool, and the AS-margin rule adapted from the Eichler lab's filter, 2026-10-12
+E1 holds (tied S2 secondaries certified to primary copy 41,569 vs 75 gorilla; 82,882 vs 386 human). E3 "agree mostly" FAILS: margin-rule (adapted Eichler filter) vs O2 agreement S1 0.356/0.540, S2 0.141/0.300; disagreements are spliced parent reads aligning unspliced to retrocopies (no intron in 95%/92%). (full: archive/2026-11/LEDGER_O2.md:422)
 
 ## PREREG_popfix_2026-10-12.md
 ## PREREG — population-fixed PSVs for O2 on the human Y (2026-10-12 plan; written 2026-10-13, before any run below)
@@ -130,7 +134,7 @@ Y1 holds: 187/187 tied reads agree across half-models; reproducibility only, cor
 Survey table: SDA/PSV lineage pertinent (reference PSVs fail fresh data, r1348/r1350; corrector the only held-out gain, r1343); set reporting no better than AS null; EM/MMR (row 1351) and facility location (row 1352) not applicable (exploratory); phasing outside O2. (full: archive/2026-11/LEDGER_O2.md:3467)
 
 ## O2_WINDOW_SWEEP_2026-10-20.md
-## O2's window past Eichler's 10 AS: a development sweep on gorilla KB3781 (2026-10-20)
+## O2's window past the adapted Eichler filter's 10 AS: a development sweep on gorilla KB3781 (2026-10-20)
 Dev only. Widening adds reads minimap2 already gets right (18 of 80,151 wrong in 30-49 band); nearly all minimap2 errors are within 30; the set holds truth on 99.6-100%. (full: archive/2026-11/LEDGER_O2.md:3537)
 
 ## PREREG_o2_corrector_2026-10-20.md
@@ -243,7 +247,7 @@ Register 1391. PASSES: S1 0.02%, S2 0 on X', S3, power (4,562). At d 1 every rea
 No verdict. O3 flags vs expressed B-only loci per family; addendum with the IsoCon side (`candidate_copies`, 34 families). Cited later as "157 placed, 0 wrong". (full: archive/2026-11/LEDGER_O2.md:7752)
 
 ## The AS gap is a splicing artefact, not a copy signal (2026-10-24, register 1403)
-KB3781 fibroblast BAM: a secondary with higher AS than the primary is common and almost always a worse alignment (unspliced to a processed copy). The Eichler AS >= 10 move is not a copy signal. (full: archive/2026-11/LEDGER_O2.md:7829)
+KB3781 fibroblast BAM: a secondary with higher AS than the primary is common and almost always a worse alignment (unspliced to a processed copy). The adapted-Eichler AS >= 10 move is not a copy signal. (full: archive/2026-11/LEDGER_O2.md:7829)
 
 ## PREREG: splice-aware tie window on simulated gorilla reads with known origin (P15), 2026-10-24
 PASS on all three bars (register 1404): H1 R fires on 812, primary right on 809 (99.6%); H2 99.65%; H3 window C holds 270/270 with 38% fewer reads. `--tie-structure` wired in as opt-in (register 1405); default unchanged. (full: archive/2026-11/LEDGER_O2.md:7862)

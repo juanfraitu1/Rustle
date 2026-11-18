@@ -23,7 +23,7 @@
 - What the literature CONFIRMS we already got right (defensive ammunition)
 - Prioritized "what can be done" (recommendation)
 - PAPER_REVIEW_ACTIONS
-- F6 — Eichler AS≥10 rule vs our significance gate (`bench/as_decisive_vs_gate.py`)
+- F6 — adapted-Eichler AS≥10 rule vs our significance gate (`bench/as_decisive_vs_gate.py`)
 - F5 — StrandOddsRatio (SOR) strand-bias filter for ASJ (`bench/asj_strand_bias.py`, wired into `asj_aggregate.py`)
 - F2 — Soto-2025 DNA/CN family validation, no SEDEF (`bench/soto_family_validate.py`)
 - F1 — O4 mask-a-copy positive control (`bench/o4_mask_readmit.py`)
@@ -192,11 +192,11 @@ longcallR, Sahlin 2018 IsoCon, Zheng 2025 Clair3-RNA, family-detection prior-art
 - **Action:** thread read strand into the junction tally and add a SOR (or simpler per-strand balance) filter.
   Closes a robustness gap a reviewer who knows longcallR will immediately ask about; cheap and citable.
 
-### F6 — O2 head-to-head: our significance gate vs the Eichler AS≥10 rule on the same reads  **[PARTIAL]  value MED · effort LOW**
+### F6 — O2 head-to-head: our significance gate vs the adapted-Eichler AS≥10 rule on the same reads  **[PARTIAL]  value MED · effort LOW**
 - **Paper:** Eichler/Guitart 2024 — the assignment rule the advisor keeps citing: assign an Iso-Seq read to a
   paralog cluster iff its best minimap2 AS beats every other by **≥10**, else mark ambiguous and ignore
   (conservative, no 1/k).
-- **Code-state (verified):** PARTIAL. We *calibrated* τ=6.9 to "≈ the Eichler AS≥10 operating point" but there
+- **Code-state (verified):** PARTIAL. We *calibrated* τ=6.9 to "≈ the adapted-Eichler AS≥10 operating point" but there
   is **no direct AS≥10-rule-vs-our-gate benchmark** on the same reads.
 - **Action:** implement the literal AS≥10 rule and run it head-to-head against our significance gate on sim5x
   (labeled truth) + a GGO family. Expected story: same decisive calls, but our gate adds the per-read
@@ -269,10 +269,10 @@ literature-grounded gap with a concrete, verified artifact.
 
 ---
 
-## F6 — Eichler AS≥10 rule vs our significance gate (`bench/as_decisive_vs_gate.py`)
+## F6 — adapted-Eichler AS≥10 rule vs our significance gate (`bench/as_decisive_vs_gate.py`)
 **Paper:** Guitart/Eichler 2024 (TBC1D3) — the rule the advisor keeps citing: map a read to all haplotypes,
-assign iff best minimap2 AS beats the 2nd by ≥10, else ambiguous. We had only *calibrated* τ=6.9 to its
-operating point; now benchmarked literally, on the labeled sim5x ladder.
+count it for a paralog cluster iff its primary AS there beats every other cluster's by ≥10, else ambiguous. We had only *calibrated* τ=6.9 to its
+operating point; now benchmarked as an adaptation to one reference (best AS vs 2nd AS of one mapping; not the paper's procedure, see `docs/copy_assignment_definition.md`), on the labeled sim5x ladder.
 
 | K | AS≥10 recall | gate recall | gate acc | AS margin med/p90/max |
 |---|---|---|---|---|
@@ -543,7 +543,7 @@ consequential structural claims (L1, default-off assignment) were additionally h
   out-resolves PSV-only), per-molecule/FLAIR-like, assign-or-abstain (no 1/k). The vote engine is its
   flat-error equivalent (kill-test 16/16); the CLI is the same scoring standalone. The margin is now a
   PRINCIPLED operating point **τ = ln((1−p)/p)** (`tau_from_p`/`p_from_tau`/`for_target_misassignment`,
-  tested): τ=2.0≡p≈0.12 (recall) and τ≈6.9≡p=1e-3 (Eichler precision) are two choices of p, not arbitrary
+  tested): τ=2.0≡p≈0.12 (recall) and τ≈6.9≡p=1e-3 (adapted-Eichler precision) are two choices of p, not arbitrary
   constants. Validated NON-CIRCULARLY on the sim5x labeled-truth ladder: **acc|assigned=1.000 at every
   K≥1, 100% abstain at K=0**. (631→637 tests green.)
 - **L8 — abundance CI FIXED.** `copy_assign_pipeline.rs` now bases the CI on INFORMATIVE (decisive)
@@ -1398,7 +1398,7 @@ DSFAM42 is the rare certified exception. The flagship is the win, with DSFAM42 a
   where copies differ) **AND** a **decisive log-LR margin τ**, where **τ = ln((1−p)/p)** is a *principled
   operating point* set by the target per-read misassignment rate `p` — NOT an arbitrary threshold. The two
   values in the codebase are just two `p`: **τ=2.0 ≡ p≈0.12 (recall mode, default)** and **τ≈6.9 ≡ p=1e-3
-  (precision mode, the PSV-space analog of Eichler's AS≥10)**. Set via `AssignParams::for_target_misassignment(p)`.
+  (precision mode, the PSV-space analog of the adapted Eichler filter's AS≥10)**. Set via `AssignParams::for_target_misassignment(p)`.
 - **⭐ NON-CIRCULAR VALIDATION — the sim5x labeled-truth oracle (the load-bearing test, not unique-mapper agreement).**
   Each simulated read name encodes its TRUE copy, so accuracy is measured against *planted* labels, not
   minimap2. The canonical engine on the K-ladder (`smoke_sim5x_ground_truth`, 1000 reads/level):

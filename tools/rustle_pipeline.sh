@@ -110,7 +110,8 @@
 #   tools/rustle_pipeline.sh trunc5 --bam B --fasta G --out PREFIX [--threads N]   OPT-IN (register 1677): PREFIX.trunc5.gtf = PREFIX.gtf without
 #                              multi-exon chains that at least as many primary reads run through and continue 5' of as end with
 #   tools/rustle_pipeline.sh chainscore --bam B --fasta G --out PREFIX [--threads N]   (register 1761; applied to PREFIX.final.gtf by default since 2026-11-16, RUSTLE_CHAINSCORE=0 = off): PREFIX.chainscore.gtf = PREFIX.gtf without
-#                              multi-exon chains whose frozen r1677 score is below the fixed cut (tools/data/chainscore_r1677.json)
+#                              multi-exon chains whose frozen chain score is below the fixed cut (tools/data/chainscore_r1769.json, cut 0.055; default model since 2026-11-18)
+#                              RUSTLE_CHAINSCORE_MODEL=r1677 = the earlier weight file (register 1677, cut 0.061), also for assemble's filter on PREFIX.final.gtf
 #   tools/rustle_pipeline.sh capstarts --bam B --fasta G --out PREFIX [--threads N]   (register 1717 / 1720; also a last step of `all`, RUSTLE_CAPSTARTS=0 = off; writes nothing on a library without cap G): PREFIX.capstarts.gtf = PREFIX.gtf plus
 #                              nested starts backed by >= 3 capped reads (non-templated 5' G); refuses libraries without a usable cap G
 #   tools/rustle_pipeline.sh shiftdrop --bam B --fasta G --out PREFIX [--threads N]   OPT-IN (register 1728-1730 / 1732 / 1734 / 1738 / 1739): PREFIX.shiftdrop.gtf = PREFIX.gtf without
@@ -833,14 +834,22 @@ stage_assemble() {
   fi
 }
 # Register 1761, default since 2026-11-16 (user; RUSTLE_CHAINSCORE=0 = off): the layered assembly loses the multi-exon chains the
-# frozen r1677 score puts below its fixed cut. The score is computed on $OUT.gtf (what the rule was tested on; HG002 held out keeps
-# 0.972 of the correct chains, +0.026 precision over a read-count cut) and the same chain list is taken out of $OUT.final.gtf;
+# frozen chain score puts below its fixed cut. The score is computed on $OUT.gtf (what the rule was tested on) and the same chain
+# list is taken out of $OUT.final.gtf;
 # $OUT.chainscore.gtf is $OUT.gtf filtered. $OUT.gtf and the families input are never changed. A failure (no python3 with numpy and
 # pysam, say) is reported and leaves $OUT.final.gtf unfiltered.
 # shortcut: one more BAM pass after every assemble (1-2 min on a 12M-read sample); fold the features into copy_assign if it matters
+# RUSTLE_CHAINSCORE_MODEL picks the weight file of the chain score filter: unset or r1769 = the default since 2026-11-18 (user;
+# register 1769: decile model fit on 11 samples of six species, no ORF feature, cut 0.055 = at least 0.95 of the correct chains kept
+# on each of the 12 samples; HG002 unseen keeps 0.978 at precision 0.280 against 0.970 at 0.259 for r1677); r1677 = the default
+# until then (fit on OR6737 + A119b, cut 0.061); or a path to a model file.
+chainscore_model() {
+  local m="${RUSTLE_CHAINSCORE_MODEL:-r1769}"
+  case "$m" in */*|*.json) printf '%s\n' "$m" ;; *) printf '%s\n' "$RP_DRIVER_DIR/data/chainscore_$m.json" ;; esac
+}
 final_chainscore() {
   [ "${RUSTLE_CHAINSCORE:-1}" != 0 ] || return 0
-  if ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/../bench/famcmp/chainscore.py" apply "$RP_DRIVER_DIR/data/chainscore_r1677.json" "$OUT.gtf" "$BAM" "$FASTA" \
+  if ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/../bench/famcmp/chainscore.py" apply "$(chainscore_model)" "$OUT.gtf" "$BAM" "$FASTA" \
        "$OUT.chainscore.gtf.tmp" "$THREADS" "$OUT.final.gtf" "$OUT.final.gtf.tmp" > "$OUT.chainscore.log" 2>&1 && [ -s "$OUT.final.gtf.tmp" ]; then
     mv -f "$OUT.chainscore.gtf.tmp" "$OUT.chainscore.gtf"; mv -f "$OUT.final.gtf.tmp" "$OUT.final.gtf"
     say "assemble: chain score filter, $(grep -m1 'by the same chain list' "$OUT.chainscore.log" | sed 's/^[^:]*: //') taken out of $OUT.final.gtf ($OUT.chainscore.gtf: $(tail -1 "$OUT.chainscore.log"))"
@@ -959,7 +968,7 @@ stage_famreps() {
 # HG002 held out: keeps 0.972 of the correct chains, precision +0.026 over a read-count cut at equal correct chains.
 stage_chainscore() {
   [ -s "$OUT.gtf" ] && [ -s "$BAM" ] && [ -s "$FASTA" ] || { echo "[rustle_pipeline] chainscore needs $OUT.gtf (run assemble first), --bam and --fasta" >&2; exit 2; }
-  ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/../bench/famcmp/chainscore.py" apply "$RP_DRIVER_DIR/data/chainscore_r1677.json" "$OUT.gtf" "$BAM" "$FASTA" "$OUT.chainscore.gtf.tmp" "$THREADS" > "$OUT.chainscore.log" 2>&1 \
+  ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/../bench/famcmp/chainscore.py" apply "$(chainscore_model)" "$OUT.gtf" "$BAM" "$FASTA" "$OUT.chainscore.gtf.tmp" "$THREADS" > "$OUT.chainscore.log" 2>&1 \
     || { echo "[rustle_pipeline] chainscore failed (see $OUT.chainscore.log); $OUT.gtf is unaffected" >&2; rm -f "$OUT.chainscore.gtf.tmp"; exit 1; }
   mv -f "$OUT.chainscore.gtf.tmp" "$OUT.chainscore.gtf"
   say "chainscore: $(tail -1 "$OUT.chainscore.log") -> $OUT.chainscore.gtf"

@@ -18417,7 +18417,7 @@ pub mod copy_assign {
     /// log-LR over the runner-up exceeds `τ`, giving posterior misassignment ≤ `p` on the resolved reads.
     /// This makes `margin` a PRINCIPLED operating point (the user chooses `p`), not an arbitrary number —
     /// the two values seen in the codebase are simply two choices of `p`:
-    ///   * `p = 1e-3 → τ ≈ 6.90` — conservative, the PSV-space analog of Eichler's AS ≥ 10 (precision mode).
+    ///   * `p = 1e-3 → τ ≈ 6.90` — conservative, the PSV-space analog of the adapted Eichler filter's AS ≥ 10 (precision mode).
     ///   * `p ≈ 0.119 → τ = 2.0` — the permissive default inherited from the Python prototype (recall mode).
     /// At flat HiFi error the vote-count gate is algebraically equivalent (`τ ≈ votes · ln(3(1-e)/e)`),
     /// which is why the production vote engine's `margin = 1` ≡ `τ ≈ 6.9` (kill-test, 16/16).
@@ -18597,7 +18597,7 @@ pub mod copy_assign {
         fn default() -> Self {
             // margin = 2.0 ≡ p ≈ 0.119 (recall mode, the Python-prototype operating point). Kept as the
             // default for behavioral continuity; use `for_target_misassignment(1e-3)` for the conservative
-            // τ ≈ 6.9 / Eichler-AS≥10 precision operating point.
+            // τ ≈ 6.9 / adapted-Eichler-AS≥10 precision operating point.
             AssignParams {
                 error_rate: 0.003,
                 junction_weight: 5.0,
@@ -19673,7 +19673,7 @@ pub mod copy_assign {
             // the two operating points seen in the codebase are just two choices of p:
             assert!(
                 (tau_from_p(1e-3) - 6.9068).abs() < 1e-3,
-                "p=1e-3 => tau~6.9 (Eichler AS>=10 analog)"
+                "p=1e-3 => tau~6.9 (adapted-Eichler AS>=10 analog)"
             );
             assert!(
                 (tau_from_p(0.1192029) - 2.0).abs() < 1e-3,
@@ -70877,7 +70877,7 @@ pub mod family_detect {
         }
 
         /// Best and runner-up alignment score over one read's placements, as `(as_score, aligned_len, ms)` triples.
-        /// Ranks on RAW `AS` (that is the quantity people quote and Eichler's `AS >= 10` rule uses); the per-base
+        /// Ranks on RAW `AS` (that is the quantity people quote and the adapted Eichler filter's `AS >= 10` rule uses); the per-base
         /// values are carried alongside for the length-fair comparison, and the best / runner-up `ms` are ranked on
         /// their own. `None` if the read has no placements.
         /// Zero-length placements get a per-base score of 0.0 rather than a division by zero.

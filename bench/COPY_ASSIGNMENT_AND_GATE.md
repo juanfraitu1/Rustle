@@ -1167,17 +1167,17 @@ isolated on identical reads:
 
 ## The reframed lever
 
-The headroom over Eichler's AS≥10 gate (measured: ~28% of discarded GGO reads recoverable) AND over
+The headroom over the adapted Eichler filter's AS≥10 gate (measured: ~28% of discarded GGO reads recoverable) AND over
 Rustle's own production rule comes from the **same place** — the **1–2 PSV near-identical tail** that
 both gates throw away:
 
-- Eichler discards it because the *aggregate* alignment-score margin is <10 (signal diluted over the
+- The adapted filter discards it because the *aggregate* alignment-score margin is <10 (signal diluted over the
   full molecule).
 - Rustle-production discards it because `min_psv=3` (a 3-concordant-PSV hard floor) can't be met.
 
 The fix is one principled gate: **`n_decisive≥1` (identifiability) + a single calibrated decisive
 margin τ = ln((1−p)/p)** that sets the precision/recall operating point by a *stated* misassignment
-bound P(misassign)≤p — the Canzar-clean restatement of Eichler's conservative AS≥10, with the magic
+bound P(misassign)≤p — the Canzar-clean restatement of the adapted Eichler filter's conservative AS≥10, with the magic
 integers (`min_psv=3`, `margin=1`) collapsed into one interpretable knob.
 
 The LLR engine (`copy_assign.rs::assign_read`) is the right **vehicle** for τ (it makes τ a probability
@@ -1207,7 +1207,7 @@ Artifacts: `psv_llr_vs_votes_killtest.py` · `psv_llr_vs_votes_killtest.png` · 
 # Operating point: precision/recall vs the decisive margin τ
 
 τ is now a real parameter of the shipped engine (`copy_assign --margin <τ>`, default 2.0; the doc-string
-gives τ = ln((1−p)/p), τ=6.9 ≈ p 1e-3 = the Eichler AS≥10 analog). The identifiability gate
+gives τ = ln((1−p)/p), τ=6.9 ≈ p 1e-3 = the adapted-Eichler AS≥10 analog). The identifiability gate
 (`n_decisive≥1`) is independent of τ and always applied. This sweeps τ on two substrates using the
 production engine (`copy_assign.rs::assign_read`, mirrored by `bench/copy_assign.py`).
 
@@ -1229,7 +1229,7 @@ parameterisation.
 | 0.0 (argmax) | 0.976 | 0.9340 |
 | 0.5 | 0.964 | 0.9411 |
 | **2.0 (default)** | **0.964** | **0.9412** |
-| **6.9 (p=1e-3, Eichler-faithful)** | **0.964** | **0.9412** |
+| **6.9 (p=1e-3, adapted-Eichler)** | **0.964** | **0.9412** |
 | 12.0 | 0.961 | 0.9416 |
 | 25.0 | 0.958 | 0.9419 |
 
@@ -1237,7 +1237,7 @@ parameterisation.
 
 1. **τ=2 and τ=6.9 give the *identical* operating point** (recall 0.964, agreement 0.9412). The
    principled conservative choice — τ=6.9, a *stated* per-read misassignment bound p≤1e-3, the PSV-space
-   restatement of Eichler's AS≥10 — costs **nothing** in recall over the loose default. Adopt it for free.
+   restatement of the adapted Eichler filter's AS≥10 — costs **nothing** in recall over the loose default. Adopt it for free.
 2. **The only material decision is τ=0 vs τ>0.** Argmax (assign ties) buys +1.2% recall but *loses*
    ~0.7% agreement; any τ>0 discards the ties and is strictly better. Beyond that, the margin distribution
    on real data is **bimodal** — reads are either decisive (margin ≫ 25) or genuine ties (margin ≈ 0),
@@ -1257,7 +1257,7 @@ AS≥10 criterion your advisor cites. The curve is the evidence; the point is ro
   overlap call, not error. The sim panel (true labels) is the rigorous anchor.
 - 70 families (≥2 valid copies after the spliced-length filter), not genome-wide; capped at 150
   candidates. Representative of the co-located tandem regime, not a full census.
-- Flatness is consistent with the GGO headroom measurement (Eichler-discard only 3.4% of multimappers —
+- Flatness is consistent with the GGO headroom measurement (adapted-Eichler-discard only 3.4% of multimappers —
   most gorilla paralogs are divergent enough that the margin is decisive): the thin-margin tail where τ
   would matter is genuinely small in this family set.
 
@@ -1393,7 +1393,7 @@ phases **0/15,386** reads — correctly **abstaining** rather than guessing (DAZ
 - **Opt-in / additive**: gated behind `--phase`; without it, the families/assignments/quant outputs are
   byte-identical.
 - **Confidence-gated**: a read is phased iff it clears the decisive-margin gate τ = ln((1−p)/p)
-  (default 6.9 ≈ p 1e-3, the Eichler AS≥10 analog); unphaseable reads are emitted as `-1`, never guessed.
+  (default 6.9 ≈ p 1e-3, the adapted-Eichler AS≥10 analog); unphaseable reads are emitted as `-1`, never guessed.
 - **Phases copies, not alleles**: it phases into paralog copy-haplotypes (the thesis problem), not the
   two parental allelic haplotypes; allele-level het is the separate ASJ machinery.
 
@@ -1603,7 +1603,7 @@ mapped by majority vote), significance gate (α=1e-3) vs legacy τ-gate (τ=6.9)
 
 ## 3. Default α
 
-**α = 1e-3 confirmed** as the default: it reproduces the production τ=6.9 (p=1e-3 / Eichler-AS≥10) operating
+**α = 1e-3 confirmed** as the default: it reproduces the production τ=6.9 (p=1e-3 / adapted-Eichler-AS≥10) operating
 point on the labeled ladder, with the precision behaviour the assign-or-abstain philosophy wants. Tunable
 via `--alpha`.
 

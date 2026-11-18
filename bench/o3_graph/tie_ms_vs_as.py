@@ -62,7 +62,7 @@ for name, L in recs.items():
             else: C[(sc, 'disagree.outside_as_window')] += 1
             if not bym[0][4]: C[(sc, 'disagree.primary_is_ms_best')] += 1
             if bym[0][3] != byas[0][3]: C[(sc, 'disagree.intron_count_differs')] += 1
-        # EICHLER RULE, standing test (2026-10-31, user: the advisor's naive rule = the read's true copy is the one no rival comes within
+        # ADAPTED EICHLER FILTER, standing test (2026-10-31, user: the advisor's naive rule = the read's true copy is the one no rival comes within
         # 10 AS of; ~2 substitutions): `eichler.decided` = exactly one record within AS_TIE of the best AS, the pick = that record;
         # `eichler.pick_is_ms_best` / `pick_is_primary` = it agrees with minimap2; `eichler.pick_unspliced_rival_spliced` = the pick
         # has fewer introns than the ms-best record (the retrocopy signature of register 1270); `eichler.undecided` = >= 2 within.

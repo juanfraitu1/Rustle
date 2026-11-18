@@ -94,7 +94,7 @@ A previous analysis (`conflict_criterion_bakeoff`) already dug through these tag
 
 2. ⚠**But the margin inherits the PARTIAL-RUNNER-UP confound, and this is serious.** The same prior work
    found that real Iso-Seq secondaries are often *partial*, which "manufactures a huge spurious margin" —
-   raw `as_margin` on certified-unassignable reads had median **202** (vs Eichler's AS≥10 rule), so `AS≥10`
+   raw `as_margin` on certified-unassignable reads had median **202** (vs the adapted Eichler filter's AS≥10 rule), so `AS≥10`
    would confidently assign 37/38 reads our gate certifies as UNASSIGNABLE. **`s2` is the best SECONDARY
    CHAIN's score, so a partial runner-up depresses `s2` and inflates `(s1 − s2)/s1` in exactly the same way.**
    The PMS2P1 0.676 vs NCF1 0.026 contrast in §3 may therefore partly reflect *partial vs full runner-ups*

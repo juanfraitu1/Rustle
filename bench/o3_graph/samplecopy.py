@@ -277,7 +277,7 @@ def evidence_posteriors(reads, haps, e):
 
 
 PAD, KMAX_CAP, MIN_POST = 1000, 24, 0.99
-TEACH_MARGIN = 10                    # only untied reads resolved by >= 10 AS teach labels (Eichler's rule, user 2026-10-19)
+TEACH_MARGIN = 10                    # only untied reads resolved by >= 10 AS teach labels (the adapted Eichler filter, user 2026-10-19)
 
 
 def _realreads():

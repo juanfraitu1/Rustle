@@ -59,7 +59,7 @@ FAMILY_TABLE = "fig5_hard_locus_families"   # genome-wide only: one row per (sam
 # the genome-wide family table exists only once experiment B has run; `make.py check` requires it from then on
 if (figlib.DATA_DIR / f"{FAMILY_TABLE}.tsv").exists():
     META["tables"].append(FAMILY_TABLE)
-# Supplementary Figure 5s (fig5s_margin_rule): Rustle against the alignment-score margin rule of the Eichler lab
+# Supplementary Figure 5s (fig5s_margin_rule): Rustle against the alignment-score margin rule adapted from the Eichler lab's filter
 # (docs/archive/2026-09/PREREG_genome_wide_copy_assignment_2026-09-25.md, Amendment 2, experiment C). Simulation tables come from the
 # same runs as a-b; the real-read table from one extra `copy_assign --union-certificate` run per experiment-B shard.
 MR_STRATA_TABLE = "fig5s_margin_rule_sim"
@@ -1171,7 +1171,7 @@ MR_SEG_REAL = [
     ("neither", None, "#e7e6e1"),
 ]
 MR_BAND_TICK = dict(BAND_TICK, all="All reads")
-MR_FOOT = ("Margin rule (Eichler lab): a read is assigned to its best-scoring alignment only if no other alignment of the "
+MR_FOOT = ("Margin rule (adapted from the Eichler lab's filter): a read is assigned to its best-scoring alignment only if no other alignment of the "
            "read, anywhere in the genome, scores within T alignment-score units (a read with no other alignment is "
            "assigned); otherwise it is discarded. Rustle leaves reads with MAPQ > 0 at the aligner's primary alignment "
            "and applies the copy-assignment test to MAPQ-0 reads (union test: one test per read over all its "

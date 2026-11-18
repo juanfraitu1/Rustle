@@ -423,7 +423,7 @@ on UNANNOTATED sequence — clustered into loci with >= 2 reads they are candida
 
 *(original: `docs/archive/2026-10/merged/PREREG_o2_pruning_and_eichler_2026-10-12.md`)*
 
-## O2 on the coin-toss genes, O2-pruned good pool, and Eichler's AS-margin rule, 2026-10-12
+## O2 on the coin-toss genes, O2-pruned good pool, and the AS-margin rule adapted from the Eichler lab's filter, 2026-10-12
 
 **Pre-registered before any S2 read is tested and before any pruned arm exists.** Follows register 1269 (secondary-only genes S1:
 1 O2-supported gene per species; most are contradicted — paralog shadows). User (2026-10-12): "lets try on coin toss genes, and also
@@ -436,19 +436,19 @@ is within 10 units of the AS?"
 good secondary record overlapping the gene's exons vs the molecule's primary; same certificate; same gene classes). The S1 numbers
 must reproduce exactly with the extended script (`--stratum S1`, the default).
 
-### 2. Eichler's AS-margin rule beside O2 (per record, both strata)
+### 2. the AS-margin rule adapted from the Eichler lab's filter beside O2 (per record, both strata)
 
 As implemented 2026-09-21 (`docs/archive/2026-09/EICHLER_COMPARISON_2026-09-21.md`, register 935-936): a molecule is assigned to its
 best-AS alignment iff no other alignment of it scores within 10 AS units (best - second >= 10, or no second alignment); otherwise it
 is discarded. Per tested record (secondary in the stratum gene = copy B, primary = copy A): **B** if B's AS is the molecule's best and
 the margin >= 10; **A** if the primary's AS is the best and the margin >= 10; **other** if the best is a third placement with margin
->= 10; **discard** if the margin < 10. Eichler gene classes, parallel to O2's: supported >= 2 records to B; contradicted 0 to B and
->= 2 to A or other; undecidable otherwise. Reported: per-record agreement where both rules call (O2 A/B vs Eichler A/B), and the
+>= 10; **discard** if the margin < 10. Adapted-Eichler gene classes, parallel to O2's: supported >= 2 records to B; contradicted 0 to B and
+>= 2 to A or other; undecidable otherwise. Reported: per-record agreement where both rules call (O2 A/B vs adapted filter A/B), and the
 gene-class cross-table.
 
 ### 3. Pruned good-pool arms
 
-For a rule R (O2 or Eichler), `OP_good_R` = `OP_good` minus every transcript that (a) touches an exon of a gene R calls contradicted
+For a rule R (O2 or the adapted Eichler filter), `OP_good_R` = `OP_good` minus every transcript that (a) touches an exon of a gene R calls contradicted
 (S1 or S2) and (b) is GOOD-POOL-ONLY: its intron chain is absent from `OP_primary` on that chromosome (mono-exon: no `OP_primary`
 transcript overlaps it). Transcripts built from the gene's own primary reads stay. Scored with `bench/tool_difference/score_op.py`
 (same reference, strata and development-chromosome exclusion as register 1268), beside the existing arms.
@@ -459,12 +459,12 @@ transcript overlaps it). Transcripts built from the gene's own primary reads sta
 - **E2 (pruning, annotation metrics).** Expected: genome-wide metrics move by < 0.5 point; stratum precision moves little, because a
   shadow can match the annotation as well as a real transcript (register 1269: reference-exact S1 transcripts sit mostly in
   contradicted genes). An annotation-only truth cannot score copy-of-origin; the number of shadow transcripts removed is the effect.
-- **E3 (O2 vs Eichler).** Expected: where both call, they agree mostly (09-21: 97.1%); Eichler discards most of these records
+- **E3 (O2 vs the adapted Eichler filter).** Expected: where both call, they agree mostly (09-21: 97.1%); the adapted filter discards most of these records
   (margins are small among good secondaries), so it contradicts fewer genes and prunes fewer shadows.
 Nothing is adopted: the outcome is descriptive, for the advisor's figure discussion. A test of copy-of-origin needs a truth with known
 source copies (the family simulator, `bench/famsim`), named here as the follow-up.
 
-**Instruments** (committed before running): `s1_o2.py` sha1 a79218c0bc6aa231f40cb7eaca7bca5da1ad1d12 (adds `--stratum` and the Eichler columns; 9 tests), `prune_good.py` sha1 4d17bbe843d8e99c4f406de683e9019abdfe37ca (2 tests).
+**Instruments** (committed before running): `s1_o2.py` sha1 a79218c0bc6aa231f40cb7eaca7bca5da1ad1d12 (adds `--stratum` and the adapted-Eichler columns; 9 tests), `prune_good.py` sha1 4d17bbe843d8e99c4f406de683e9019abdfe37ca (2 tests).
 
 ### Result (2026-10-12)
 
@@ -482,13 +482,13 @@ extended `s1_o2.py` reproduces register 1269's S1 records exactly in both specie
 
 **E1 holds** (tied S2 secondaries certified to the primary copy 41,569 vs 75; 82,882 vs 386).
 
-**2. Eichler's AS-margin rule beside O2.** Records both rules call A or B: agreement S1 0.356 / 0.540, S2 0.141 / 0.300 (gorilla / human).
-**E3's "agree mostly" FAILS**: Eichler sends 5,780 / 2,485 (S1) and 35,649 / 75,063 (S2) records to the stratum copy, O2 almost
-none. The cause, checked on 300 sampled disagreeing gorilla reads per stratum (Eichler -> stratum copy, O2 -> primary copy): the
+**2. the AS-margin rule adapted from the Eichler lab's filter beside O2.** Records both rules call A or B: agreement S1 0.356 / 0.540, S2 0.141 / 0.300 (gorilla / human).
+**E3's "agree mostly" FAILS**: the adapted filter sends 5,780 / 2,485 (S1) and 35,649 / 75,063 (S2) records to the stratum copy, O2 almost
+none. The cause, checked on 300 sampled disagreeing gorilla reads per stratum (adapted filter -> stratum copy, O2 -> primary copy): the
 best-AS alignment has NO intron in 95% (S1) / 92% (S2), fewer introns than the primary in 99% / 100%, more mismatches in 100% / 99%
 (median +23 in S1). These are spliced parent-gene reads that also align unspliced to a processed (intronless) copy; minimap2's AS
 is higher there because no splice penalty is paid, so an AS-margin rule assigns them to the retrocopy, while the PSV bases put them
-back on the parent. E3's other half holds: Eichler contradicts fewer genes (187 vs 600 gorilla; 563 vs 776 human) and prunes fewer
+back on the parent. E3's other half holds: the adapted filter contradicts fewer genes (187 vs 600 gorilla; 563 vs 776 human) and prunes fewer
 transcripts (214 vs 416; 804 vs 969).
 
 **3. Pruned good-pool arms** (genome-wide minus the development chromosome; stratum = reference transcripts matched exactly / precision).
@@ -505,7 +505,7 @@ transcripts (214 vs 416; 804 vs 969).
 (S1 19.9 -> 34.8%, S2 24.5 -> 34.6%); in human it removes every S1 match (all 36 sat in contradicted genes) and lowers S2 precision
 slightly (15.9 -> 15.0%) while dropping 91 matches. After O2 pruning, the S2 comparison with the tools: gorilla 72 matches vs 51 / 42
 at 34.6% vs 39.0 / 36.8% precision; human 119 vs 77 / 72 at 15.0% vs 13.3 / 8.0%.
-**Reading.** (a) O2's certificate and Eichler's AS-margin rule disagree mostly because of retrocopies: AS rewards unspliced
+**Reading.** (a) O2's certificate and the AS-margin rule adapted from the Eichler lab's filter disagree mostly because of retrocopies: AS rewards unspliced
 alignments to processed copies, the PSV bases do not; on this population O2's call is the biologically right one. (b) Neither rule
 makes the secondary-only stratum a win: after pruning, gorilla keeps 16 S1 matches and human none. (c) In human S2 most records have
 no distinguishing column (identical copies, 380,372 of 597,412): the per-gene "contradicted" rule (>= 2 certified elsewhere, 0 here)
@@ -2627,13 +2627,13 @@ multi-mapping reads and help assign via PSVs from which copy did they actually c
 
 ### The regimen (`bench/o3_graph/o2psv.py svp`, code 26262631, defaults: k = 3, M = 10, fit 0.1%)
 
-- **Domain (almost tied):** a read whose alignments within 10 AS of its best (Eichler) lie on two or more copies of one
+- **Domain (almost tied):** a read whose alignments within 10 AS of its best (adapted Eichler filter) lie on two or more copies of one
   family and on no locus off it. Each alignment belongs to one copy: its strand, then exon overlap.
 - **Evidence (PSVs):** per tied copy, the substitutions of its best tied alignment. Clips and indels are left out.
 - **The read is placed** when either:
   - **two PSVs:** one copy has at least 2 fewer substitutions than every other; or
   - **one sample-validated PSV:** the read carries copy X's base at a PSV column, and the sample's own reads placed on the
-    rival copy Y (AS margin >= M = 10 over every other copy: Eichler's well placed; the read itself left out) cover Y's
+    rival copy Y (AS margin >= M = 10 over every other copy: well placed by the adapted Eichler filter; the read itself left out) cover Y's
     position at least k = 3 times
     and none shows that base. The one copy no validated PSV excludes takes the read, provided the read's bases contradict
     it at no PSV column.
@@ -3218,7 +3218,7 @@ So a purity bar would remove the clear cases with the errors.
 
 **What does separate them.** Every untied read teaches the labels, including near-ties that minimap2 places at random
 (46-49% wrong at an AS margin under 10, register 1330). The candidate fix is to teach labels only with untied reads resolved
-by 10 AS or more, Eichler's rule. It needs its own held-out test.
+by 10 AS or more, the adapted Eichler filter. It needs its own held-out test.
 
 
 ---
@@ -3538,7 +3538,7 @@ exactly one kept copy has any uniquely placed read.
 
 *(original: `docs/archive/2026-10/merged/O2_WINDOW_SWEEP_2026-10-20.md`)*
 
-## O2's window past Eichler's 10 AS: a development sweep on gorilla KB3781 (2026-10-20)
+## O2's window past the adapted Eichler filter's 10 AS: a development sweep on gorilla KB3781 (2026-10-20)
 
 **User:** "we could also go past the 10 AS difference from Eichler, if that is too close to the fully tied impossible
 cases"; "Sounds good, please proceed".
@@ -3625,7 +3625,7 @@ everything a coin toss. It is fine the ones that are more than >99% similar are 
 PSVs, de, nm, md tags to find the true placement of the multimappers".
 
 So O2 is judged as a **corrector**, not a certifier. For every read whose alignments within 10 AS of its best lie on two
-or more copies of one family (Eichler), O2 gives a copy. It is scored against minimap2's primary on the same reads:
+or more copies of one family (adapted Eichler filter), O2 gives a copy. It is scored against minimap2's primary on the same reads:
 - **fixes:** O2 right where minimap2 was wrong;
 - **breaks:** O2 wrong where minimap2 was right;
 - **accuracy:** of both, over the same reads.
@@ -3820,7 +3820,7 @@ data, ideally a second donor with an assembly.
 ### The rule (frozen; nothing changes)
 
 `bench/o3_graph/o2correct.py donor`, version 2, unchanged since bfa15f12, default flags (no `--v1`, no `--guard`):
-- **Domain:** a read whose alignments within 10 AS of its best (Eichler) lie on two or more copies of one family and on no
+- **Domain:** a read whose alignments within 10 AS of its best (adapted Eichler filter) lie on two or more copies of one family and on no
   locus off it, minimap2's primary among them.
 - **The sample's copies:** per copy, its confident reads (primary on it, every alignment on another copy of its family more
   than 9 AS lower) give its events (substitutions, left-shifted indels): PSVs as this sample carries them. No phasing, no
@@ -4894,7 +4894,7 @@ union certificate. The certificate assigned 0 reads, so the loop never changed a
 - **The home table** (`bench/loop_home.py o2 --every-read`, b15b5948) gives every read whose primary lies on a family copy one
   home:
   - O2's copy, when the corrector (`bench/o3_graph/o2correct.py donor`, version 2) decided it;
-  - minimap2's primary copy, when the read is not tied within 10 AS (Eichler: minimap2's call stands);
+  - minimap2's primary copy, when the read is not tied within 10 AS (adapted Eichler filter: minimap2's call stands);
   - no home for a tie the corrector could not break: it keeps pass 1's echo.
 - **Pass 2** is the same assembly with `RUSTLE_READ_HOME_TABLE`. A homed read enters the read pool only through its records at
   home.
@@ -5712,8 +5712,8 @@ simulator's expression model; real reads have no truth for exact ties.
 1. **The window.** A read is in the domain when its alignments within 30 points of its best `ms` lie on two or more copies
    of one qualifying family, none off every copy, and minimap2's primary among them.
    - `ms` is minimap2's DP score without the intron charges. One substitution costs 5 points; "within 30" is `ms > best − 30`
-     (as Eichler's 10 AS is a slack of 9).
-   - Eichler's 10-AS domain is inside this one.
+     (as the adapted Eichler filter's 10 AS is a slack of 9).
+   - The adapted Eichler filter's 10-AS domain is inside this one.
 2. **Placements.** Each copy in the window is represented by its highest-`ms` alignment there. An alignment laying 50 or more
    bases on the exons of two copies (`stitched`) is no placement.
 3. **The set** (`pareto_set`): the copies in the window that no other copy beats at every substitution column where the two
@@ -5775,7 +5775,7 @@ reads, and that single copy is right at least 98% of the time and at least as of
 would extend that to a real donor whose copies differ from the reference's.
 
 **It would not claim:** a single correct primary for every tied read (the set may keep several copies); copies absent from
-the reference (off-copy: O3); exact ties (undetermined); anything about Eichler's 10-AS reads alone (they are a band here).
+the reference (off-copy: O3); exact ties (undetermined); anything about the adapted Eichler filter's 10-AS reads alone (they are a band here).
 
 ### Rules
 
@@ -5844,7 +5844,7 @@ The first S1 bars output (3,779-read truth) was discarded unread beyond the trac
   copy otherwise — passes both substrates (recomputed by me as well): S1 held 99.83%, singletons 54.5%, right 99.69%;
   S2 held 99.15%, singletons 70.5%, right 98.79%. The set beats that null on S1 (100% / 71.7% / 100%) and is **worse than
   it on S2 on every bar**. So S1's PASS certifies the 30-point window, not the Pareto set; a null arm was missing.
-- **R is carried by the window.** In the Eichler band (first tied within 10) the set is one copy for 38.6% (S1) and 26.2%
+- **R is carried by the window.** In the adapted-Eichler band (first tied within 10) the set is one copy for 38.6% (S1) and 26.2%
   (S2) of reads; the 10-30 bands supply R, and there minimap2 is already right 99.5-100%.
 - **The set's gain over minimap2 on S1 is 14 reads** (2 in the <10 band, 12 in 10-20; ZNF658 and GPR89A), 0 the reverse;
   on the other 1,370 reads minimap2 gets wrong the set keeps more than one copy.
@@ -5866,7 +5866,7 @@ The first S1 bars output (3,779-read truth) was discarded unread beyond the trac
   from "abstain when a rival is within 10 points"; "the 10-30 bands pass on HG002 too" without the null; "the failures
   are the donor's own alleles" without naming FCGR2A and its unverified lift.
 
-**What a next test needs:** a pre-registered null arm (the rule above), scored on the Eichler band alone, where the set
+**What a next test needs:** a pre-registered null arm (the rule above), scored on the adapted-Eichler band alone, where the set
 must beat the null on held truth and singletons; and the FCGR2A lift settled by aligning CHM13's FCGR2A.1 / .2 to HG002's
 haplotypes.
 
@@ -7828,7 +7828,7 @@ misses some):
 
 ## The AS gap is a splicing artefact, not a copy signal (2026-10-24, register 1403)
 
-**Question (advisor's reading of the Eichler rule):** gather every alignment of a read, and assign the read to a secondary whose AS is >=
+**Question (advisor's reading of the adapted Eichler filter):** gather every alignment of a read, and assign the read to a secondary whose AS is >=
 10 above the primary's. The user's position: the rule was a window for flagging ambiguity, not for assignment, and the primary is the best
 alignment anyway. Tested on the real gorilla fibroblast BAM `fibroblasts/GCA_029281585.2_flnc_mm.bam` (minimap2 2.31 `-ax splice:hq -uf
 --eqx -Y -N 50 -p 0.1`; 13,516,443 primaries, 4,190,262 with a secondary). Script `bench/as_tie_splicing.py`; data `/mnt/linuxdisk/tmp/as_flip`.
@@ -8346,7 +8346,7 @@ not barred: register 1472 showed it assigns nothing).
 - B2: M10's assigned reads (an `assigned` value that is a copy, not ABSTAIN / HOPELESS) >= 0.95 x A's on both samples.
 - B3: of the reads both arms assign, < 1% go to different copies.
 - Reported: tied / assigned / ABSTAIN / HOPELESS per arm and sample; certified copies and putative candidates per arm; the M0 column;
-  run time. The Eichler standing test is 1477's (unchanged inputs; not re-run).
+  run time. The adapted-Eichler standing test is 1477's (unchanged inputs; not re-run).
 **Decision.** PASS = R, B1, B2, B3 -> propose `--tie-ms 10` as copy_phasing's default window (a separate decision; the production
 `copy_assign` keeps its AS margin, its ms question is register 1477's open item). FAIL = any bar missed -> `--tie-ms` stays opt-in in
 Rust as in Python, reported as is. Nothing adopted by this measurement alone.

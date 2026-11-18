@@ -4,7 +4,7 @@
 //!
 //! Keeps every primary, supplementary and unmapped record, and a secondary when, on AS OR on ms, its score >= min(ratio x P,
 //! P - margin), P = the read's primary's score of the same tag. AS is what every consumer reads today (SEMISEC's cut
-//! `--ratio 0.8`, O2's tie window within 10 AS of the primary, Eichler); ms is what minimap2 ranks the primary by (r1409: max ms
+//! `--ratio 0.8`, O2's tie window within 10 AS of the primary, adapted Eichler filter); ms is what minimap2 ranks the primary by (r1409: max ms
 //! 99.3%, no intron cost), kept so a step can move to ms without the full BAM (user 2026-10-27). Exact ties stay. A secondary
 //! whose read has no primary is kept; a missing tag counts 0 (as `semisec` for AS).
 //! Two passes over the input (primary AS per read name, then the filter); records are copied as read, header unchanged.

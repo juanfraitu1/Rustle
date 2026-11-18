@@ -17,7 +17,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub const MIN_READS: usize = 2; // the project's ">= 2 independent observations"
 pub const MIN_Q: u8 = 10; // base quality below which a base counts as missing
-pub const AS_TIE: i32 = 10; // O2's tie rule (Eichler): alignments within 10 AS of the read's best
+pub const AS_TIE: i32 = 10; // O2's tie rule (adapted Eichler filter): alignments within 10 AS of the read's best
 pub const ALPHA: f64 = 0.01; // IsoCon-style test, Bonferroni over the tested columns
 pub const MAX_ROUNDS: usize = 100; // label propagation stops earlier when no label changes
 pub const CLIP_BP: u32 = 50; // a soft clip this long that is not a poly-A / poly-T tail

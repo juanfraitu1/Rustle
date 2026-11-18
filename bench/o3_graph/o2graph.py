@@ -2,7 +2,7 @@
 """Graph-based O2 (prereg docs/archive/2026-11/LEDGER_O3.md:2562 (PREREG_o3_graph_real_2026-10-15.md)): assign a family's reads to its copies on the family's
 variation graph, where every curated isoform's exons carry their PSVs (a representative lacks some of them).
 
-O2's domain (user, 2026-10-19): AS-tied multimapping reads only -- a rival alignment within 10 AS of the best (Eichler's rule).
+O2's domain (user, 2026-10-19): AS-tied multimapping reads only -- a rival alignment within 10 AS of the best (the adapted Eichler filter).
 A read with a clear best placement is minimap2's; applying O2 to it is tautological. `run W intega` (fastset --o2-scope tied
 --as-slack 9) confines the calls to that domain; the other modes predate it and decide every hosted read.
 

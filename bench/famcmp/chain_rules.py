@@ -26,6 +26,17 @@ def design(d, reads_key, keep, cols=None):
     sd = X.std(0); sd[sd == 0] = 1
     return np.hstack([(X - X.mean(0)) / sd, np.ones((len(X), 1))]), names  # standardised within the sample
 
+def design_decile(X, noncanon, min_intron):
+    """Register 1769 (C1): each standardised column of design() as nine indicators (above its within-sample deciles) plus the
+    column itself, then the count of non-GT-AG introns (capped at 2) and the standardised log of the shortest intron."""
+    cols = []
+    for j in range(X.shape[1] - 1):
+        for t in np.quantile(X[:, j], np.arange(0.1, 1, 0.1)): cols.append((X[:, j] > t).astype(float))
+        cols.append(X[:, j])
+    mi = np.log(min_intron)
+    cols += [np.minimum(noncanon, 2), (mi - mi.mean()) / (mi.std() or 1), np.ones(len(X))]
+    return np.array(cols).T
+
 def fit(X, y):
     w = np.zeros(X.shape[1])
     for _ in range(40):

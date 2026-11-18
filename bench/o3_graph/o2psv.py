@@ -3,7 +3,7 @@
 both simulations and real reads, O2 must get almost tied multi-mapping reads and help assign via PSVs from which copy did they
 actually come from"). It reads any BAM: a simulated world's E0.bam (=/X CIGARs) or a real library's CHM13 alignments (M + NM).
 
-A read is O2's when its alignments within 10 AS of its best (Eichler's rule) lie on two or more copies of one family and on
+A read is O2's when its alignments within 10 AS of its best (the adapted Eichler filter) lie on two or more copies of one family and on
 no locus off it. Each alignment belongs to one copy (summary.attribute: strand, then exon overlap). Per tied copy, the PSV
 evidence is the substitutions of its best tied alignment. Clips and indels are left out: on real reads a donor's copy can
 hold sequence CHM13's lacks (HG002 development: counting clipped bases picked the wrong copy for 225 of 228 reads at a
@@ -26,7 +26,7 @@ not explain is O3's (psv_unexplained).
 
 Sample-validated PSVs (svp): one PSV is enough in one genome (round 23) but not on a real donor, whose copy may carry another
 copy's allele (HG002: one-PSV placements 85-94% right). So a PSV counts against copy Y only where the sample's own confident
-reads on Y (Eichler's well placed: every rival >= 10 AS lower) cover it at least k times and none shows the read's base: the
+reads on Y (well placed by the adapted Eichler filter: every rival >= 10 AS lower) cover it at least k times and none shows the read's base: the
 sample's Y lacks that allele. The copy no such PSV excludes takes the read; several stay a set.
 """
 import collections
@@ -359,7 +359,7 @@ def _domain(bam_p, cps, att, names=None):
 
 def teacher_bases(bam_p, cps, att, need, skip=frozenset(), min_margin=SLACK + 1):
     """{(copy, chrom, position): {read: genome-strand base}} of each copy's placed reads -- primary on the copy, every
-    alignment on another copy of its family at least min_margin AS lower (SLACK + 1: Eichler's well placed; 1: any read
+    alignment on another copy of its family at least min_margin AS lower (SLACK + 1: well placed by the adapted Eichler filter; 1: any read
     minimap2 resolved) -- at the positions in need ({copy: {(chrom, position)}}); skip: reads that may not teach (a
     fragment's own source read). Two passes: the primaries over the needed positions (their bases and AS), then each family's
     copy spans for those reads' alignments only, so a large library is not attributed record by record."""

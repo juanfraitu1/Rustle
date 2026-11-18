@@ -238,7 +238,7 @@ replace the cost model's first guesses in `figures/_o2.py` (`SHARD_COST`).
 read (development or genome-wide), and no genome-wide real-read comparison exists (checked: no file under
 `${work}/o2sim` or `${work}/fig5` mentions the rule). The only earlier numbers are the chrY comparison on real reads
 without truth (`docs/archive/2026-09/EICHLER_COMPARISON_2026-09-21.md`, register rows 935 and 936). User decision, 2026-09-25 12:20:
-compare copy assignment with the Eichler lab's alignment-score margin rule and show whether Rustle does what that
+compare copy assignment with the alignment-score margin rule adapted from the Eichler lab's filter and show whether Rustle does what that
 rule does, and more.
 
 ### C.1 The two per-read answers

@@ -157,8 +157,9 @@ a precision. Transcripts overlapping two or more copies (conflation): 1, 2, 11 a
 genome-wide (`docs/archive/2026-09/PREREG_genome_wide_copy_assignment_2026-09-25.md`, Amendment 2, experiment C, written before any
 number below existed). Until the genome-wide runs finish, a and b show the development simulations of Figs 4 and 5
 (human A119b with its chr16 catalog, gorilla OR6737 with its chr20 (NC_073244.2) catalog) and c is empty. The claims
-are decided on the genome-wide runs only. The rule is attributed to the Eichler lab as the user states it; the
-citation is still to be added.
+are decided on the genome-wide runs only. The rule is an adaptation to one reference of the Eichler lab's 10-point filter (Guitart et al. 2024, Methods), which compares
+primary alignments of separate mappings to haplotype assemblies per paralog cluster; it is not that paper's procedure
+(`docs/copy_assignment_definition.md`).
 
 **Claim (development tables).** The margin rule assigns a read only when its best alignment score beats every other
 alignment of the read by at least T. Where the rule assigns, Rustle almost always puts the read in the same place,

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Register 1761: the frozen r1677 chain score as a filter (driver stage `chainscore`, opt-in).
+"""Register 1761: the frozen r1677 chain score as a filter (driver stage `chainscore`; default on PREFIX.final.gtf).
+Register 1769: a model with "design": "decile9" (tools/data/chainscore_r1769.json, opt-in) is applied by the same `apply`.
 
   chainscore.py fit   FEAT_A.tsv FEAT_B.tsv MODEL.json         pooled fit on the default chains of two samples + the cut TAU
   chainscore.py eval  MODEL.json NAME=FEAT.tsv ...             kept correct share and precision vs the read-count curve
@@ -13,8 +14,25 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import chain_rules as R
 
-def prob(d, keep, m):
+COMP = str.maketrans('ACGT', 'TGCA')
+def intron_extras(d, keep, fa_p):
+    """per chain: introns that are not GT-AG on the model's strand, length of the shortest intron (genome only)"""
+    import pysam
+    fa = pysam.FastaFile(fa_p); nc = []; mi = []
+    for c, key, s in zip(d['chrom'][keep], d['key'][keep], d['strand'][keep]):
+        k = 0; m = 1 << 60
+        for iv in key.split(','):
+            a, b = map(int, iv.split('-')); m = min(m, b - a); dn = (fa.fetch(c, a, a + 2) + fa.fetch(c, b - 2, b)).upper()
+            if s == '-': dn = dn.translate(COMP)[::-1]
+            k += dn != 'GTAG'
+        nc.append(k); mi.append(m)
+    return np.array(nc, float), np.array(mi, float)
+
+def prob(d, keep, m, fa=None):
     X, names = R.design(d, 'default_reads', keep); assert names == m['names'], 'feature set differs from the model'
+    if m.get('design') == 'decile9':  # register 1769
+        assert fa, 'this model needs the genome FASTA (apply only)'
+        X = R.design_decile(X, *intron_extras(d, keep, fa))
     return 1 / (1 + np.exp(-np.clip(X @ np.array(m['w']), -30, 30)))
 
 cmd = sys.argv[1]
@@ -41,7 +59,7 @@ else:
     with multiprocessing.Pool(thr) as pool:
         rows = [r for rs in pool.imap_unordered(F.work, [(bam, fa, ctg, cand) for ctg, cand in sorted(per.items(), key=lambda x: -len(x[1]))]) for r in rs]
     d = {k: np.array([r[i] for r in rows]) if k in ('chrom', 'strand', 'key') else np.array([float(r[i]) for r in rows]) for i, k in enumerate(F.COLS)}
-    p = prob(d, np.ones(len(rows), bool), m); bad = {(c, k) for c, k, x in zip(d['chrom'], d['key'], p) if x < m['tau']}
+    p = prob(d, np.ones(len(rows), bool), m, fa); bad = {(c, k) for c, k, x in zip(d['chrom'], d['key'], p) if x < m['tau']}
     def strip(src, dst):
         ex = collections.defaultdict(list)
         for l in open(src):

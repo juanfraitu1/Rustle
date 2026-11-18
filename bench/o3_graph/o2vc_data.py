@@ -38,7 +38,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 LONGCALLR = "/home/juanfra/miniforge3/envs/longcallr/bin/longcallR"
 PRESET = "hifi-masseq"                                          # transcript-strand HiFi reads: no strand-bias filter
 MIN_MAPQ = 0                                                    # the teachers are chosen by AS margin, not by MAPQ
-SLACK = 9                                                       # tied: within 10 AS of the read's best (Eichler)
+SLACK = 9                                                       # tied: within 10 AS of the read's best (adapted Eichler filter)
 # longcallR 2.0.0's hifi-masseq values (main.rs:387-415), which teacher_depth reproduces; its --help gives other defaults
 MIN_READ_LENGTH = 500                                           # main.rs:411, on the SEQ length (hard clips not counted)
 DIVERGENCE = 0.5                                                # main.rs:404: a read whose float de is >= this is not piled up

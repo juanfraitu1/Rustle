@@ -813,7 +813,7 @@ struct Args {
     /// is the read's best-AS placement, decidable only where both rules assign).
     ///
     /// ⚠ The two rules barely share a subject and the counts are NOT comparable without saying so:
-    /// under the default AS-tied gate every surviving read has margin 0, so Eichler discards 100% of
+    /// under the default AS-tied gate every surviving read has margin 0, so the margin rule discards 100% of
     /// them by construction. Run with `--no-as-tied-only` for the honest comparison — measured on the
     /// Y ampliconic genes, 69.8% of reads have margin 0 and his rule discards 83.7% of the
     /// multi-mapping population, which is precisely O2's subject (`docs/archive/2026-09/EICHLER_COMPARISON_2026-09-21.md`).
@@ -978,7 +978,7 @@ struct Args {
     igv: bool,
     /// Decisive-margin τ: the minimum log-likelihood-ratio over the runner-up copy to call a read ASSIGNED
     /// (else AMBIGUOUS); the single calibrated knob that replaces the vote-count (min_psv, margin) integers.
-    /// τ = ln((1−p)/p) for a target per-read misassignment p (τ=6.9 default ≈ p 1e-3, the Eichler AS≥10
+    /// τ = ln((1−p)/p) for a target per-read misassignment p (τ=6.9 default ≈ p 1e-3, the adapted-Eichler AS≥10
     /// analog; τ=2.0 ≈ p 0.12). The identifiability gate (n_decisive≥1) is independent of τ and always applied.
     #[arg(long, default_value_t = 6.9)]
     margin: f64,
@@ -987,7 +987,7 @@ struct Args {
     error_rate: f64,
     /// IsoCon significance level α for the DEFAULT gate: assign iff the per-read certificate p < α/(n−1)
     /// (Bonferroni over the n−1 competitors) AND the read is the strict MLE. α is the FAMILY-WIDE
-    /// misassignment rate over assigned reads (1e-3 ≈ the τ=6.9 / Eichler AS≥10 precision point). Ignored
+    /// misassignment rate over assigned reads (1e-3 ≈ the τ=6.9 / adapted-Eichler AS≥10 precision point). Ignored
     /// when `--margin-gate` is set.
     #[arg(long, default_value_t = 1e-3)]
     alpha: f64,
@@ -11441,7 +11441,7 @@ fn main() -> Result<()> {
         } else {
             String::new()
         };
-        // §6u6: Eichler's rule. A read with NO rival placement (margin None) has nothing within T, so
+        // §6u6: the adapted Eichler filter. A read with NO rival placement (margin None) has nothing within T, so
         // he assigns it; otherwise he needs a margin of at least T. `eichler_same_copy` is decidable
         // only where BOTH rules assign — his pick is the read's best-AS placement, which is exactly
         // what `primary_on_assigned` marks (`primary_local` is ANY copy of the family; audit 2026-11-07, second pass).

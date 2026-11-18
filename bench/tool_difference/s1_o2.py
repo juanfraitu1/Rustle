@@ -58,7 +58,7 @@ def certify_pair(cols_a, cols_b, base_a, base_b):
 
 
 def eichler_verdict(as_b, as_primary, best, second, margin=10):
-    """Eichler's AS-margin rule for one (copy B record, primary) pair: the molecule goes to its best alignment iff no other alignment
+    """The AS-margin rule adapted from the Eichler lab's filter for one (copy B record, primary) pair: the molecule goes to its best alignment iff no other alignment
     scores within `margin` (best - second >= margin; second < 0 = no other alignment), else it is discarded."""
     if second >= 0 and best - second < margin:
         return 'discard'
@@ -239,12 +239,12 @@ def main():
         print(f"  {lab:15s} {len(sub):6,} records: to S1 copy {c['B']:6,}  to primary copy {c['A']:6,}  abstain {c[None]:6,}"
               f"  (no distinguishing column {sum(r[6] == 0 for r in sub):,})")
     ec = collections.Counter(r[9] for r in rows)
-    print(f"  Eichler (AS margin 10): to {args.stratum} copy {ec['B']:,}  to primary copy {ec['A']:,}  to a third placement {ec['other']:,}  discard {ec['discard']:,}")
+    print(f"  Margin rule (adapted Eichler filter, AS margin 10): to {args.stratum} copy {ec['B']:,}  to primary copy {ec['A']:,}  to a third placement {ec['other']:,}  discard {ec['discard']:,}")
     both = [(r[3], r[9]) for r in rows if r[3] in ('A', 'B') and r[9] in ('A', 'B')]
     agree = sum(a == b for a, b in both)
     print(f"  records both rules call A or B: {len(both):,}, agree {agree:,} ({agree / max(1, len(both)):.3f})")
     xt = collections.Counter((cls[g], ecls[g]) for g in cls)
-    print("  gene classes O2 (rows) x Eichler (columns): " + '; '.join(
+    print("  gene classes O2 (rows) x margin rule (columns): " + '; '.join(
         f"{a}: " + ', '.join(f"{b} {xt[(a, b)]}" for b in ('supported', 'contradicted', 'undecidable')) for a in ('supported', 'contradicted', 'undecidable')))
     with_tx = {g for gs in tx_genes.values() for g in gs}
     for lab, keep in ((f'all {args.stratum} genes', set(cls)), (f'{args.stratum} genes with an OP transcript', with_tx)):

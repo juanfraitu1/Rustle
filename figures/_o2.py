@@ -1206,7 +1206,7 @@ def run_notes(runs: dict, reads: list[dict], logs: dict) -> list[str]:
 
 
 # ================================================================ the alignment-score margin rule (experiment C)
-# docs/archive/2026-09/PREREG_genome_wide_copy_assignment_2026-09-25.md, Amendment 2: the Eichler lab's rule MR(T) (assign a read to its
+# docs/archive/2026-09/PREREG_genome_wide_copy_assignment_2026-09-25.md, Amendment 2: the margin rule MR(T), adapted from the Eichler lab's filter (assign a read to its
 # best alignment iff no other alignment of the read, anywhere in the genome, scores within T AS units; a read with no
 # other alignment is assigned) against Rustle's per-read answer (MAPQ > 0: the aligner's primary; MAPQ 0: the
 # copy-assignment result, union test = reading 'u', source family* = reading 's'). The rule and the join are computed

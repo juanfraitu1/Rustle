@@ -52,7 +52,7 @@ One heavy process at a time, in the foreground; big outputs and `TMPDIR` under `
 (kill by PID). Pre-register a decision rule (`docs/PREREG_*.md`) before looking at any result it decides.
 
 ## 6. Project rules that are easy to get wrong
-- **O2 applies only to AS-tied multimapping reads** (a rival alignment within 10 AS of the best: Eichler's rule; user
+- **O2 applies only to AS-tied multimapping reads** (a rival alignment within 10 AS of the best: the adapted Eichler filter, defined in `docs/copy_assignment_definition.md`; never write "Eichler's rule" for it; user
   2026-10-19). A read with a clear best placement is minimap2's; applying O2 to it is tautological. O2 exists to go beyond
   minimap2's coin toss: assign ambiguous reads to very similar copies (PSVs, junctions, divergence) or abstain. O3 flags
   reads whose PSVs nothing in the genome explains (`docs/THESIS_OBJECTIVES.md`).

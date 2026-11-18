@@ -32,7 +32,7 @@ import sys
 
 MIN_READS = 2      # the project's ">= 2 independent observations"
 MIN_Q = 10         # base quality below which a base counts as missing
-AS_TIE = 10        # O2's tie rule (Eichler): alignments within 10 AS of the read's best
+AS_TIE = 10        # O2's tie rule (adapted Eichler filter): alignments within 10 AS of the read's best
 TIE_STRUCTURE = False   # --tie-structure (register 1404): the window is the primary's intron count and AS within AS_TIE of the primary's
 TIE_MS = None           # --tie-ms W (2026-10-30, user: minimap2 ranks on ms, "the true tag that determines primaries from secondaries",
                         # register 1409): the window is ms within W of the read's best ms (W 0 = the exact ties minimap2 breaks by hash)

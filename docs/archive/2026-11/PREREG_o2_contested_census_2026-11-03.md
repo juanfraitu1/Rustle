@@ -5,7 +5,7 @@ minimap2 itself was uncertain; reads it placed uniquely have no business in O2; 
 alignment shape are a K = 0 wall. The population worth the certificate is the near ties: a rival close on AS **or on ms**
 (minimap2 ranks primaries and secondaries on `ms`, the max-scoring segment, not on AS), including the processed-copy class
 where a spliced primary faces an unspliced rival with a higher AS (r1477: 6-10% of family-scope reads). ms has no naive
-rule like the 10-AS Eichler rule, and whether ms and AS share a scale was unknown, so the ms window must come from the
+rule like the 10-AS adapted Eichler filter, and whether ms and AS share a scale was unknown, so the ms window must come from the
 measured distribution, not be assumed.
 
 Change: `as_table` (commit f9df72c3) also records best/second ms, the primary's ms, MAPQ and splice shape, and the best-AS

@@ -78,7 +78,7 @@ the default products untouched:
 | `altends` | `PREFIX.altends.gtf` | 1660 |
 | `trunc5` | `PREFIX.trunc5.gtf` | 1677, 1692 |
 | `shiftdrop` | `PREFIX.shiftdrop.gtf` | 1728-1739 |
-| `chainscore` | `PREFIX.chainscore.gtf` (`PREFIX.gtf` without multi-exon chains below the fixed cut of the frozen chain score; default since 2026-11-16: the same chains are also removed from `PREFIX.final.gtf`, `RUSTLE_CHAINSCORE=0` = off) | 1677, 1760, 1761 |
+| `chainscore` | `PREFIX.chainscore.gtf` (`PREFIX.gtf` without multi-exon chains below the fixed cut of the frozen chain score; default since 2026-11-16: the same chains are also removed from `PREFIX.final.gtf`, `RUSTLE_CHAINSCORE=0` = off) | 1677, 1760, 1761, 1769. Default weight file since 2026-11-18: `chainscore_r1769.json` (fitted on 11 samples of six species, cut 0.055); `RUSTLE_CHAINSCORE_MODEL=r1677` = the earlier one. |
 | `shortexons` | `PREFIX.shortexons.gtf` (default reassembly after reads that skip an exon of <= 15 bp are rewritten through it; needs room for a second copy of the BAM while it runs) | 1746, 1753, 1754, 1757 |
 | `oneread` | `PREFIX.oneread.gtf` (one-read chains with every junction in another read and a clean reading frame; `RUSTLE_ONEREAD=1` appends them to `PREFIX.final.gtf`; default test failed its yield bar) | 1766 |
 | `assemble --names ANNOT` / `names` | `PREFIX.named.gtf`, `PREFIX.final.named.gtf` (the same models with the annotation's gene and transcript names as attributes; independent of `--guide`) | none |

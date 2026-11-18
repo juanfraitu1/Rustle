@@ -12,6 +12,7 @@ kept below; each entry ends with a pointer to the verbatim text in `docs/archive
 - **Assembly ends, 2026-11-14 (rows 1717-1724, 1731, 1733):** `earlyends` and `capstarts` are default side files of `all`; read pre-flight in `assemble`; fraction-rule exemption closed; early-end chains pass the families non-regression (row 1740), merge into `PREFIX.gtf` eligible, not done. Summary `ASSEMBLY_ENDS_2026-11-14.md`.
 - **Shifted internal-exon ends, 2026-11-14 / 15 (rows 1725-1730, 1732, 1734, 1738, 1739):** no assembly-level rule (oracle ceiling +0.007 to +0.023 over a read cut); opt-in stage `shiftdrop` (indel beside the moved intron) is a small safe clean-up on four samples; frame rule gorilla-only, script. See `SHIFTED_EXON_ENDS_2026-11-14.md`.
 - **Alternative splicing classes and short exons, 2026-11-15 / 16 (rows 1742-1746, 1753, 1754, 1757):** retained-intron filter stays at 10; minimap2 drops exons of <= 15 bp; opt-in stage `shortexons` repairs them (false skip chains at reached exons nearly vanish, precision no consistent sign), not a default until a rule removes its wrong new chains. See `SHORT_EXONS_2026-11-16.md`.
+- **Transcript support level, 2026-11-18 (row 1788): `TSL_SPLIT_2026-11-18.md`.** Reporting split of human benchmarks only: level 1 chains are recovered 5 times as often as level 5 on A119b and HG002, but level 5 is above levels 3-4 in every tool, so it is not an ordered scale; not a standing column.
 - **Defaults that still hold:** assembler seeds with tied secondaries (rows 1060/1100/1101); `--union-certificate` opt-in (1103); `o3_candidates` stage opt-in (1221-1231, 1247); most-junctions representative opt-in (1234-1236); family-stage defaults unchanged through r1514 (assembly defaults: `LEDGER_O1.md`).
 - **Memory digest (folded 2026-11-03):** the long form of the memory index to 2026-10-25 is `archive/2026-11/MEMORY_DIGEST.md` (verbatim; superseded catalogs and old WSL paths inside); the live memory is the user's `~/.claude/projects/.../memory/` index. Nothing in it is re-measured.
 - **Open from this ledger (checked 2026-11-14):** the 2026-10-27 pending list is worked through (item 1 r1437 / r1453 FAIL, 1c r1471 FAIL, 2 r1461-1465 FAIL and r1472 PASS not default, 3 r1463 not validated and r1586 closed; 1b E7 on HG002 parked by the user); `family_gfa` unfinished and parked by the user 2026-11-13; quantification parity (measured as r1088, verdict CLOSE, Spearman >= 0.75 everywhere; re-measured 2026-11-13 on today's default assembly as r1697: 0.827 human / 0.895 gorilla vs StringTie `cov`, unchanged; still CLOSE).
@@ -129,7 +130,7 @@ chimp + KB3781, figure 8 tables. Paused: figure 7 genome-wide, assign A119b, O3 
   `--terminal-exon-anchor`): full credit / single-read chains reach about half of FLAIR's exclusives at FLAIR's precision; read filters
   nearly inert. None is a default.
 - Multi-copy loci vs StringTie/FLAIR (registers 1267-1272): `--direct-transfrags-union --read-isoform-k 2` above both on chain sensitivity
-  (1268); secondary-only genes not a win (1269); after O2 pruning S2 genes 72 vs 51 / 42 (gorilla) (1270); O2 vs Eichler AS rule agree on
+  (1268); secondary-only genes not a win (1269); after O2 pruning S2 genes 72 vs 51 / 42 (gorilla) (1270); O2 vs adapted-Eichler AS rule agree on
   14-54%; O2 moves 1.0 / 2.8% of multi-placement reads (1271-1272).
 - O2 follow-ups 10-13 (register 1274-1275): HG002 haplotype-truth arm; per-family blind spot; re-run O2 numbers on a binary >= 7ac557e7.
 - O1 two-node fix: default `mcl_families --pair-rule exact-mcl`, `weight-blind` opt-in (user, 2026-10-13).
@@ -160,7 +161,7 @@ real-data O3 prereg (remove copies from the GENOME, single-copy control, run wit
 Origin `docs/archive/2026-11/LEDGER_GENERAL.md:1069 (O1O2O3_FAST_REALISTIC_2026-10-16.md)`. (full: archive/2026-11/LEDGER_GENERAL.md:1069)
 
 ## Faster family tests, realistic reads, and what O2's evidence rests on (2026-10-16)
-Update 2026-10-19: O2's domain is AS-tied multimapping reads only (rival within 10 AS, Eichler's rule). Development on family sets 8-10
+Update 2026-10-19: O2's domain is AS-tied multimapping reads only (rival within 10 AS, the adapted Eichler filter). Development on family sets 8-10
 toward the integrated O1->O2->O3 pipeline (`bench/o3_graph`), subsections 1-18 (faster tests, realistic reads, PSVs vs SUNs, CIGAR/NM/de,
 v2..v14, independent review: section 9 wins where it disagrees). Round verdicts:
 | round (row) | pipeline | verdict |

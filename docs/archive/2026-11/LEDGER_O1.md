@@ -6238,7 +6238,7 @@ species. The same fraction is reported for G.
 ### Amendment 1 (2026-10-21, before the human run)
 
 - **Instrument version:** the instrument in the tree is register 1270's version (3d4553af, sha1 a79218c0). Next to register
-  1269's (da774afe, sha1 6b6831e3) it only adds the Eichler AS-margin report and the `--stratum` label; the certificate is
+  1269's (da774afe, sha1 6b6831e3) it only adds the adapted-Eichler AS-margin report and the `--stratum` label; the certificate is
   byte-identical.
 - **Human primaries scan, split:** the 96 GB human BAM cannot be scanned for primaries within one 10-minute call. The scan is
   split by chromosome group into 5 foreground calls, using two new options on `s1_o2.py` (the default path is unchanged):
@@ -9446,7 +9446,7 @@ favour of the PSV certificate; the next lever for near-ties is pooled phasing of
 Descriptive extras (no bar): the ms_tie / as_win overlap classes the script already had.
 **Amendment 1 (2026-10-31, before the KB3781 / A119b reports were seen; OR6737 v1 report seen and kept as `OR6737.report.v1.tsv`; user:
 "my advisor always asks me to test the naive rule proposed by the Eichler paper ... can we also include that always as a test of fitness"):
-the EICHLER RULE is a STANDING test from now on.** Definition: a read's true copy is the record no rival comes within 10 AS of (about two
+the ADAPTED EICHLER FILTER is a STANDING test from now on.** Definition: a read's true copy is the record no rival comes within 10 AS of (about two
 substitutions); `eichler.decided` = exactly one record within 10 of the best AS, pick = that record; `eichler.undecided` otherwise.
 Reported beside it, every time: `pick_is_ms_best` and `pick_is_primary` (agreement with minimap2's own ranking), `pick_unspliced_rival_spliced`
 (the pick has fewer introns than the ms-best record: the retrocopy signature of register 1270, where the rule picks the processed copy),
@@ -9469,7 +9469,7 @@ gene span, drawn with `random.Random(0)` from the eligible list sorted by gene i
 IsoCon: `IsoCon pipeline -fl_reads POOL.fa -outfolder DIR --nr_cores 16`, defaults otherwise; `final_candidates.fa` mapped back with
 `minimap2 -ax splice:hq -uf --eqx -N 50 -p 0.1 --secondary=yes` to GGO.fa, primary records -> GTF (exons from the CIGAR), scored with
 `toolcompare.py` columns per copy: modeled (spliced transcript maps to the copy), junction precision (both ends on an annotated exon-block
-boundary), transcripts; plus, multi-copy only, `placed_ambiguous` = candidates whose primary has a rival within 10 AS (the Eichler window,
+boundary), transcripts; plus, multi-copy only, `placed_ambiguous` = candidates whose primary has a rival within 10 AS (the adapted Eichler window,
 amendment 1 of MS-VS-AS: a candidate IsoCon cannot place is not a copy-specific reconstruction).
 Verdict rule per target class (multi-copy, single-copy), stated before the run: IsoCon is BETTER if it models more targets than our arm
 with junction precision >= ours - 0.05; WORSE if it models fewer targets or its junction precision is below ours - 0.05 with equal targets;
@@ -9491,7 +9491,7 @@ the processed-retrocopy class of register 1270 E3, where the AS window admits th
 to the spliced parent. A tie window by ms would exclude that rival before the PSV test. What the port buys is therefore not new
 assignments but fewer rivals in 6-10% of family-scope reads (fewer undecided outcomes where the retrocopy's columns muddy the certificate,
 and cheaper certification); whether that moves O2's undecided stratum (15-24%, r1271) is the next measurement, with O2 run, not this one.
-**Eichler rule, standing test (amendment 1):** of the family-scope reads, the rule DECIDES 80.0% (OR6737: 34,095) / 83.6% (KB3781:
+**adapted Eichler filter, standing test (amendment 1):** of the family-scope reads, the rule DECIDES 80.0% (OR6737: 34,095) / 83.6% (KB3781:
 139,464) and leaves 20.0% / 16.4% undecided (>= 2 records within 10 AS); its pick is the aligner's primary on 87.5% / 93.1% of decided reads
 and the ms-best on 88.0% / 93.2%; on 11.9% / 6.8% of its decisions (4,073 / 9,527) it picks an unspliced record over a spliced ms-best
 one, the retrocopy pick that r1270 showed is wrong by PSVs. Genome-wide it decides 98.0% / 98.0% and the unspliced pick is 3.0% / 9.4%
@@ -9510,7 +9510,7 @@ single-copy genes 52-1,625); 760 candidates placed by minimap2 splice:hq.
 JMJD7-PLA2G4B 9 of 17 (ours 15), MAPKBP1 1 of 1 at precision 0.00 (ours 0.93), SPTBN5 0 (nobody but StringTie). Single-copy misses:
 PPARA, CD80, SHISA2 (52-179 reads; IsoCon emits nothing). `placed_ambiguous` (candidate's primary has a rival within 10 AS): LRPAP1
 10 of 155 (6%), MAPKBP1 6 of 15 (40%), JMJD7-PLA2G4B 17 of 41 (41%), SPTBN5 6 of 13 (46%): a third to a half of IsoCon's multi-copy
-candidates are not copy-specific reconstructions by the Eichler window, and none of the LRPAP1 / JMJD7 / SPTBN5 candidates has a single
+candidates are not copy-specific reconstructions by the adapted Eichler window, and none of the LRPAP1 / JMJD7 / SPTBN5 candidates has a single
 placement. Reading: IsoCon, given the same reads, produces 1.6-1.8x as many transcripts as we do with slightly cleaner junctions on
 single-copy genes, but models fewer targets in both classes, and on multi-copy families its candidates are consensus sequences that often
 cannot be placed on one copy. "Truly de novo" buys nothing on copy recovery here; the comparison is of reconstruction given the SAME
@@ -9518,7 +9518,7 @@ alignment-defined pools (IsoCon has no read-discovery step of its own at genome 
 **A119b (human testis on CHM13, Slurm 4399108), appended to the r1477 result:** family scope 314,261 reads with >= 2 records; disagree 7,293
 (2.3%), AND distinct place AND outside the window 6,001 (**1.9%**, below the 5% bar; the rule was "either gorilla sample", so the verdict
 stands, and the human number is reported as the low end); intron count differs on 82% of disagreements, primary = ms-best on 90%.
-Genome-wide 186,498 of 5,829,738 (3.2%). Eichler rule: decides 83.4% (262,233), pick = primary on 97.7%, picks an unspliced record over a
+Genome-wide 186,498 of 5,829,738 (3.2%). adapted Eichler filter: decides 83.4% (262,233), pick = primary on 97.7%, picks an unspliced record over a
 spliced ms-best one on 2.1% of decisions (5,395), undecided 16.6%. The retrocopy class is a smaller share in human than in gorilla
 (2.1% vs 6.8-11.9% of decisions), consistent with r1270's species pattern.
 

@@ -80,7 +80,7 @@ Paths are under `/mnt/linuxdisk/tmp/o3_graph/` unless absolute. Truth is the ans
 ### 1. Tied reads (O2's domain, unchanged)
 
 A read is tied when its alignments within 10 AS of its best lie on two or more copies of one family and on no locus off it
-(Eichler; `o2correct.py`'s `tied()` and `collect()`). Reads with a unique best (margin ≥ 10) belong to minimap2 and are not
+(adapted Eichler filter; `o2correct.py`'s `tied()` and `collect()`). Reads with a unique best (margin ≥ 10) belong to minimap2 and are not
 touched.
 
 **One change from `tied()` (my call):** `tied()` also drops a read whose minimap2 primary is more than 9 AS below the best.

@@ -544,7 +544,7 @@ Lines removed or shortened from MEMORY.md on 2026-10-03 (index over the 24.4 KB 
 ⭐⭐⭐§6u1/u2 — junction-based definition built & REFUTED (F .4513 @ 6.5% cov vs shipped .7123): half of family pairs have a genuinely INTRONLESS member (biological ceiling, unliftable).
 ⭐⭐⭐§6u3 — neighbourhood Jaccard is the **strongest pairwise separator** (.826) but AUC=.500 exactly at component size 2 (60% of families) ⇒ scorer for large components, not a definition.
 ⭐⭐⭐§6u4 — FN decomposition: 48.8% of FNs are EDGE-CONSTRUCTION losses, not filter losses; post-clustering merge rules don't transfer across chroms.
-⭐⭐§6u5/u6 — Eichler AS-margin comparator (`bench/eichler_compare.py`, `--eichler-margin`, byte-identical when unset); reproduces its confident calls 97%+, we assign 145 it discards, abstain ~3,546 it assigns. PRY 33% agreement = FLAG, no truth.
+⭐⭐§6u5/u6 — adapted-Eichler AS-margin comparator (`bench/eichler_compare.py`, `--eichler-margin`, byte-identical when unset); reproduces its confident calls 97%+, we assign 145 it discards, abstain ~3,546 it assigns. PRY 33% agreement = FLAG, no truth.
 ⭐⭐⭐[[project_pipeline_performance]] — genome-wide sweep 426s→114s (3.74×) via dropping seq/qual in assemble-only. NEVER `--region-threads` (not byte-identical).
 
 ## O1 — family definition

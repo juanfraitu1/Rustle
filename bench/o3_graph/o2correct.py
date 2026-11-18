@@ -3,7 +3,7 @@
 where they truly belong as an addendum to minimap2 since it gave everything a coin toss ... there must be a way with PSVs,
 de, nm, md tags to find the true placement of the multimappers").
 
-For a read whose alignments within 10 AS of its best (Eichler) lie on two or more copies of one family and on no locus off
+For a read whose alignments within 10 AS of its best (adapted Eichler filter) lie on two or more copies of one family and on no locus off
 it, the corrector takes the copy whose best tied alignment has the FEWEST SUBSTITUTIONS (mismatches at aligned bases: X ops,
 or NM less its indel bases), and keeps minimap2's primary when two copies share that minimum. minimap2's AS charges an indel
 as it charges a substitution, and a HiFi read's errors are mostly homopolymer indels; a PSV is a substitution. So AS can

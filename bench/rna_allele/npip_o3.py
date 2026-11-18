@@ -34,7 +34,7 @@ MARGIN, MAX_INTRON = 5, 100000
 GGO = "/mnt/linuxdisk/home/juanfraitu/_from_wsl/winloci_scratch/GGO.fasta"
 CAND = {"iso_NPIP_14": "B", "iso_NPIP_15": "B", "iso_NPIP_16": "C", "iso_NPIP_17": "C"}   # register 1363's counted candidates
 UNITS = dict(A=(6720000, 6744300), B=(6744300, 6756100), C=(6766000, 6822000))           # his maternal chr18 (the audit's)
-SLACK = 9                                                                                  # tied: within 10 AS (Eichler)
+SLACK = 9                                                                                  # tied: within 10 AS (adapted Eichler filter)
 COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 
 

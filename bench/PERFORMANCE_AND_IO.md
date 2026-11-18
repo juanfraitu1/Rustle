@@ -188,7 +188,7 @@ What you **can** (and should) do — expose ties and resolve them, abstain only 
 2. **Don't trust the arbitrary primary among MAPQ-0 paralogs** — rustle already doesn't. Copy
    assignment uses the **AS / decisive-margin gate** (`psv_linkage::assign_read_to_copy`), which
    *abstains on a tie* ("no copy beats the runner-up by the margin → `None`"), the PSV-space restatement
-   of Eichler's AS ≥ 10, with **no 1/k** splitting.
+   of the adapted Eichler filter's AS ≥ 10, with **no 1/k** splitting.
 3. **Reduce the *breakable* (spurious) ties**: `--eqx` for base-level PSVs; soft-mask repeats to cut
    repeat-driven multimaps; a merged minimap2(`-N50 -p0.1`)+winnowmap BAM maximizes exposed candidates
    in segdups (winnowmap changes *which* copy is primary / reduces mismapping, but identical-copy ties

@@ -272,7 +272,7 @@ Results: **Verdict: FAIL, 5 of 6 cells** (A119b 1001 B2: three ZNF479 reads move
 
 ## PREREG_o3_graph_round21_2026-10-19.md
 
-## Round 21: O2 only on ambiguous reads, by Eichler's rule (within 10 AS), on fresh multigene families (2026-10-19)
+## Round 21: O2 only on ambiguous reads, by the adapted Eichler filter (within 10 AS), on fresh multigene families (2026-10-19)
 User rule: O2 only on reads with a rival within 10 AS; others are minimap2's. Results (register 1331): **Verdict: FAIL**, 5 of 6 cells, 69 of 72 checks (one NCOR1P4 read: the wrong copy's alignment clips 38 bases for free and outscores by 16 AS). C1 PASS. On AS-tied reads O2 placed 349, all right, abstained 6,651; minimap2 wrong on 4 of 49,914. Not adopted as registered. (full: archive/2026-11/LEDGER_O3.md:8355)
 
 ## PREREG_o3_graph_round22_2026-10-19.md

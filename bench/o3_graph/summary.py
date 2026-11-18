@@ -189,7 +189,7 @@ def world_calls(w, o2_name="o2.integ.m2.tsv"):
 def off_family_ties(w, slack, seq_tie=False):
     """The reads whose alignments in WORLD/E0.bam within `slack` of their best AS include one on no copy of the world
     (copies.tsv, in the reference): a locus the simulation never expresses, so neither placing nor abstaining on the read can
-    be judged against its truth (user 2026-10-19: such ties are scored apart; slack 9 = Eichler's within-10 rule). seq_tie: an
+    be judged against its truth (user 2026-10-19: such ties are scored apart; slack 9 = the 10-point window of the Eichler lab's filter, adapted to one reference). seq_tie: an
     alignment there with no more edits, counting its unaligned bases, than the best-AS one ties too (o2graph.best_as_loci)."""
     import pysam
     vd = _o2("o2graph").veto_distance

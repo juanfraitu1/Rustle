@@ -1,6 +1,19 @@
 # Copy assignment (O2): definition, decision rule, abstention, certificate
 
-**O2's domain (user, 2026-10-19): AS-tied multimapping reads only**: a read with a rival alignment within 10 AS of its best (Eichler's within-10 rule; under splice:hq, 10 AS is two substitutions). A read with a clear best placement is already placed by minimap2; applying O2 to it is tautological. O2 goes beyond minimap2's coin toss among AS-tied alignments.
+**O2's domain (user, 2026-10-19): AS-tied multimapping reads only**: a read with a rival alignment within 10 AS of its best (the 10-point window of the Eichler lab's filter, adapted to one reference; under splice:hq, 10 AS is two substitutions). A read with a clear best placement is already placed by minimap2; applying O2 to it is tautological. O2 goes beyond minimap2's coin toss among AS-tied alignments.
+
+## The "Eichler rule": what the source says and what this repository tests (corrected 2026-11-18)
+
+**Source.** Guitart et al. 2024 (TBC1D3, Eichler lab), Methods, "Iso-Seq and transcript analyses": "Human FLNC reads from fetal brain and iPSCs were mapped to all validated human haplotypes. Next, we compared these primary alignments to one another and considered the cluster paralog from which they were derived. Any Iso-Seq read with primary minimap2 alignment scores of 10 or greater for a given paralog cluster relative to all other cluster mappings were retained, while other mappings were marked as ambiguous and ignored."
+
+**The paper's filter.** Reads (at least 1,000 bp, at least 99.9% quality) are mapped separately to every validated haplotype assembly; the primary alignments of those mappings are compared; a read counts for a paralog cluster when its primary alignment score there is 10 or more above every other cluster's; all other reads are ignored. It is a filter for cluster-level expression on the individuals' own haplotypes. It does not compare a primary with a secondary alignment of one mapping, does not decide between individual copies, and is not defined on a single reference. Dishuck et al. 2025 (NPIP, same lab) uses a different filter: best mapping over 169 haplotypes with at least one more mismatch at the next-best paralog.
+
+**What this repository calls "the adapted Eichler filter".** Three uses, all on one reference and on individual copies, none of them the paper's procedure:
+1. **Tie window (O2's domain):** a read is tied when a rival alignment lies within 10 AS of its best (`AS_TIE`, `SLACK = 9`).
+2. **Margin rule MR(T), the "move" adaptation:** assign a read to its best-scoring alignment when no other alignment scores within T (`copy_assign --eichler-margin`, `bench/score.py eichler`, Fig. 5s, the standing test of register 1477, arm `eichler-move`). Refuted as a copy signal (registers 1270, 1403, 1775, 1786): the higher AS is usually an unspliced alignment elsewhere.
+3. **The "keep" adaptation:** keep the primary alignment when it leads every other locus by more than 10 AS, else abstain (arm `eichler-keep`, register 1775).
+
+**Wording.** Write "the adapted Eichler filter" or "the Eichler lab's 10-point filter (Guitart 2024), adapted to one reference", and say which use is meant. A result on an adaptation is never a test of the paper's method; the paper's own procedure has not been run here. Identifiers keep the old name (`--eichler-margin`, `eichler_call`, `eichler_same_copy`, `eichler_class`, `score.py eichler`, `eichler-keep`, `eichler-move`, `eichler_profile.py`, file and workspace names), as do printed tool output, `docs/archive/`, register rows of other sessions and quotes of the user; read them with this definition.
 
 Compacted 2026-11-01. Full text of every section: `docs/archive/2026-11/copy_assignment_definition.md` (verbatim) and git history. Each entry ends with a pointer `(full: archive/2026-11/copy_assignment_definition.md:LINE)`.
 

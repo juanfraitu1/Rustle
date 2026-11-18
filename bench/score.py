@@ -1182,7 +1182,7 @@ def cmd_protein(a):
 
 # ================================================================ eichler (eichler_compare)
 def cmd_eichler(a):
-    """The alignment-score margin rule (Eichler lab) against Rustle's copy assignment. Three modes:
+    """The alignment-score margin rule (adapted from the Eichler lab's filter) against Rustle's copy assignment. Three modes:
 
       --assignments A        the original reader of copy_assign's `as_margin` column (output unchanged; see
                              _eichler_legacy for why its counts are per ROW and region-local)
@@ -1201,19 +1201,19 @@ def cmd_eichler(a):
 
 
 def _eichler_legacy(a):
-    """Eichler-style AS-margin assignment, computed alongside ours and compared.
+    """AS-margin assignment adapted from the Eichler lab's filter, computed alongside ours and compared.
 
     The method the advisor cites: a multi-mapping read is assigned to its best alignment iff no other alignment scores
     within T units of it (T = 10 by convention); otherwise the read is discarded as ambiguous. It is a MARGIN rule on
     the aligner's own score. `copy_assign` already emits `as_best`, `as_second` and `as_margin` per read alongside our
     `status`, so both calls come from one file (the margin is always recomputed from `as_margin`).
 
-        EICHLER(T):  as_margin >= T          -> assign to the best-AS copy
+        MARGIN RULE(T) (adapted Eichler filter):  as_margin >= T          -> assign to the best-AS copy
                      as_margin <  T          -> discard (ambiguous)
         OURS:        status in {assigned, tied, ambiguous}, assign-or-abstain, never 1/k
 
     ⚠ The two rules do not have the same SUBJECT: our AS-tied gate deliberately selects the reads where the aligner is
-    indifferent (margin ~ 0), exactly the population Eichler's rule discards by construction. So "agreement" is not the
+    indifferent (margin ~ 0), exactly the population the adapted Eichler filter discards by construction. So "agreement" is not the
     interesting number; the interesting number is what each rule decides on the population the other keeps.
 
     ⚠ (2026-09-25, Amendment 2 of PREREG_genome_wide_copy_assignment) Two limits of THIS reader, kept for continuity
@@ -1243,7 +1243,7 @@ def _eichler_legacy(a):
     for r in rows:
         m = num(r, 'as_margin')
         n += 1
-        # ⚠ A read with NO rival placement has margin NA, and nothing is within T of it, so Eichler
+        # ⚠ A read with NO rival placement has margin NA, and nothing is within T of it, so the margin rule
         # ASSIGNS it. An earlier version of this tool skipped those rows and undercounted his
         # assignments by 1,522 on the YAG substrate (2,536 instead of 4,058) -- the Rust
         # `--eichler-margin` implementation exposed it.
@@ -1252,13 +1252,13 @@ def _eichler_legacy(a):
         joint[(ours, eich)] += 1
         margins['no rival' if m is None else ('>=T' if m >= a.threshold else ('0' if m == 0 else '0<m<T'))] += 1
 
-    print(f"reads: {n}   (Eichler threshold T = {a.threshold:g})\n")
+    print(f"reads: {n}   (margin-rule threshold T = {a.threshold:g})\n")
     print("AS-margin distribution")
     for k in ('0', '0<m<T', '>=T', 'no rival'):
         print(f"  margin {k:6s} {margins[k]:>7}  {100*margins[k]/n if n else 0:>5.1f}%")
 
     ours_vals = sorted({k[0] for k in joint})
-    print(f"\njoint decision table  (rows = OURS, cols = EICHLER T={a.threshold:g})")
+    print(f"\njoint decision table  (rows = OURS, cols = MARGIN RULE T={a.threshold:g})")
     print(f"  {'':12s} {'assign':>9} {'discard':>9} {'total':>8}")
     for o in ours_vals:
         aa, dd = joint[(o, 'assign')], joint[(o, 'discard')]
@@ -1268,12 +1268,12 @@ def _eichler_legacy(a):
     print(f"  {'TOTAL':12s} {ta:>9} {td:>9} {ta+td:>8}")
 
     ours_assign = sum(v for k, v in joint.items() if k[0] == 'assigned')
-    print(f"\n  Eichler assigns  {ta:>7} / {n} = {100*ta/n if n else 0:.1f}%")
+    print(f"\n  the adapted filter assigns  {ta:>7} / {n} = {100*ta/n if n else 0:.1f}%")
     print(f"  we assign        {ours_assign:>7} / {n} = {100*ours_assign/n if n else 0:.1f}%")
     both = joint[('assigned', 'assign')]
     print(f"  both assign      {both:>7}")
-    print(f"  we assign where Eichler discards: {joint[('assigned','discard')]}")
-    print(f"  Eichler assigns where we abstain: "
+    print(f"  we assign where the adapted filter discards: {joint[('assigned','discard')]}")
+    print(f"  the adapted filter assigns where we abstain: "
           f"{sum(joint[(o,'assign')] for o in ours_vals if o != 'assigned')}")
 
     if a.out:
@@ -2308,7 +2308,7 @@ def main(argv=None):
     p.add_argument('--truth', required=True); p.add_argument('--test', action='append', required=True)
     p.add_argument('--no-pseudogenes', action='store_true'); p.add_argument('--rule', type=int, default=0)
 
-    p = _sub(sub, 'eichler', cmd_eichler, 'Eichler AS-margin rule vs ours (was eichler_compare.py)')
+    p = _sub(sub, 'eichler', cmd_eichler, 'adapted-Eichler AS-margin rule vs ours (was eichler_compare.py)')
     p.add_argument('--assignments', help='legacy mode: a copy_assign assignments.tsv (region-local as_margin)')
     p.add_argument('--threshold', type=float, default=10.0)
     p.add_argument('--out')

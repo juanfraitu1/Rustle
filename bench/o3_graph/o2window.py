@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Widening O2's window past Eichler's 10 AS with an intron-free score (user 2026-10-20: "we could also go past the 10 AS
+"""Widening O2's window past the adapted Eichler filter's 10 AS with an intron-free score (user 2026-10-20: "we could also go past the 10 AS
 difference from Eichler, if that is too close to the fully tied impossible cases"; "Sounds good, please proceed").
 
 A development sweep on gorilla KB3781 (PREREG_o2_personal_copies' development families only; descriptive, no verdict). A read
@@ -66,7 +66,7 @@ def no_placement(blocks, cigar, exons):
 
 def window_copies(alns, w):
     """({copies}, minimap2's primary copy) of a read tied in window w: its alignments [{ms, copy, prim}] whose ms is within
-    w of its best (difference < w, as Eichler's 10 AS is SLACK 9) lie on >= 2 copies of one family, none off every copy,
+    w of its best (difference < w, as the adapted Eichler filter's 10 AS is SLACK 9) lie on >= 2 copies of one family, none off every copy,
     minimap2's primary among them; the set is None otherwise."""
     prim = next((a["copy"] for a in alns if a["prim"]), None)
     best = max(a["ms"] for a in alns)

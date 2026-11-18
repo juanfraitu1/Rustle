@@ -749,7 +749,7 @@ Registers 1267-1270; preregistrations `PREREG_tool_difference_model_2026-10-11.m
   O2-supported (1269). Most S1 transcripts are shadows, often of a spliced parent gene on its processed retrocopy.
 - **Coin-toss genes (S2)**: after O2 pruning we still match more reference transcripts than both tools (gorilla 72 vs 51 / 42,
   human 119 vs 77 / 72); precision above both in human, a few points below in gorilla (1270).
-- **O2 vs Eichler's AS-margin rule**: they agree on 14-54% of calls; AS rewards unspliced alignments to retrocopies (no splice
+- **O2 vs the AS-margin rule adapted from the Eichler lab's filter**: they agree on 14-54% of calls; AS rewards unspliced alignments to retrocopies (no splice
   penalty), the PSV bases do not — O2 is right on that population (1270).
 - **Open**: (1) copy-of-origin truth from the family simulator (`bench/famsim`) to score pruning and assignment directly; (2) a
   pruning rule finer than "gene contradicted" where copies are identical (human S2: 64% of records have no distinguishing column);
@@ -1072,7 +1072,7 @@ a missing copy are mostly unique mappers.
 
 ## Faster family tests, realistic reads, and what O2's evidence rests on (2026-10-16)
 
-> Update 2026-10-19. **O2's domain (user, 2026-10-19): AS-tied multimapping reads only** — a read with a rival alignment within 10 AS of its best (Eichler's within-10 rule; under splice:hq, 10 AS is two substitutions). A read with a clear best placement is already placed by minimap2: applying O2 to it is tautological. O2's point is to go beyond minimap2's shortcoming, its coin toss among AS-tied alignments, and assign those ambiguous reads to very similar copies by their PSVs, junctions and divergence, or abstain. Implementation: `fastset --o2-scope tied --as-slack 9` (`o2graph.py run W intega`), on test in round 21 (`docs/PREREG_o3_graph_round21_2026-10-19.md`); memory `feedback_o2_scope_ambiguous_only`.
+> Update 2026-10-19. **O2's domain (user, 2026-10-19): AS-tied multimapping reads only** — a read with a rival alignment within 10 AS of its best (the 10-point window of the Eichler lab's filter, adapted to one reference; under splice:hq, 10 AS is two substitutions). A read with a clear best placement is already placed by minimap2: applying O2 to it is tautological. O2's point is to go beyond minimap2's shortcoming, its coin toss among AS-tied alignments, and assign those ambiguous reads to very similar copies by their PSVs, junctions and divergence, or abstain. Implementation: `fastset --o2-scope tied --as-slack 9` (`o2graph.py run W intega`), on test in round 21 (`docs/PREREG_o3_graph_round21_2026-10-19.md`); memory `feedback_o2_scope_ambiguous_only`.
 
 **User goal (2026-10-16):** "integrate O1, O2 and O3 more so it's faster and cheaper to test full families; also improve the
 simulations to account for more realistic ones and determine if PSVs can also Include SUNs and probably some influence of
@@ -1975,7 +1975,7 @@ when a result must be shown on the graph itself.
 
 ## O1 -> O2 -> O3 integrated: the overall picture (2026-10-16)
 
-> Update 2026-10-19. **O2's domain (user, 2026-10-19): AS-tied multimapping reads only** — a read with a rival alignment within 10 AS of its best (Eichler's within-10 rule; under splice:hq, 10 AS is two substitutions). A read with a clear best placement is already placed by minimap2: applying O2 to it is tautological. O2's point is to go beyond minimap2's shortcoming, its coin toss among AS-tied alignments, and assign those ambiguous reads to very similar copies by their PSVs, junctions and divergence, or abstain. Implementation: `fastset --o2-scope tied --as-slack 9` (`o2graph.py run W intega`), on test in round 21 (`docs/PREREG_o3_graph_round21_2026-10-19.md`); memory `feedback_o2_scope_ambiguous_only`.
+> Update 2026-10-19. **O2's domain (user, 2026-10-19): AS-tied multimapping reads only** — a read with a rival alignment within 10 AS of its best (the 10-point window of the Eichler lab's filter, adapted to one reference; under splice:hq, 10 AS is two substitutions). A read with a clear best placement is already placed by minimap2: applying O2 to it is tautological. O2's point is to go beyond minimap2's shortcoming, its coin toss among AS-tied alignments, and assign those ambiguous reads to very similar copies by their PSVs, junctions and divergence, or abstain. Implementation: `fastset --o2-scope tied --as-slack 9` (`o2graph.py run W intega`), on test in round 21 (`docs/PREREG_o3_graph_round21_2026-10-19.md`); memory `feedback_o2_scope_ambiguous_only`.
 
 User (2026-10-16): "lets look at the overall picture first, probably it is better to look at O1, O2 and O3 integrated since
 that is the end goal".

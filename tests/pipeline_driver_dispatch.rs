@@ -650,7 +650,8 @@ fn chainscore_needs_the_assembly_and_then_writes_the_chainscore_gtf() {
     std::fs::write(&py, "#!/bin/bash\necho annotated > \"$7\"\necho done\n").unwrap();
     std::fs::write(&inp, "x\n").unwrap();
     let script = format!(
-        "set -euo pipefail\nexport RUSTLE_PYTHON='bash {py}'\nOUT={out}; BAM={inp}; FASTA={inp}; THREADS=2; RP_DRIVER_DIR=tools\nsay() {{ :; }}\n{}\nstage_chainscore\n",
+        "set -euo pipefail\nexport RUSTLE_PYTHON='bash {py}'\nOUT={out}; BAM={inp}; FASTA={inp}; THREADS=2; RP_DRIVER_DIR=tools\nsay() {{ :; }}\n{}\n{}\nstage_chainscore\n",
+        function_block("chainscore_model"),
         function_block("stage_chainscore"),
         py = py.display(),
         out = out.display(),
@@ -739,12 +740,13 @@ fn the_final_gtf_is_filtered_by_the_chain_score_unless_switched_off_or_failing()
     std::fs::create_dir_all(&dir).expect("create scratch dir");
     let (out, py) = (dir.join("run"), dir.join("py.sh"));
     // stand-in for chainscore.py apply MODEL GTF BAM FASTA OUT THREADS GTF2 OUT2
-    std::fs::write(&py, "#!/bin/bash\n[ -z \"${FAIL:-}\" ] || exit 1\necho scored > \"$7\"; echo filtered > \"${10}\"; echo 'x: dropped 1'\n").unwrap();
+    std::fs::write(&py, "#!/bin/bash\n[ -z \"${FAIL:-}\" ] || exit 1\necho \"$3\" > \"$7.model\"; echo scored > \"$7\"; echo filtered > \"${10}\"; echo 'x: dropped 1'\n").unwrap();
     let fin = format!("{}.final.gtf", out.display());
     let run = |env: &str| {
         std::fs::write(&fin, "layered\n").unwrap();
         let script = format!(
-            "set -euo pipefail\nexport RUSTLE_PYTHON='bash {py}' {env}\nOUT={out}; BAM=b; FASTA=f; THREADS=2; RP_DRIVER_DIR=tools\nsay() {{ echo \"$*\"; }}\n{}\nfinal_chainscore\n",
+            "set -euo pipefail\nexport RUSTLE_PYTHON='bash {py}' {env}\nOUT={out}; BAM=b; FASTA=f; THREADS=2; RP_DRIVER_DIR=tools\nsay() {{ echo \"$*\"; }}\n{}\n{}\nfinal_chainscore\n",
+            function_block("chainscore_model"),
             function_block("final_chainscore"),
             py = py.display(),
             out = out.display()
@@ -755,6 +757,13 @@ fn the_final_gtf_is_filtered_by_the_chain_score_unless_switched_off_or_failing()
     };
     assert_eq!(run("").0, "filtered\n");
     assert_eq!(std::fs::read_to_string(format!("{}.chainscore.gtf", out.display())).unwrap(), "scored\n");
+    // the weight file: r1769 (default since 2026-11-18) unless RUSTLE_CHAINSCORE_MODEL names another one (r1677, the earlier default) or gives a path
+    let model = || std::fs::read_to_string(format!("{}.chainscore.gtf.tmp.model", out.display())).unwrap();
+    assert_eq!(model(), "tools/data/chainscore_r1769.json\n");
+    run("RUSTLE_CHAINSCORE_MODEL=r1677");
+    assert_eq!(model(), "tools/data/chainscore_r1677.json\n");
+    run("RUSTLE_CHAINSCORE_MODEL=/some/where/m.json");
+    assert_eq!(model(), "/some/where/m.json\n");
     assert_eq!(run("RUSTLE_CHAINSCORE=0").0, "layered\n");
     let (kept, said) = run("FAIL=1");
     assert_eq!(kept, "layered\n");
