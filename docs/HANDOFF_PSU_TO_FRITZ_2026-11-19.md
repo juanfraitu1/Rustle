@@ -6,7 +6,7 @@ folders, the session notes (memory) and the ThesisVault edits are NOT, and steps
 
 ## 1. Pull and rebuild (code)
 ```bash
-cd ~/Rustle && git fetch && git log --oneline HEAD..origin/main   # 21 commits, fe9e7c23 .. e0a194bf (and this guide)
+cd ~/Rustle && git fetch && git log --oneline HEAD..origin/main   # every commit since fe9e7c23 (rows 1820-1829, the audit, this guide)
 git pull --rebase
 cargo build --release --bins            # with the pixi env on PATH, as usual; needed: src/family.rs and src/copy_assign_bin.rs changed
 ```
@@ -67,11 +67,11 @@ the root with `/anvme/workspace/v138da13-rustle` and the Slurm header with the F
 ## 5. Session notes (memory) changed on PSU: merge into the Fritz memory directory
 The PSU copy of the memory lives at `psu:makova_group/fritz/fritz_memory/` (copied from Fritz on 2026-11-19, then edited). Files
 changed on PSU: `MEMORY.md` (index lines for family-wise-layer and PSU Roar), `family-wise-layer.md`, `o1-families.md`,
-`o2-assignment.md`, `o3-missing-copies.md`, `assembly.md`, and the NEW `psu-roar.md` (written by the Fritz session itself and copied
+`o2-assignment.md` (rows 1824, 1829), `working-rules.md` (no new locks; the 2026-11-19 driver audit), `o3-missing-copies.md`, `assembly.md`, and the NEW `psu-roar.md` (written by the Fritz session itself and copied
 over). Fritz sessions may have edited the same files since; merge by appending the dated PSU paragraphs, not by overwriting:
 ```bash
 rsync -a psu:makova_group/fritz/fritz_memory/ /tmp/psu_memory/
-for f in MEMORY.md family-wise-layer.md o1-families.md o2-assignment.md o3-missing-copies.md assembly.md; do
+for f in MEMORY.md family-wise-layer.md o1-families.md o2-assignment.md o3-missing-copies.md assembly.md working-rules.md; do
   diff <(cat ~/.claude/projects/*/memory/$f) /tmp/psu_memory/$f | grep '^>' | head    # the PSU additions to merge
 done
 ```
