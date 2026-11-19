@@ -84,3 +84,22 @@ each under the Strainy entry), `Topics/SegDups.md` ("Own result (added 2026-11-1
 Register rows 1820-1827 were claimed on PSU; check the register tail on origin/main before claiming 1829. Commits on PSU included
 only their own paths. Pre-registrations were committed before judging data were opened (1820, 1821, 1822; predictions for the
 row-1826 held-out tests). Development results are labelled as such in every document.
+
+## 8. Next task for the Fritz session (user, 2026-11-19): does the support profile, used as a FILTER, remove wrong transcripts?
+Row 1828 (`docs/SUPPORT_PROFILE_2026-11-19.md`) only DETECTS. On SIRV `final.gtf` its flags (SHIFTED_DOMINANT / THIN_EXACT, relative)
+caught 23 / 28 false transcripts and 2 / 48 true ones, but SIRV and the HG002 seen quarter were used to build the rule, so those
+numbers are development results and say nothing about a filter. The user asked to test the filter on Fritz:
+1. Claim the next register row on origin/main (1829 unless taken) and write `docs/PREREG_support_filter_<date>.md`, committed
+   BEFORE any judging data is opened. Fix in it:
+   - the filter: drop multi-exon transcripts of `PREFIX.final.gtf` flagged SHIFTED_DOMINANT or THIN_EXACT, rule exactly as
+     committed in `bench/famwise_eval/support_profile.py` (no re-tuning; NEAR_MISS_DOMINANT, WEAK_JUNCTION, UNCOVERED, NO_FULL_READ
+     are NOT filtered unless the pre-registration says so and why);
+   - the judging data: NOT SIRV, NOT the HG002 0-24 quarter. Candidates on Fritz: another spike-in library with known truth
+     (Sequins / SIRV-Set 4 / Lexogen, if one exists there), a fresh simulation not used before, or an HG002 quarter reused WITH that
+     stated (all four are spent; reuse allowed by the user ruling of section 3);
+   - truth labels by exact intron chain (`label_by_chain.py`), and the bars: false transcripts removed (share), true transcripts
+     lost (share), precision and sensitivity before / after; pass = precision up with sensitivity loss below a stated bound
+     (suggest: >= 50% of false removed, <= 2% of true lost; the user decides);
+   - a GffCompare / SQANTI3 view as secondary, StringTie on the same BAM as the reference point.
+2. Run, judge against the bars, write the result document, register the row, commit and push.
+Default products must not change: the filter is a post-step on a copy of `final.gtf` until a row decides otherwise.
