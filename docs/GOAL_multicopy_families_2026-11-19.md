@@ -53,3 +53,19 @@ species with a reference genome, need no second sample at analysis time, finishe
 3. Questions 3 and 4: junction-support-only secondaries; borrowed junction columns as a labelled class.
 4. Question 2: array simulation (identical and near-identical units, testis-like spread).
 5. One pre-registration for the rules of 2-4, judged once on residues 75-99.
+
+## Status (2026-11-19, end of the first PSU session)
+Development ledger: workspace `goal_multicopy_dev/LEDGER.md` (steps 1-11). Judged: row 1821.
+1. Near ties / the call: `resolution_call.py`. Row 1821 on the last unseen HG002 quarter: R1 fails narrowly (+1.0% over the
+   uncalled famwise layer), R2 passes (precision 0.888 -> 0.909, resolved units +2.5% over the per-copy output), R3 passes.
+   Grouping copies is what helps; the call adds little over the layer.
+2. Arrays: simulation only (identical units: one copy set over N units is the least wrong output, the spread over units is
+   not recoverable from placements; >= 0.2% divergence: primaries place every read). OPEN: no origin truth exists for real
+   testis arrays (needs a testis Iso-Seq sample of an individual with assembled haplotypes).
+3. Seeding: `RUSTLE_SEED_SPLICED=support` (opt-in, built): on the judging quarter it keeps about half the right new chains of
+   the good pool and cuts wrong-copy new chains 4x (60 -> 15); removes silent-unit chains in arrays at 0.1-0.2%.
+4. Borrowing: `borrow.py`, labelled `borrowed_structure`: structure at 5 more copy-set units, 0.17 right when read as
+   expression (development only, not judged; HG002 has no unseen quarter left).
+Family-member completeness (user's question): missing members are mostly silent; none lost to wrong placement; tied
+seeding restores 3-7; the actionable gap is the assembler's low-support floor (StringTie finds 24-75 more expressed
+members; RUSTLE_READ_ISOFORM_K=2 closes 9 of 22 on development).
