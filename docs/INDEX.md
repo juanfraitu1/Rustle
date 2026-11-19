@@ -24,7 +24,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-18 | register ×1 |
 | [`seeded_family_definition.md`](seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-08 | — |
 
-## Open studies and current handoff (253)
+## Open studies and current handoff (254)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
@@ -32,6 +32,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`GOAL_multicopy_families_2026-11-19.md`](GOAL_multicopy_families_2026-11-19.md) | Goal: resolution-aware assembly of multi-copy gene families (set by the user 2026-11-19) | 2026-11-19 | register ×1, memory ×1 |
 | [`MULTICOPY_DEV_LEDGER_2026-11-19.md`](MULTICOPY_DEV_LEDGER_2026-11-19.md) | Development ledger of the multi-copy goal (copy of PSU workspace goal_multicopy_dev/LEDGER.md, 2026-11-19) | 2026-11-19 | memory ×1 |
 | [`MULTICOPY_FAMILIES_2026-11-19.md`](MULTICOPY_FAMILIES_2026-11-19.md) | Multi-copy gene families: what the reads can decide (session of 2026-11-18 / 19, on PSU Roar) | 2026-11-19 | memory ×1 |
+| [`PREDICTION_tandem_heldout_2026-11-19.md`](PREDICTION_tandem_heldout_2026-11-19.md) | Prediction before a held-out test of the tandem member-size rule (2026-11-19, written before OR6737 is opened) | 2026-11-19 | register ×1 |
 | [`PREREG_borrow_isoformk_2026-11-19.md`](PREREG_borrow_isoformk_2026-11-19.md) | PREREG r1822: borrowed structure (question 4), shared isoforms and RUSTLE_READ_ISOFORM_K=2 on KB3781 (2026-11-19) | 2026-11-19 | register ×1 |
 | [`PREREG_chainscore_ties_2026-11-19.md`](PREREG_chainscore_ties_2026-11-19.md) | Row 1813: the chain score without the tie instability (pre-registered 2026-11-19) | 2026-11-19 | register ×1 |
 | [`PREREG_junction_replace_2026-11-19.md`](PREREG_junction_replace_2026-11-19.md) | Row 1819: replace a weak junction by its strong neighbour instead of dropping the chain (pre-registered 2026-11-19) | 2026-11-19 | register ×1 |

@@ -27,3 +27,12 @@ Y-encoded protein"), on one contig, neighbours <= 200 kb apart, >= 3 protein-cod
 CV <= 0.2 AND median unit length <= 15 kb (short near-identical units, the population of the simulations and of A119b's CT47A /
 TSPY / GAGE). Same members, yardstick and methods as above; rule unchanged (commit f2519c38).
 Prediction: rule within 20% for >= 60% of members and not below StringTie or Rustle. Fewer than 10 members: inconclusive.
+
+## Result of the second held-out test (OR6737, description arrays)
+47 arrays; 44 members of 20 arrays with >= 5 sense reads. Within 20% of the annotated span: rule 24 / 44 (0.55), StringTie 24 / 44
+(0.55), Rustle primaries 29 / 44 (0.66). **Prediction failed** (below 0.60 and below Rustle). The rule sizes the TSPY members
+right (4 / 4) and doubles several (JMJD7 family 18.7 kb vs 8.2, cytosolic PLA2 20 kb vs 9.9-10.9, EFNA 11 kb vs 7): its 3'-end
+mode lands on reads running past the gene. The cancer-testis arrays (PRAME, CT, USP17L, FAM90A, DUX4L) have no member with
+>= 5 reads in OR6737.
+Descriptive, not predicted: on A119b with the same generic definition (131 members), rule 62 (0.47), StringTie 56 (0.43),
+StringTie on primaries without reads longer than a period 59 (0.45), Rustle primaries 44 (0.34).

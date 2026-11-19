@@ -93,7 +93,21 @@ GAGE12 members 7,325 (7,290). Disagreements left: PRAMEF (annotated 3-9 kb, read
 fragment, MAGEA11 (annotated 29 kb, reads 5.2 kb: a long annotated isoform). On diverged gene clusters (ZNF, KRT, olfactory
 receptors) every method agrees with the annotation for about a third of members: member size is not the problem there.
 
-## The rule (validated on simulation; built as `tandem.py`, not in the assembler)
+## 8. Held-out tests of the frozen rule (OR6737 gorilla testis; predictions in `PREDICTION_tandem_heldout_2026-11-19.md`)
+Both written before running, both FAILED:
+| test | members | rule | StringTie | Rustle primaries |
+| 1: arrays by name stems, >= 3 protein-coding units, length CV <= 0.2 | 20 (only large diverged clusters: ABCA, ADH, NLRP, CCL, ZNF) | 0.60 | 0.80 | 0.75 |
+| 2: arrays by NCBI description, same + median unit <= 15 kb | 44 in 20 arrays | 0.55 | 0.55 | 0.66 |
+| A119b, test 2's generic definition (development) | 131 in 30 arrays | 0.47 | 0.43 (0.45 without reads > 1 period) | 0.34 |
+(share of members within 20% of the longest annotated transcript span)
+Reading: the read-end rule is exact on simulated arrays and right on near-identical testis arrays (CT47A, TSPY in both species,
+GAGE12, MAGEA3), but it is not a general member-size rule: on long genes its read-end modes size members too short (reads cover
+fragments), and where reads run past a gene it doubles the member. Across real samples no method agrees with the annotation for
+more than about two thirds of members, and which method is best changes with the sample; the annotation (longest isoform) is
+itself an imperfect yardstick. What holds on every data set: StringTie joins neighbouring units through reads longer than one
+period (section 5), and Rustle's primaries-only assembly does not.
+
+## The rule as it stands (exact on simulation; not a general rule on real arrays, section 8)
 1. Per array, per member: the read-end modes of `member_sizes` (section 6), each end shared by >= 2 reads and the member no longer
    than one period; otherwise the folded array consensus.
 2. Split a model at the member boundary when it carries a jump, repeat or bridge signature, or spans > 1.5 x the member

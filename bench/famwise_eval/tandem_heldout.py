@@ -94,14 +94,64 @@ def cmd_classifier(a):
         n = sum(c[cls].values())
         print(f"{cls}: {n} primaries; " + ", ".join(f"{k} {v}" for k, v in sorted(c[cls].items())))
 
+def cmd_desc_units(a):
+    """units.tsv from an NCBI GFF by DESCRIPTION stems (LOC genes are named only by their description): the second held-out
+    definition of docs/PREDICTION_tandem_heldout_2026-11-19.md. Writes rows like undecidable.py arrays's units.tsv."""
+    import re, gzip
+    from undecidable import group
+    genes = []
+    opn = gzip.open if a.annot.endswith(".gz") else open
+    for l in opn(a.annot, "rt"):
+        if l[0] == "#":
+            continue
+        f = l.rstrip("\n").split("\t")
+        if len(f) < 9 or f[2] not in ("gene", "pseudogene"):
+            continue
+        at = dict(x.split("=", 1) for x in f[8].split(";") if "=" in x)
+        name = at.get("Name", ""); desc = at.get("description", "").replace("%2C", ",")
+        if name.startswith("LOC") and desc:
+            st = desc
+            for _ in range(3):
+                st = re.sub(r"(-like)$", "", st)
+                st = re.sub(r"\s+(member\s+)?[A-Z]?\d+[A-Z]?\d*$", "", st)
+        else:
+            m = re.match(r"^([A-Za-z][A-Za-z0-9-]*[A-Za-z])(\d+[A-Z]?\d*P?)$", name)
+            st = m.group(1) if m else None
+        if st:
+            genes.append((st, f[0], int(f[3]) - 1, int(f[4]), f[6], at.get("ID"), name, at.get("gene_biotype")))
+    by = collections.defaultdict(list)
+    for g in genes:
+        by[(g[0], g[1])].append(g)
+    n = 0
+    with open(a.out, "w") as fh:
+        fh.write("array\tunit\tgene\tchrom\tstrand\tstart\tend\tbiotype\tgroup\n")
+        for (st, c), v in sorted(by.items()):
+            v.sort(key=lambda g: g[2]); cur = [v[0]]
+            for x in v[1:] + [None]:
+                if x is not None and x[2] - max(g[3] for g in cur) <= 200000:
+                    cur.append(x); continue
+                pc = [g for g in cur if group(g[7]) == "protein_coding"]
+                if len(pc) >= 3:
+                    sd = collections.Counter(g[4] for g in pc).most_common(1)[0][0]
+                    pc = [g for g in pc if g[4] == sd]
+                    lens = [g[3] - g[2] for g in pc]
+                    if len(pc) >= 3 and statistics.pstdev(lens) / statistics.mean(lens) <= 0.2 and statistics.median(lens) <= 15000:
+                        an = f"{st.replace(' ', '_')}@{c}:{pc[0][2]}"; n += 1
+                        for g in pc:
+                            fh.write(f"{an}\t{g[5]}\t{g[6]}\t{c}\t{g[4]}\t{g[2]}\t{g[3]}\t{g[7]}\tprotein_coding\n")
+                if x is not None:
+                    cur = [x]
+    print(f"description arrays (>= 3 protein-coding units, one strand, length CV <= 0.2, median <= 15 kb): {n}")
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = ap.add_subparsers(dest="cmd", required=True)
     p = sp.add_parser("members"); p.add_argument("--units", required=True); p.add_argument("--annot", required=True)
     p.add_argument("--bam", required=True); p.add_argument("--gtf", action="append", default=[]); p.add_argument("--out")
     p = sp.add_parser("classifier"); p.add_argument("--scenario", required=True); p.add_argument("--period", type=float)
+    p = sp.add_parser("desc-units"); p.add_argument("--annot", required=True); p.add_argument("--out", required=True)
     a = ap.parse_args(argv)
-    dict(members=cmd_members, classifier=cmd_classifier)[a.cmd](a)
+    dict(members=cmd_members, classifier=cmd_classifier, **{"desc-units": cmd_desc_units})[a.cmd](a)
 
 if __name__ == "__main__":
     main()
