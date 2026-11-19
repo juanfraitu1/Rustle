@@ -118,3 +118,5 @@ PSU workspace (`/storage/group/kdm16/default/jxi21/fritz/ws`): `r1820_undecidabl
   (`SHADOW_LOCI_2026-11-19.md`, register 1825).
 - Tandem arrays: how StringTie and Rustle assemble them, read artifacts, member size by folding reads onto the period
   (`TANDEM_ARRAYS_2026-11-19.md`, register 1826).
+- SDs and recent families: 97% of genes with a human-specific paralogue lie in SDs, 99% of such pairs are one SD's two copies,
+  and the duplications copied genomic DNA (`SD_FAMILIES_2026-11-19.md`, register 1827).
