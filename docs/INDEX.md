@@ -24,13 +24,13 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-18 | register ×1 |
 | [`seeded_family_definition.md`](seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-08 | — |
 
-## Open studies and current handoff (256)
+## Open studies and current handoff (257)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
 | [`CORRELATION_CLUSTERING_2026-11-19.md`](CORRELATION_CLUSTERING_2026-11-19.md) | Correlation clustering (Strainy / SDA lineage) for assignment and for copies the reference lacks (2026-11-19, PSU) | 2026-11-19 | register ×1, memory ×1 |
 | [`GOAL_multicopy_families_2026-11-19.md`](GOAL_multicopy_families_2026-11-19.md) | Goal: resolution-aware assembly of multi-copy gene families (set by the user 2026-11-19) | 2026-11-19 | register ×1, memory ×1 |
-| [`HANDOFF_PSU_TO_FRITZ_2026-11-19.md`](HANDOFF_PSU_TO_FRITZ_2026-11-19.md) | Handoff: what was done on PSU Roar (2026-11-18 / 19) and how a Fritz session takes it over | uncommitted | — |
+| [`HANDOFF_PSU_TO_FRITZ_2026-11-19.md`](HANDOFF_PSU_TO_FRITZ_2026-11-19.md) | Handoff: what was done on PSU Roar (2026-11-18 / 19) and how a Fritz session takes it over | 2026-11-19 | — |
 | [`MULTICOPY_DEV_LEDGER_2026-11-19.md`](MULTICOPY_DEV_LEDGER_2026-11-19.md) | Development ledger of the multi-copy goal (copy of PSU workspace goal_multicopy_dev/LEDGER.md, 2026-11-19) | 2026-11-19 | memory ×1 |
 | [`MULTICOPY_FAMILIES_2026-11-19.md`](MULTICOPY_FAMILIES_2026-11-19.md) | Multi-copy gene families: what the reads can decide (session of 2026-11-18 / 19, on PSU Roar) | 2026-11-19 | memory ×1 |
 | [`PREDICTION_tandem_heldout_2026-11-19.md`](PREDICTION_tandem_heldout_2026-11-19.md) | Prediction before a held-out test of the tandem member-size rule (2026-11-19, written before OR6737 is opened) | 2026-11-19 | register ×1 |
@@ -47,6 +47,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PRIMARY_CORRECTION_CEILING_2026-11-19.md`](PRIMARY_CORRECTION_CEILING_2026-11-19.md) | What is a corrected primary worth? The oracle ceiling (2026-11-19, PSU, register 1824) | 2026-11-19 | register ×1, memory ×1 |
 | [`SD_FAMILIES_2026-11-19.md`](SD_FAMILIES_2026-11-19.md) | Are segmental duplications where recent multi-copy gene families live? (2026-11-19, PSU, register 1827) | 2026-11-19 | register ×1, memory ×1 |
 | [`SHADOW_LOCI_2026-11-19.md`](SHADOW_LOCI_2026-11-19.md) | Secondary alignments as shadow loci: real missed loci, or shadows? (2026-11-19, PSU, register 1825) | 2026-11-19 | register ×1, memory ×1 |
+| [`SUPPORT_PROFILE_2026-11-19.md`](SUPPORT_PROFILE_2026-11-19.md) | What do whole reads really support? A support profile per transcript (2026-11-19, PSU, register 1828) | uncommitted | register ×1 |
 | [`TANDEM_ARRAYS_2026-11-19.md`](TANDEM_ARRAYS_2026-11-19.md) | Tandem arrays: how StringTie and Rustle assemble them, read artifacts, and the size of a member (2026-11-19, PSU, regist | 2026-11-19 | register ×1, memory ×1 |
 | [`OVERFIT_LEVERS_2026-11-18.md`](OVERFIT_LEVERS_2026-11-18.md) | Which assembler levers are overfit to the primate samples, and what was toned down (18 Nov 2026) | 2026-11-19 | register ×1, memory ×1 |
 | [`PRECISION_RULES_2026-11-18.md`](PRECISION_RULES_2026-11-18.md) | Precision rules on 12 samples, and the new chain score default (17-18 Nov 2026) | 2026-11-18 | memory ×1 |

@@ -127,6 +127,9 @@ Update 2026-11-19 (row 1827, `SD_FAMILIES_2026-11-19.md`), on "are SDs where rec
 97% of genes with a human-specific paralogue lie in SDs (92% great-ape, 82% ape / Old World monkey; 9% of genes with no paralogue);
 99.5% of human-specific paralogue pairs are the two copies of one SD (identity 0.996), and 99% of those SDs copied introns and
 flanks (DNA-based duplication, not retrocopies). The link fades with age (pairs joined 0.8% for ancient duplications).
+Update 2026-11-19 (row 1828, `SUPPORT_PROFILE_2026-11-19.md`), on "do we need a CNN like IRFinder-S to check what reads support?": no;
+long reads let support be counted exactly (IRFinder-S's own long-read mode does). Exact junction support exposes Rustle's false SIRV
+transcripts as 1-3 bp junction shifts of true ones that a +-3 bp tolerance had hidden.
 In O1 assembly no: cross-copy borrowing inert/dead (§6bd). Shared multimappers are evidence; `E_c` splits large families 0.2406 -> 0.5431 (§6bi). Re-tried as FAMASM (r1479, 10-31): pool a family's reads, define chains family-wide, emit at a copy only with >= 2 certified reads. Held-out HG002 FAIL: multi-copy recall 11.3 -> 12.7 (first positive gain) but precision 14.0 -> 8.5 (~20,000 appended transcripts for 219 new matches), single-copy precision 19.2 -> 18.3; A119b recall +0.7, precision 12.7 -> 8.0. Not adopted; borrowing helps ASSIGNMENT, the 2-read certificate is not selective enough for ASSEMBLY. (full: archive/2026-11/ADVISOR_QUESTIONS.md:726)
 
 ### Q4. "What about isoforms? Could two extremely similar copies produce the same isoforms?"

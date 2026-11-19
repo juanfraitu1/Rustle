@@ -16,7 +16,7 @@ test `spliced_support_mode_seeds_only_primary_chains_and_counts_secondary_suppor
 SIRV final.gtf md5 5cb0e7e4e7eb4cccc8f9def75cce2f65 and a whole HG002 quarter at `--seed-pool good`). Check the SIRV md5 again on
 Fritz after the rebuild. No other default changed.
 
-## 2. What the rows say (register 1820-1827; read the documents, not this summary, before quoting)
+## 2. What the rows say (register 1820-1828; read the documents, not this summary, before quoting)
 | row | question | answer | document |
 | 1820 | do reads that cannot be placed depict the copies they land on (pseudogene idea)? | no: C1 FAILS (1 copy gains its annotated structure) | `PREREG_undecidable_copies_2026-11-19.md` |
 | 1821 | resolution-aware output: copy sets where reads cannot separate copies | R1 fails narrowly (+1% over the famwise layer), R2 passes (+2.5% over per-copy output, precision 0.888 -> 0.909), R3 passes; `RUSTLE_SEED_SPLICED=support` cuts wrong-copy chains 4x | `PREREG_resolution_call_2026-11-19.md`, `GOAL_multicopy_families_2026-11-19.md` |
@@ -25,6 +25,7 @@ Fritz after the rebuild. No other default changed.
 | 1824 | oracle ceiling of correcting wrongly chosen primaries | +0.2% resolved units, no family member: not worth building | `PRIMARY_CORRECTION_CEILING_2026-11-19.md` |
 | 1825 | are places reached only by secondaries real missed loci or shadows? | HG002 51 places, 6 real (pseudogenes, each dominated by another copy's reads); KB3781 0 | `SHADOW_LOCI_2026-11-19.md` |
 | 1826 | tandem arrays: StringTie's behaviour, artifact reads, member size | StringTie joins units through reads > 1 period (50 -> 4 when removed); read classifier right on simulations; member-size rule exact on simulations but FAILED both held-out tests on OR6737 | `TANDEM_ARRAYS_2026-11-19.md`, `PREDICTION_tandem_heldout_2026-11-19.md` |
+| 1828 | what do whole reads really support (IRFinder-S question)? | exact junction support; false SIRV transcripts are 1-3 bp shifts flagged by SHIFTED_DOMINANT / THIN_EXACT; no CNN needed | `SUPPORT_PROFILE_2026-11-19.md` |
 | 1827 | are SDs where recent multi-copy families live? | yes on CHM13: 97% of human-specific paralogues in SDs (9% baseline), 99.5% of their pairs are one SD's two copies, 99% DNA-based | `SD_FAMILIES_2026-11-19.md` |
 Overview of the whole session: `MULTICOPY_FAMILIES_2026-11-19.md` (+ development ledger `MULTICOPY_DEV_LEDGER_2026-11-19.md`).
 Also not registered: the user's family-member completeness test (StringTie as reference; missing members are mostly silent, none lost
@@ -75,6 +76,6 @@ each under the Strainy entry), `Topics/SegDups.md` ("Own result (added 2026-11-1
 (check the Fritz vault did not change those files first).
 
 ## 7. Rules that applied (and still apply)
-Register rows 1820-1827 were claimed on PSU; check the register tail on origin/main before claiming 1828. Commits on PSU included
+Register rows 1820-1827 were claimed on PSU; check the register tail on origin/main before claiming 1829. Commits on PSU included
 only their own paths. Pre-registrations were committed before judging data were opened (1820, 1821, 1822; predictions for the
 row-1826 held-out tests). Development results are labelled as such in every document.
