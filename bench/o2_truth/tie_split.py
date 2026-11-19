@@ -7,7 +7,8 @@ import sys, os, collections
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import neutral_truth as NT
 rt, rfa, pfa, mat, pat, famtsv, out = sys.argv[1:8]
-ties = {l.split('\t')[0] for l in open(rt) if l.split('\t')[1:4:2] == ['S2', 'tie']}
+STRATA = os.environ.get('TS_STRATA', 'S2').split(',')  # r1829: S1,S2 (default unchanged: S2)
+ties = {l.split('\t')[0] for l in open(rt) if l.split('\t')[1] in STRATA and l.split('\t')[3] == 'tie'}
 tmp = os.environ.get('TMPDIR', '.')
 def subset(src, dst):
     keep = False

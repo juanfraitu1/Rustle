@@ -32,6 +32,7 @@ against runs made by `all`. (b) The resume records no longer hold the thread / r
 | 1826 | tandem arrays: StringTie's behaviour, artifact reads, member size | StringTie joins units through reads > 1 period (50 -> 4 when removed); read classifier right on simulations; member-size rule exact on simulations but FAILED both held-out tests on OR6737 | `TANDEM_ARRAYS_2026-11-19.md`, `PREDICTION_tandem_heldout_2026-11-19.md` |
 | 1828 | what do whole reads really support (IRFinder-S question)? | exact junction support; false SIRV transcripts are 1-3 bp shifts flagged by SHIFTED_DOMINANT / THIN_EXACT; no CNN needed | `SUPPORT_PROFILE_2026-11-19.md` |
 | 1827 | are SDs where recent multi-copy families live? | yes on CHM13: 97% of human-specific paralogues in SDs (9% baseline), 99.5% of their pairs are one SD's two copies, 99% DNA-based | `SD_FAMILIES_2026-11-19.md` |
+| 1829 | how many near-tied multimappers exist, and what could separate them? | near ties 0.3-3.5% of molecules, in SDs; HG002: 68% cannot be judged by its assembly, 88% of the rest undecidable (70% of those a read-length limit), reference PSVs place 82% of the decidable | `PREREG_near_tie_census_2026-11-19.md`; page https://claude.ai/artifact/JsK6mub28ZLP9sLDo7D8e8 |
 Overview of the whole session: `MULTICOPY_FAMILIES_2026-11-19.md` (+ development ledger `MULTICOPY_DEV_LEDGER_2026-11-19.md`).
 Also not registered: the user's family-member completeness test (StringTie as reference; missing members are mostly silent, none lost
 to wrong placement; Rustle misses 24-75 expressed members StringTie finds), in the overview, step 7.
@@ -49,12 +50,13 @@ On Fritz first `ssh -fN psu` and approve the MFA push (see the PSU memory note `
 | `r1820_undecidable_copies` | 30 GB (23 GB are rebuilt HG002 haplotype `.mmi`) | 450 MB |
 | `r1821_resolution_call` | 1.8 GB | 126 MB |
 | `r1822_borrow_isoformk` | 85 MB | 42 MB |
+| `r1829_near_tie_census` (layer2/sel.bam 170 MB is rebuildable) | 722 MB | about 400 MB (truth/placements.fa is 330 MB) |
 | `goal_multicopy_dev` (rows 1823-1827 link into it; dev ledger, simulations, member checks) | 33 GB | 4.3 GB |
 | `r1823_correlation_clustering` .. `r1827_sd_families` | symlinks into `goal_multicopy_dev` | |
 Light copy (recommended; the BAMs can be rebuilt from the job scripts in each folder):
 ```bash
 for d in r1820_undecidable_copies r1821_resolution_call r1822_borrow_isoformk goal_multicopy_dev \
-         r1823_correlation_clustering r1824_primary_correction r1825_shadow_loci r1826_tandem_arrays r1827_sd_families; do
+         r1823_correlation_clustering r1824_primary_correction r1825_shadow_loci r1826_tandem_arrays r1827_sd_families r1829_near_tie_census; do
   rsync -a --exclude='*.mmi' --exclude='*.bam' --exclude='*.bai' --exclude='target/' --exclude='snap/target/' \
         --exclude='*.fa' --exclude='*.fq' psu:makova_group/fritz/ws/$d ~/ws/
 done

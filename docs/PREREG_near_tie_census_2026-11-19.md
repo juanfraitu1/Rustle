@@ -99,3 +99,65 @@ Each is reported HOLDS / FAILS with its number.
 ## Time to answer (estimate)
 Layer 1: minutes per sample (tables exist). Layer 2: extraction + two haplotype alignments of <= 30,000 reads + tie split,
 under an hour on one node.
+
+## Amendments (2026-11-19, input plumbing only; no rule changed)
+- Layer 1 reads the tiers as `|primary ms - rival ms|` (the two places' own scores; "best ms" in the text above meant the
+  better of the two places). `exact` = equal ms and rival AS >= primary AS.
+- `tie_split.py` takes `TS_STRATA=S1,S2` (default S2 unchanged): an `ms` near tie can be S1 on AS. `allele_graph.table` takes
+  `AG_GUARD` (default 5000 unchanged) so every S1 read of the selection reaches `own_psv.py`. `own_psv.py` writes per-read
+  calls under `OP_CALLS` (rule unchanged). `near_tie_classes.py`: a decidable read whose origin is a place the truth table
+  does not list (1 read) goes to class 4 if own_psv calls it, else to 6 with that reason.
+- Smoke test of the whole layer-2 chain on 300 reads of the selection before the full run (scores looked at only for
+  crashes; the classes printed then are a subset of the final ones).
+
+## Result (2026-11-19, PSU jobs 57509578 layer 1, 57509590 selection, 57514996 + rerun of the class step, layer 2)
+Workspace `~/ws/r1829_near_tie_census` (`census.tsv`, `layer2/truth/classes.*`). Scripts `bench/o2_truth/near_tie_census.py`,
+`near_tie_classes.py`, `near_tie_igv.py`, side tables in `bench/o2_truth/r1829/`.
+
+**Calibration.** K1 HOLDS: HG002 family molecules of residues 0-24 near-tied 6,933 / 136,074 = 5.1% (1786: 5.7%; bar
+4.2-7.2%). K2 HOLDS: family reads SEVERAL COPIES 2,112 / (2,112 + 927) = 0.695 (1791: 0.694).
+
+**Layer 1, share of all molecules (ms10 / exact / good):** A119b 1.25 / 0.44 / 3.00%; HG002 0.45 / 0.22 / 4.26%; OR6737
+0.34 / 0.13 / 1.92%; KB3781 0.38 / 0.19 / 3.74%; PTR testis 0.69 / 0.22 / 1.88%, LCL 1.09 / 0.16 / 6.08%; PAB testis
+1.93 / 0.79 / 2.67%, fib 0.37 / 0.14 / 3.65%; PPA testis 0.91 / 0.30 / 2.28%, fib 3.48 / 0.86 / 6.51%; PPY testis
+1.37 / 0.59 / 2.43%, fib 0.55 / 0.22 / 3.56%. On CHM13 both places lie in SEDEF SDs for 85.4% (A119b) / 94.9% (HG002) of
+ms10 molecules; location classes: excluded 23.8 / 23.8%, family 19.6 / 19.0%, SD 55.2 / 52.2%, other 0.7 / 0.6%.
+- P1 FAILS (HG002 0.45% is below 1%; PPA fibroblast 3.48% is above 2%).
+- P2 FAILS (testis above the cell line in 2 of 5 species: PAB, PPY; not GGO, PTR, PPA).
+- P3 FAILS (good < 2 x ms10 in PAB testis 1.4, PPY testis 1.8, PPA fib 1.9; the other 9 hold).
+- P4 HOLDS (SDs 85 / 95%; family 20 / 19%).
+
+**Layer 2, HG002, 30,000 ms10 reads (S2 27,784, S1 2,206, S0 10):**
+| class | reads | share |
+| 1 truth limit | 20,424 | 68.1% (tie ONE PLACE 9,095; no near-perfect hit 8,666; competitor unlocatable 1,622; outside 1,041) |
+| 2 undecidable | 8,417 | 28.1% (copies differ elsewhere 5,871 = 69.8%; identical transcripts 1,291; no gene 1,245; one gene 10) |
+| 3 reference lead | 949 | 3.2% |
+| 4 own variant | 11 | 0.04% |
+| 5 structure | 17 | 0.06% |
+| 6 decidable, no signal | 182 | 0.6% |
+Beside: the reference lead points to the wrong place for 109 decidable reads; structure would pick wrong for 31.
+- P5 HOLDS (truth limit 68.1% >= 30%; undecidable 8,417 / 9,576 judgeable = 87.9% >= 50%).
+- P6 HOLDS (69.8% of undecidable have genes whose longest transcripts differ elsewhere: a read-length limit).
+- P7 HOLDS (classes 3-5 place 977 / 1,159 decidable = 84.3%; reference lead alone 81.9%).
+
+**Reading.** Near-tied reads are rare (0.3-3.5% of molecules) and live in SDs. Of the near ties HG002's own genome can
+judge, nearly nine in ten are truly undecidable, two thirds of them for want of read length rather than identical copies;
+of the decidable ones the reference's own PSVs already place 82%, and own-read variants and structure add almost nothing
+on top. The limit of the measure is large: two thirds of the selection cannot be judged by HG002's assembly (CHM13 copies
+collapsing to one HG002 place, or no near-perfect home), so "undecidable" is a statement about the judgeable third.
+
+**Side tables (not pre-registered; descriptive), on the page `https://claude.ai/artifact/JsK6mub28ZLP9sLDo7D8e8`:**
+- Score events, fitted on the 502,782 records of the selection: AS = +1 per match, mismatch about -4 (a substitution costs 5),
+  indel about -7 to open and -1 per base, -24 per intron; `ms` the same but 0 per intron. The integer model reproduces AS
+  exactly for 83% of records. Two best places of the selection: `ms` gap 0 = identical alignments 97%; gap 1-10 =
+  substitutions only 57% (median exactly 5.0 per substitution), indels 20%, intron count 16%.
+- Primary choice, gap <= 10, 12 samples pooled: on `ms` the primary is the higher place 64.3%, tie 33.7%, lower 2.0%; on AS
+  49.8 / 30.3 / 19.9% (the intron charge).
+- Gene vs pseudogene (A119b / HG002): processed pseudogene within 10 on `ms` 0.17 / 0.11%, primary 1.73 / 0.16%, AS prefers
+  it while `ms` prefers the gene 2.46 / 2.67%; unprocessed pseudogene within 10 2.21 / 1.41%, primary 15.0 / 7.1%; coding
+  pairs within 10 6.6 / 3.6%.
+- Seeding pool by `ms` gap (A119b 3.00% = 0.45 no PSV + 0.79 at 1-10 + 0.60 at 11-25 + 0.45 at 26-50 + 0.72 above 50; near
+  ties outside the pool 0.02%); all samples on the page.
+- IGV-style examples: undecidable EIF3C / EIF3CL (38 / 37 of 40 reads on annotated chains, 0.28 mismatches per read at both,
+  primary 21 / 19), FAM156B / FAM156A, MSTRG.2107 / 2109; decidable SMN2 / SMN1 (0.25 vs 3.25 mismatches per read) and FAM3C /
+  its processed pseudogene FAM3C2.

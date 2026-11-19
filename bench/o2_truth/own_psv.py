@@ -2,7 +2,8 @@
 """PREREG r1783 (docs/PREREG_own_psv_2026-11-17.md): place near-tied reads by copy differences seen in the individual's own
 MAPQ-60 reads, used only where the two copies' own allele sets are disjoint.
 
-  own_psv.py READS.tsv SEL.bam REGION.bam REGIONS.bed"""
+  own_psv.py READS.tsv SEL.bam REGION.bam REGIONS.bed
+  OP_CALLS=FILE also writes one line per read: read, own call, loose call (locus index or NA); r1829, the rule unchanged."""
 import sys, os, bisect, collections
 from multiprocessing import Pool
 import numpy as np, pysam
@@ -67,6 +68,7 @@ def main(tsv, sel, region, bed):
         recs[r.query_name].append((r.reference_name, '-' if r.is_reverse else '+', r.reference_start, r.reference_end, r.get_tag('AS'), r.cigartuples))
         if not r.is_secondary: seqs[r.query_name] = r.query_sequence.translate(COMP)[::-1] if r.is_reverse else r.query_sequence
     C = collections.Counter()
+    calls = open(os.environ['OP_CALLS'], 'w') if os.environ.get('OP_CALLS') else None
     for q, d in T.items():
         fw = np.frombuffer(seqs[q].encode(), dtype=np.uint8); L = len(fw); best = d['loci'][0][4]
         comp = [i for i, l in enumerate(d['loci']) if l[4] >= best - 10 or i == d['primary']] if d['st'] == 'S2' else [0, 1]
@@ -84,6 +86,7 @@ def main(tsv, sel, region, bed):
             w = [i for i in V if len(V) > 1 and all(win(*votes(V[i], V[j])[1:]) for j in V if j != i)]
             res[name] = w[0] if len(w) == 1 else None
         anysite = any(votes(V[i], V[j])[0] for i in V for j in V if i < j)
+        if calls: calls.write(f"{q}\t{'NA' if res['own'] is None else res['own']}\t{'NA' if res['own-loose'] is None else res['own-loose']}\t{int(anysite)}\n")
         k = (d['st'], d['status']); C[k + ('sites', anysite)] += 1
         for arm, call in [('primary', d['primary'])] + list(res.items()):
             if call is None: C[k + (arm, 'abstain')] += 1; fin = d['primary']
@@ -102,4 +105,5 @@ def main(tsv, sel, region, bed):
             n = sum(1 for d in T.values() if d['st'] == st and d['status'] == cl)
             print(f"{cl}\t{n}\t{C[(st, cl, 'sites', True)]}\t{n - C[(st, cl, 'own', 'abstain')]}\t{C[(st, cl, 'own', 'moved', True)] + C[(st, cl, 'own', 'moved', False)]}\t{n - C[(st, cl, 'own-loose', 'abstain')]}")
 
-if __name__ == '__main__': main(*sys.argv[1:5])
+if __name__ == '__main__':
+    main(*sys.argv[1:5])

@@ -5,10 +5,10 @@
   allele_graph.py regions READS.tsv OUT.bed
   allele_graph.py score READS.tsv SEL.bam REGION.bam PRODUCED.gtf
         SEL.bam = all records of the table's reads (neutral_truth's MM.bam); REGION.bam = every record of the sample on the regions"""
-import sys, bisect, collections
+import sys, os, bisect, collections
 import numpy as np, pysam
 
-COMP = str.maketrans('ACGTNacgtn', 'TGCANtgcan'); GUARD = 5000; GAIN = 5
+COMP = str.maketrans("ACGTNacgtn", "TGCANtgcan"); GUARD = int(os.environ.get("AG_GUARD", 5000)); GAIN = 5  # AG_GUARD: r1829, default unchanged
 
 def table(path):
     """scored reads of the table: all S2 + the first GUARD S1; read -> dict(st, status, primary, origin, loci [(chrom, s, e, strand, AS)])"""
