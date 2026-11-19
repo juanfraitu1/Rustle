@@ -1,5 +1,7 @@
 # Parked items (to pick up later, on any cluster)
 
+Work done on PSU Roar on 2026-11-18 / 19 (rows 1820-1827): read `HANDOFF_PSU_TO_FRITZ_2026-11-19.md` first on Fritz.
+
 Each item says where it stands, what is in the repository, what is not (workspace files of the Fritz cluster do not travel), and
 the first steps. Newest first. Remove an item when it is closed in `NEGATIVE_RESULTS_REGISTER.md`.
 
