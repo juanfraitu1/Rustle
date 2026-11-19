@@ -7982,6 +7982,9 @@ fn main() -> Result<()> {
             // table the ratio needs the region's buffered records to know a local best, as before.
             && (rustle::denovo_assemble::gtf_secondary_as_ratio() <= 0.0
                 || rustle::denovo_assemble::global_best_as().is_some());
+        if !streaming && rustle::denovo_assemble::seed_spliced_support() {
+            anyhow::bail!("RUSTLE_SEED_SPLICED=support needs the streaming --assemble-only path (no read-level extras)");
+        }
         if !streaming && (args.check_splice || args.terminal_exon_anchor > 0) {
             anyhow::bail!("--check-splice / --terminal-exon-anchor need the streaming --assemble-only path (no read-level extras)");
         }

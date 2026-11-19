@@ -176,6 +176,9 @@
 #   --seed-pool good      primaries + secondaries with AS >= R x the molecule's genome-wide best AS, R = 0.98
 #                         (the default of every stage but `assemble` on its own, which seeds with primary since register 1812;
 #                         = --seed-secondaries; needs the as_table pass above)
+#   RUSTLE_SEED_SPLICED=support (opt-in, passed through to the binary; docs/GOAL_multicopy_families_2026-11-19.md question 3): a
+#                         SPLICED chain seeds only when >= 1 primary record carries it; secondaries still add support (streaming
+#                         --assemble-only path only; the binary refuses it elsewhere). Default off = byte-identical.
 #   RUSTLE_SEED_UNSPLICED=primary|support (opt-in, passed through to the binary; r1518/r1520): what the pool does with an UNSPLICED
 #                         secondary: primary = drop it; support = it adds support to the primary-seeded cluster it overlaps but never
 #                         seeds or bridges one (array-wide single-exon blobs gone; 13% of CAT single-exon pseudogene hits lost).

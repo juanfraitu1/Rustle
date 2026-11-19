@@ -46234,6 +46234,16 @@ pub mod denovo_pipeline {
             pub read_filter: Option<ReadSupportFilter>,
             /// Spliced reads the read filter dropped.
             pub n_read_filtered: usize,
+            /// `RUSTLE_SEED_SPLICED=support` (opt-in; `None` unless on): the intron chains carried by >= 1 PRIMARY record.
+            /// A spliced chain seeds only when it is in this set; secondary records still add their read to its count
+            /// (support), so they can lift a primary-backed chain over the floor but cannot make a chain of their own.
+            pub primary_chains: Option<std::collections::HashSet<(String, Vec<(u64, u64)>)>>,
+        }
+
+        /// `RUSTLE_SEED_SPLICED=support` (opt-in; docs/GOAL_multicopy_families_2026-11-19.md, question 3): spliced
+        /// secondaries as support only, never as seeds (the spliced counterpart of `RUSTLE_SEED_UNSPLICED=support`).
+        pub fn seed_spliced_support() -> bool {
+            matches!(std::env::var("RUSTLE_SEED_SPLICED").as_deref(), Ok("support"))
         }
 
         fn dup_admit_enabled() -> bool {
@@ -46263,6 +46273,7 @@ pub mod denovo_pipeline {
                     bridge: None,
                     read_filter: None,
                     n_read_filtered: 0,
+                    primary_chains: None,
                 }
             }
 
@@ -46377,6 +46388,7 @@ pub mod denovo_pipeline {
                 let opts: AdmitOpts = opts.into();
                 let mode = opts.mode;
                 let (k, snap, unspliced, unspliced_sec) = (self.k, self.snap, self.unspliced, self.unspliced_sec);
+                let primary_chains = self.primary_chains;
                 let dups = self.dups;
                 let (groups, allpos) = if opts.snap_w > 0 {
                     snap_read_junctions(self.groups, self.allpos, opts.snap_w, k)
@@ -46420,6 +46432,12 @@ pub mod denovo_pipeline {
                 let mut skels: Vec<Skeleton> = groups
                     .iter()
                     .filter(|((chrom, introns), (n, _, _, _))| {
+                        // `RUSTLE_SEED_SPLICED=support`: a spliced chain no primary record carries does not seed
+                        if let Some(p) = &primary_chains {
+                            if !introns.is_empty() && !p.contains(&(chrom.clone(), introns.clone())) {
+                                return false;
+                            }
+                        }
                         if direct {
                             // only maximal transfrags whose transferred abundance reaches the floor
                             return extra.contains_key(&(chrom.clone(), introns.clone()));
@@ -50541,6 +50559,9 @@ pub mod denovo_pipeline {
             let mut n_tie_unknown = 0usize; // secondaries whose molecule the table does not know (kept; a table from ANOTHER BAM shows here)
             let mut n_unspliced_sec_dropped = 0usize; // `unspliced_primary_only`
             let mut hc = HomeCounts::default();
+            if seed_spliced_support() && acc.primary_chains.is_none() {
+                acc.primary_chains = Some(std::collections::HashSet::new());
+            }
             for result in reader.query(&header, &index, &region)? {
                 let record = result?;
                 let flags = record.flags();
@@ -50673,6 +50694,12 @@ pub mod denovo_pipeline {
                     if !introns.is_empty() && !read_passes_support_filter(f, &ops) {
                         acc.n_read_filtered += 1;
                         continue;
+                    }
+                }
+                // `RUSTLE_SEED_SPLICED=support`: record the chain before the de-duplication key can skip this primary
+                if !flags.is_secondary() && !introns.is_empty() {
+                    if let Some(p) = acc.primary_chains.as_mut() {
+                        p.insert((chrom.to_string(), introns.clone()));
                     }
                 }
                 if dedupe_coords {
@@ -54781,6 +54808,34 @@ pub mod denovo_pipeline {
                 assert_eq!(run(UnsplicedSecondary::Seed), (3, 2, 0));
                 assert_eq!(run(UnsplicedSecondary::Drop), (2, 1, 0)); // the spliced secondary stays
                 assert_eq!(run(UnsplicedSecondary::Support), (2, 1, 1));
+            }
+
+            #[test]
+            fn spliced_support_mode_seeds_only_primary_chains_and_counts_secondary_support() {
+                // RUSTLE_SEED_SPLICED=support (docs/GOAL_multicopy_families_2026-11-19.md, question 3): chain A has a primary
+                // and a secondary record, chain B only a secondary one. Off: both seed, A with 2 reads. On: only A, still
+                // with 2 reads (the secondary counts as support). The mode is switched on through the field, not the
+                // environment, so parallel tests cannot race on it.
+                let dir = tempfile::tempdir().unwrap();
+                let n = |l| Op::new(Kind::Skip, l);
+                let recs = vec![
+                    rec("p", Flags::default(), 0, 1_001, vec![m(100), n(500), m(100)]),
+                    rec("q", Flags::SECONDARY, 0, 1_011, vec![m(90), n(500), m(100)]),
+                    rec("s", Flags::SECONDARY, 0, 9_001, vec![m(100), n(400), m(100)]),
+                ];
+                let bam = write_indexed_bam(dir.path(), "ssp.bam", &recs);
+                let run = |on: bool| {
+                    let mut acc = Pass1Acc::new(1, None);
+                    if on {
+                        acc.primary_chains = Some(std::collections::HashSet::new());
+                    }
+                    stream_pass1_region_with(&bam, "c1", 0, 1_000_000, true, false, &[], &mut acc, None, UnsplicedSecondary::Seed).unwrap();
+                    let mut v: Vec<(u64, u32)> = acc.finish(1, 0, None).iter().filter(|k| !k.introns.is_empty()).map(|k| (k.introns[0].0, k.n_reads)).collect();
+                    v.sort();
+                    v
+                };
+                assert_eq!(run(false), vec![(1_100, 2), (9_100, 1)]);
+                assert_eq!(run(true), vec![(1_100, 2)]);
             }
 
             #[test]
