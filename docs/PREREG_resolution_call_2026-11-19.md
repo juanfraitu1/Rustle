@@ -58,3 +58,28 @@ hashes in `snap/FROZEN.sha256`, written before the judging job is submitted.
 
 ## Not in this row
 Question 4 (borrowed junction columns): development ceiling ~8% of units, mostly 2-read isoforms; not built.
+
+## Result (2026-11-19, job 57497220 on PSU; workspace `judge/`)
+Snapshot hashes checked by the job before selection. 136,129 reads selected (residues 75-99); true units one 1,127 / set 103.
+Contained matching (bars):
+| output | precision [Wilson 95%] | resolved one + set | set claims EQUAL / judged (weighted) |
+| P | 1894/2132 = 0.888 [0.874, 0.901] | 1019 + 0 = 1019 | - |
+| P_fw | 1879/2068 = 0.909 [0.895, 0.920] | 995 + 39 = 1034 | 19/62 (0.850) |
+| **P_W10** | 1903/2093 = 0.909 [0.896, 0.921] | 1011 + 33 = 1044 | 17/37 (0.939) |
+| P_W0 | 0.901 [0.888, 0.913] | 1019 + 29 = 1048 | 13/17 (0.993) |
+| S_fw | 0.894 | 995 + 46 = 1041 | 33/107 (0.830) |
+| S_W10 | 0.893 [0.879, 0.905] | 1011 + 43 = 1054 | 29/69 (0.918) |
+| S_W0 | 0.869 | 1018 + 30 = 1048 | 17/29 (0.981) |
+| StringTie P | 0.861 | 919 + 0 | - |
+- **R1 FAILS** (narrowly, on both counts): precision lower bound 0.8962 < 0.8986 (P_fw 0.9086 - 0.01); resolved 1,044 <
+  1,044.3 (P_fw x 1.01); one-copy 1,011 >= 1,008.8 holds. Over the uncalled layer the call adds 10 units (+1.0%).
+- **R2 PASSES**: precision 0.909 >= 0.888; resolved 1,044 >= 1,039.4 (+2.5% over P).
+- **R3 PASSES** on the weighted share (0.939 >= 0.8); 37 judged copy-set claims, claim share 17/37 = 0.46.
+- My prediction (R1 narrow pass or between, R2 pass, R3 weighted pass) was wrong on R1.
+Beside, question 3, new / lost against P: D new EQUAL 51 / NARROW 298 / OFF 60 (lost 36, EQUAL 17); S new EQUAL 23 /
+NARROW 88 / OFF 15 (lost 32, EQUAL 15): support-only keeps ~half the right new chains and cuts wrong-copy ones 4x, as on
+development. Arrays (frozen code): as on development (identical units: every arm puts chains on every silent unit, the call
+makes one copy set; S removes silent-unit chains at 0.1-0.2% divergence where D does not).
+Reading (mine): grouping copies is what raises precision and resolution over the per-copy output (R2); the call's own
+contribution over the layer is +1% and not distinguishable from the layer here. The exact-tie call (W0) gives the most
+honest copy sets (weighted 0.99) and the most resolved units of the P arms (1,048) at precision 0.901.
