@@ -15,7 +15,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`LEDGER_O3.md`](LEDGER_O3.md) | Ledger: O3 (copies the reference lacks) | 2026-11-18 | — |
 | [`MODULE_STATUS.md`](MODULE_STATUS.md) | Module status — what is SHIPPED vs what was TRIED | 2026-11-19 | — |
 | [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) | REGISTER OF NEGATIVE RESULTS (full: archive/2026-11/NEGATIVE_RESULTS_REGISTER.md:1) | 2026-11-19 | memory ×4 |
-| [`PARKED.md`](PARKED.md) | Parked items (to pick up later, on any cluster) | 2026-11-19 | memory ×1 |
+| [`PARKED.md`](PARKED.md) | Parked items (to pick up later, on any cluster) | 2026-11-19 | memory ×2 |
 | [`PERFORMANCE.md`](PERFORMANCE.md) | Pipeline performance: where the time goes and the switches that change it | 2026-11-15 | — |
 | [`README.md`](README.md) | docs/ — what is where | 2026-11-16 | memory ×3 |
 | [`REFERENCE.md`](REFERENCE.md) | REFERENCE — glossary, data locations, and a worked example | 2026-11-07 | — |
@@ -24,7 +24,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-18 | register ×1 |
 | [`seeded_family_definition.md`](seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-08 | — |
 
-## Open studies and current handoff (250)
+## Open studies and current handoff (251)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
@@ -42,6 +42,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_undecidable_copies_2026-11-19.md`](PREREG_undecidable_copies_2026-11-19.md) | PREREG r1820: do undecidable reads depict the copies they cannot be placed on? (2026-11-19) | 2026-11-18 | register ×1, memory ×1 |
 | [`PREREG_wrong_chain_rules_2026-11-19.md`](PREREG_wrong_chain_rules_2026-11-19.md) | Row 1814: single-evidence rules against wrong chains, found on two non-primate samples (pre-registered 2026-11-19) | 2026-11-19 | register ×1 |
 | [`PREREG_wrong_chain_rules_primate_2026-11-19.md`](PREREG_wrong_chain_rules_primate_2026-11-19.md) | Row 1815: the single-evidence rule search of row 1814, with primate development samples (pre-registered 2026-11-19) | 2026-11-19 | register ×1 |
+| [`PRIMARY_CORRECTION_CEILING_2026-11-19.md`](PRIMARY_CORRECTION_CEILING_2026-11-19.md) | What is a corrected primary worth? The oracle ceiling (2026-11-19, PSU, register 1824) | uncommitted | register ×1 |
 | [`OVERFIT_LEVERS_2026-11-18.md`](OVERFIT_LEVERS_2026-11-18.md) | Which assembler levers are overfit to the primate samples, and what was toned down (18 Nov 2026) | 2026-11-19 | register ×1, memory ×1 |
 | [`PRECISION_RULES_2026-11-18.md`](PRECISION_RULES_2026-11-18.md) | Precision rules on 12 samples, and the new chain score default (17-18 Nov 2026) | 2026-11-18 | memory ×1 |
 | [`PREREG_crosscopy_splicing_2026-11-18.md`](PREREG_crosscopy_splicing_2026-11-18.md) | PREREG r1802 / r1803 / r1804: splicing differences between the copies of a family, against the splice sites and against  | 2026-11-19 | memory ×1 |

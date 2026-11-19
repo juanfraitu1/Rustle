@@ -109,3 +109,8 @@ PSU workspace (`/storage/group/kdm16/default/jxi21/fritz/ws`): `r1820_undecidabl
 `r1822_borrow_isoformk`, `goal_multicopy_dev` (LEDGER.md, arrays_sim, members_full). To Fritz:
 `rsync -a psu:makova_group/fritz/ws/{r1820_undecidable_copies,r1821_resolution_call,r1822_borrow_isoformk,goal_multicopy_dev} ~/ws/`
 (the snapshots and `goal_multicopy_dev/target` hold binaries; exclude them if space is short).
+
+## Added later the same day
+- Correlation clustering (Strainy port) against the HG002 truth: `CORRELATION_CLUSTERING_2026-11-19.md` (register 1823).
+- The oracle ceiling of correcting wrongly chosen primaries: +0.2% resolved units, no family member
+  (`PRIMARY_CORRECTION_CEILING_2026-11-19.md`, register 1824).
