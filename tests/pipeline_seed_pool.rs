@@ -133,8 +133,13 @@ const ALL: &str = "copy_assign sec=1 ratio=unset table=unset";
 // ---- the default and the legacy flags keep their meaning (these passed before the switch existed) ----
 
 #[test]
-fn the_default_seeds_with_good_secondaries_ratio_098_and_the_as_table() {
+fn assemble_alone_seeds_with_primaries_and_the_good_pool_is_ratio_098_with_the_as_table() {
+    // register 1812: `assemble` on its own seeds with primary alignments unless a pool is named
     let r = assemble("default", &[], &[]);
+    assert_eq!(r.code, 0, "{}", r.stderr);
+    assert_eq!(r.seen, PRIMARY);
+    assert!(!r.as_table_ran, "the primary pool needs no AS table");
+    let r = assemble("default_good", &["--seed-pool", "good"], &[]);
     assert_eq!(r.code, 0, "{}", r.stderr);
     assert_eq!(r.seen, GOOD);
     assert!(r.as_table_ran, "the good pool needs the genome-wide best-AS table");
@@ -226,7 +231,7 @@ fn the_pool_can_come_from_the_environment_and_a_flag_wins() {
     assert_eq!(r.seen, ALL);
     let r = assemble("flag_over_env", &["--seed-pool", "primary"], &[("RUSTLE_SEED_POOL", "all")]);
     assert_eq!(r.seen, PRIMARY);
-    let r = assemble("env_ratio", &[], &[("RUSTLE_SEED_AS_RATIO", "0.95")]);
+    let r = assemble("env_ratio", &["--seed-pool", "good"], &[("RUSTLE_SEED_AS_RATIO", "0.95")]);
     assert_eq!(r.seen, "copy_assign sec=1 ratio=0.95 table=<dir>/reads.bam.as_table.tsv");
     // an exported ratio is a default for the good pool, not an error for the others
     let r = assemble("env_ratio_primary", &["--seed-pool", "primary"], &[("RUSTLE_SEED_AS_RATIO", "0.95")]);
@@ -237,7 +242,8 @@ fn the_pool_can_come_from_the_environment_and_a_flag_wins() {
 #[test]
 fn the_pool_is_named_in_the_log() {
     for (tag, flags, want) in [
-        ("log_default", vec![], "seeding pool: good (AS >= 0.98 x the molecule's genome-wide best)"),
+        ("log_default", vec![], "seeding pool: primary"),
+        ("log_good", vec!["--seed-pool", "good"], "seeding pool: good (AS >= 0.98 x the molecule's genome-wide best)"),
         ("log_primary", vec!["--seed-pool", "primary"], "seeding pool: primary"),
         ("log_all", vec!["--seed-pool", "all"], "seeding pool: all"),
         ("log_ratio", vec!["--seed-as-ratio", "0.9"], "seeding pool: good (AS >= 0.9 x the molecule's genome-wide best)"),
@@ -349,7 +355,7 @@ fn contig_scopes_the_assembly_to_one_region_from_the_fasta_index() {
     let r = assemble("scope_contig", &["--contig", "chr16"], &[]);
     assert_eq!(r.code, 0, "{}", r.stderr);
     assert!(r.argv.contains(" --region chr16:0-96330374 ") && !r.argv.contains("--genome-wide"), "{}", r.argv);
-    assert_eq!(r.seen, GOOD, "the scope does not change the pool");
+    assert_eq!(r.seen, PRIMARY, "the scope does not change the pool");
     assert!(r.stderr.contains("contig chr16 only"), "{}", r.stderr);
 }
 

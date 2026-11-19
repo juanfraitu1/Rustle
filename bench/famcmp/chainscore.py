@@ -29,10 +29,17 @@ def intron_extras(d, keep, fa_p):
     return np.array(nc, float), np.array(mi, float)
 
 def prob(d, keep, m, fa=None):
+    if m.get('design') == 'frozen9':  # register 1813: no within-sample quantity
+        assert fa, 'this model needs the genome FASTA (apply only)'
+        X, names = R.design(d, 'default_reads', keep, raw=True); assert names == m['names'], 'feature set differs from the model'
+        return 1 / (1 + np.exp(-np.clip(R.design_frozen(X, *intron_extras(d, keep, fa), m) @ np.array(m['w']), -30, 30)))
     X, names = R.design(d, 'default_reads', keep); assert names == m['names'], 'feature set differs from the model'
     if m.get('design') == 'decile9':  # register 1769
         assert fa, 'this model needs the genome FASTA (apply only)'
         X = R.design_decile(X, *intron_extras(d, keep, fa))
+    elif m.get('design') == 'decile9t':  # register 1813: tied values split, so the score does not jump with the chain set
+        assert fa, 'this model needs the genome FASTA (apply only)'
+        X = R.design_decile_ties(X, *intron_extras(d, keep, fa))
     return 1 / (1 + np.exp(-np.clip(X @ np.array(m['w']), -30, 30)))
 
 cmd = sys.argv[1]
@@ -61,6 +68,10 @@ else:
         rows = [r for rs in pool.imap(F.work, [(bam, fa, ctg, cand) for ctg, cand in sorted(per.items(), key=lambda x: -len(x[1]))]) for r in rs]
     d = {k: np.array([r[i] for r in rows]) if k in ('chrom', 'strand', 'key') else np.array([float(r[i]) for r in rows]) for i, k in enumerate(F.COLS)}
     p = prob(d, np.ones(len(rows), bool), m, fa); bad = {(c, k) for c, k, x in zip(d['chrom'], d['key'], p) if x < m['tau']}
+    # register 1815 (opt-in): RUSTLE_TRUNC5_RATIO=R also drops a chain when the reads that carry it and splice on past its 5' end
+    # outnumber the reads matching it exactly by more than R ((cont5 + 1) / (full + 1) > R; the tested value is 3.22)
+    t5 = float(os.environ.get('RUSTLE_TRUNC5_RATIO') or 0); n_score = len(bad)
+    if t5 > 0: bad |= {(c, k) for c, k, a, b in zip(d['chrom'], d['key'], d['cont5'], d['full']) if (a + 1) / (b + 1) > t5}
     def strip(src, dst):
         ex = collections.defaultdict(list)
         for l in open(src):
@@ -77,4 +88,4 @@ else:
         return drop
     drop = strip(gtf, out)
     if len(sys.argv) > 9: print(f'{sys.argv[8]}: dropped {len(strip(sys.argv[8], sys.argv[9]))} multi-exon transcripts by the same chain list')
-    print(f'dropped {len(drop)} multi-exon transcripts ({len(bad)} of {len(rows)} chains) below score {m["tau"]}')
+    print(f'dropped {len(drop)} multi-exon transcripts ({len(bad)} of {len(rows)} chains) below score {m["tau"]}' + (f"; {len(bad) - n_score} of these chains only by the 5' truncation rule (ratio > {t5:g})" if t5 > 0 else ''))

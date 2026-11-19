@@ -757,9 +757,9 @@ fn the_final_gtf_is_filtered_by_the_chain_score_unless_switched_off_or_failing()
     };
     assert_eq!(run("").0, "filtered\n");
     assert_eq!(std::fs::read_to_string(format!("{}.chainscore.gtf", out.display())).unwrap(), "scored\n");
-    // the weight file: r1769 (default since 2026-11-18) unless RUSTLE_CHAINSCORE_MODEL names another one (r1677, the earlier default) or gives a path
+    // the weight file: r1813 (default since 2026-11-19, register 1816) unless RUSTLE_CHAINSCORE_MODEL names another one (r1677, the earlier default) or gives a path
     let model = || std::fs::read_to_string(format!("{}.chainscore.gtf.tmp.model", out.display())).unwrap();
-    assert_eq!(model(), "tools/data/chainscore_r1769.json\n");
+    assert_eq!(model(), "tools/data/chainscore_r1813.json\n");
     run("RUSTLE_CHAINSCORE_MODEL=r1677");
     assert_eq!(model(), "tools/data/chainscore_r1677.json\n");
     run("RUSTLE_CHAINSCORE_MODEL=/some/where/m.json");

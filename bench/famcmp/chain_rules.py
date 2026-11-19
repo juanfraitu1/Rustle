@@ -15,7 +15,7 @@ def load(path):
 
 LOGS = 'full partial cont5 cont3 min_isup locus_chains n_introns length'.split()
 OLD = ['l_reads', 'l_n_introns', 'l_length', 'l_locus_frac', 'l_min_isup', 'l_min_isup_rel', 'wobble', 'retention', 'a_rich']  # r1619's set
-def design(d, reads_key, keep, cols=None):
+def design(d, reads_key, keep, cols=None, raw=False):
     f = {'l_reads': np.log(np.maximum(d[reads_key], 1))}
     for k in LOGS: f['l_' + k] = np.log1p(d[k])
     f['l_locus_frac'] = np.log(d['locus_frac'] + 1e-3); f['l_min_isup_rel'] = np.log(d['min_isup_rel'] + 1e-3)
@@ -23,6 +23,7 @@ def design(d, reads_key, keep, cols=None):
     f['r_partial'] = np.log((d['partial'] + 1) / (d['full'] + 1)); f['full0'] = (d['full'] == 0).astype(float)
     for k in 'wobble retention end3_conc end5_conc pas a_rich mq0_share de'.split(): f[k] = d[k]
     names = cols or sorted(f); X = np.array([f[k][keep] for k in names]).T
+    if raw: return X, names  # register 1813: the features before the within-sample standardisation
     sd = X.std(0); sd[sd == 0] = 1
     return np.hstack([(X - X.mean(0)) / sd, np.ones((len(X), 1))]), names  # standardised within the sample
 
@@ -35,6 +36,31 @@ def design_decile(X, noncanon, min_intron):
         cols.append(X[:, j])
     mi = np.log(min_intron)
     cols += [np.minimum(noncanon, 2), (mi - mi.mean()) / (mi.std() or 1), np.ones(len(X))]
+    return np.array(cols).T
+
+def design_decile_ties(X, noncanon, min_intron):
+    """Register 1813: design_decile with tied values split: a chain whose value v is shared gets, for decile k, the share of the
+    tie's rank interval [lo, hi) (as fractions of the sample) above k/10; untied chains get 0 or 1 as before. Continuous in the
+    chain set, where `X > quantile` flips a whole tie at once."""
+    cols = []; n = len(X); q = np.arange(0.1, 1, 0.1)
+    for j in range(X.shape[1] - 1):
+        v = X[:, j]; u, inv, cnt = np.unique(v, return_inverse=True, return_counts=True)
+        hi = np.cumsum(cnt) / n; lo = hi - cnt / n
+        for t in q: cols.append(np.clip((hi - t) / (hi - lo), 0, 1)[inv])
+        cols.append(v)
+    mi = np.log(min_intron)
+    cols += [np.minimum(noncanon, 2), (mi - mi.mean()) / (mi.std() or 1), np.ones(n)]
+    return np.array(cols).T
+
+def design_frozen(Xraw, noncanon, min_intron, m):
+    """Register 1813, second attempt: design_decile with nothing taken from the sample. Columns are standardised by the fit
+    samples' pooled mean and sd (m['mu'], m['sd']) and cut at their pooled deciles (m['thr']); the shortest intron likewise
+    (m['mi']). A chain's score then depends on its own features only, so it cannot move with the rest of the chain set."""
+    X = (Xraw - np.array(m['mu'])) / np.array(m['sd']); cols = []
+    for j in range(X.shape[1]):
+        for t in m['thr'][j]: cols.append((X[:, j] > t).astype(float))
+        cols.append(X[:, j])
+    cols += [np.minimum(noncanon, 2), (np.log(min_intron) - m['mi'][0]) / m['mi'][1], np.ones(len(X))]
     return np.array(cols).T
 
 def fit(X, y):

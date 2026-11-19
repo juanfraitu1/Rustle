@@ -7,8 +7,14 @@ data they were never tuned on. Details and full tables: the pre-registration nam
 - **Toned down (user, 2026-11-18, row 1810):** sub-chain collapse ratio 0.7 -> **0.3**; chain score cut on `PREFIX.final.gtf`
   0.055 -> **0.02**. `RUSTLE_POLISH_ISM_RATIO=0.7` and `RUSTLE_CHAINSCORE_TAU=0.055` give the earlier commands.
 - **New default (row 1800):** polish junction snap (`RUSTLE_POLISH_JUNCTION_SNAP` unset = `reads`).
+- **Switched off (user, 2026-11-19, row 1812):** transfrag extension (opt-in: `RUSTLE_EXTEND_TRANSFRAGS=1`); the stage `assemble`
+  on its own seeds with primary alignments (`--seed-pool good` = before; `all` and the family stages keep the good pool).
+- **Filter replaced (user, 2026-11-19, row 1816):** `final.gtf` is filtered by chain score r1813, whose score for a chain depends on
+  that chain's reads only (r1769 changed 2-20% of its decisions when the chain set shifted, row 1813), and by the 5' truncation
+  rule (row 1815: drop a chain when reads splicing on past its 5' end outnumber the reads matching it by more than 3.22; found
+  on two apes, passes a third ape and 5 of 6 non-primate datasets). `RUSTLE_CHAINSCORE_MODEL=r1769`, `RUSTLE_TRUNC5_RATIO=0` = before.
 - **Not changed:** every lever listed as general or as a recall trade below.
-- Base runs and figures made before 2026-11-18 do not carry these three changes.
+- Base runs and figures made before 2026-11-18 do not carry these changes.
 
 ## The levers
 Reading of row 1793: a lever *pays* on a dataset when it raises precision and costs at most 5% of the correct chains (10% for the
@@ -24,8 +30,8 @@ three levers meant as large cuts). OVERFIT = pays on both tuning samples (OR6737
 | retained-intron ratio 10 | `RUSTLE_POLISH_RETAINED_RATIO` | general | pays on all five (cost <= 2.4%) | none |
 | sub-chain drop on `final.gtf` | `RUSTLE_FINAL_SUBCHAIN` | general | pays on all five (cost <= 2.1%) | none |
 | read floor 2 | `RUSTLE_MIN_CHAIN_READS` | mixed | costs 10.3% on OR6737, 5.5-6.4% elsewhere | none; one-read chains go to separate tiers (below) |
-| transfrag extension | `RUSTLE_EXTEND_TRANSFRAGS` | recall trade | lowers `PREFIX.gtf` precision on all five, tuning samples included | none |
-| seed pool | `RUSTLE_SEED_POOL` | recall trade | lowers precision on all five (fly: +5 correct, +781 wrong) | none |
+| transfrag extension | `RUSTLE_EXTEND_TRANSFRAGS` | recall trade | row 1811: **PRIMATE-ONLY**, +3.6% / +2.5% correct chains on A119b / OR6737, under 0.4% on five non-primate datasets, 7+ wrong chains per correct one | default off (row 1812) |
+| seed pool | `RUSTLE_SEED_POOL` | recall trade | row 1811: under 1% correct chains on all seven datasets (A119b +276 correct, +12,446 wrong) | `assemble` alone: primary (row 1812) |
 | chain score r1769 over r1677 | `RUSTLE_CHAINSCORE_MODEL` | mixed | fails OR6737 and fly | none |
 | TSS rescue | `RUSTLE_POLISH_TSS` | no effect off A119b | changes `PREFIX.gtf` on A119b only | none |
 | polish junction snap | `RUSTLE_POLISH_JUNCTION_SNAP` | was opt-in | raises precision on all five for < 0.2% of correct chains; passed on zebrafish simulated and mouse heart | default on (row 1800) |
@@ -54,6 +60,10 @@ Chain score cut, share of correct chains kept / precision of the kept chains (sn
 
 Both changes move recall up and precision down on every real library. The two together were not measured as one run on all
 datasets; the cut table was made at ratio 0.7.
+
+**Problem found with row 1812, repaired by row 1816: the chain score filter r1769 is unstable.** With extension off and primary seeds it drops 16,480
+chains on mouse ES instead of 5,582 (1,405 correct chains lost from `final.gtf`) and 6,729 instead of 3,518 on OR6737, though
+`PREFIX.gtf` barely changed. Likely cause: its decile thresholds are taken within the sample and sit on tied feature values.
 
 ## One-read chains (rows 1805-1808)
 The floor stays at two reads. Opt-in stage `oneread` writes: a strict tier (`PREFIX.oneread.gtf`, row 1766); every one-read chain

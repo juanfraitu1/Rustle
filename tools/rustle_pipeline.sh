@@ -63,7 +63,7 @@
 #        [--candidates | --no-candidates] [--delta D] [--cand-max-reads N] [--legacy-catalog]
 #        [--to STAGE] [--from STAGE] [--low-mem] [--index-gb N] [--max-window-records N] [--no-flag] [--no-resume] [--cache]
 #        (stage `index` = the shared splice index alone, needs --fasta and --out; `flag_scan` / `flag_bg` are internal to `all`;
-#         RUSTLE_EXTEND_TRANSFRAGS=0 removes --extend-transfrags from assemble, default on)
+#         RUSTLE_EXTEND_TRANSFRAGS=1 adds --extend-transfrags to assemble, default off since register 1812)
 #        [--guide ANNOT.gtf]   assemble / all also write PREFIX.guided.gtf (stage `guided` alone rewrites it from PREFIX.gtf;
 #                              the de novo PREFIX.gtf and every later stage are unchanged; register 1622)
 #        [--names ANNOT.gff3|gtf[.gz]]   assemble / all also write PREFIX.named.gtf (and PREFIX.final.named.gtf): the same
@@ -174,7 +174,8 @@
 # SEEDING POOL, the switch (2026-10-07): which alignments seed the assembly. One flag, three pools, everything else equal:
 #   --seed-pool primary   primary alignments only                                   (= --no-seed-secondaries)
 #   --seed-pool good      primaries + secondaries with AS >= R x the molecule's genome-wide best AS, R = 0.98
-#                         (THE DEFAULT; = --seed-secondaries; needs the as_table pass above)
+#                         (the default of every stage but `assemble` on its own, which seeds with primary since register 1812;
+#                         = --seed-secondaries; needs the as_table pass above)
 #   RUSTLE_SEED_UNSPLICED=primary|support (opt-in, passed through to the binary; r1518/r1520): what the pool does with an UNSPLICED
 #                         secondary: primary = drop it; support = it adds support to the primary-seeded cluster it overlaps but never
 #                         seeds or bridges one (array-wide single-exon blobs gone; 13% of CAT single-exon pseudogene hits lost).
@@ -294,7 +295,7 @@ case "$STAGE" in
        fi
      done;;
 esac
-BAM=""; FASTA=""; OUT=""; INDEX=""; GFF=""; GUIDE=""; NAMES=""; THREADS=4; THREADS_SET=0; BIN="$RP_DRIVER_DIR/../target/release"; CONFIRM=(); FOREIGN=(); SEED_POOL=${RUSTLE_SEED_POOL:-good}; SEED_RATIO=${RUSTLE_SEED_AS_RATIO:-0.98}; SEED_RATIO_FLAG=0; AS_TABLE=""; CONTIG=""; CONTIG_FLAG=0; CACHE=1; INSPECT=0
+BAM=""; FASTA=""; OUT=""; INDEX=""; GFF=""; GUIDE=""; NAMES=""; THREADS=4; THREADS_SET=0; BIN="$RP_DRIVER_DIR/../target/release"; CONFIRM=(); FOREIGN=(); SEED_POOL=${RUSTLE_SEED_POOL:-}; SEED_RATIO=${RUSTLE_SEED_AS_RATIO:-0.98}; SEED_RATIO_FLAG=0; AS_TABLE=""; CONTIG=""; CONTIG_FLAG=0; CACHE=1; INSPECT=0
 PIECEWISE=0; MAX_PIECES=0; BUDGET_S=0; PIECE_RECORDS=0; PIECE=""
 LEGACY_CATALOG=0; CANDIDATES=0; DELTA=0.00958; CAND_MAX=1000
 # `all --to STAGE` stops after STAGE (the escape hatch: `--to families` = the loci and their copy table before any read is
@@ -334,6 +335,9 @@ case "$STAGE" in
        echo "[rustle_pipeline] --candidates and --legacy-catalog exclude each other (assign reads the families' copy table with its candidates, or the legacy catalog): drop one" >&2; exit 2
      fi;;
 esac
+# Register 1812 (user, 2026-11-19): the stage `assemble` on its own seeds with primary alignments unless a pool is named (flag,
+# RUSTLE_SEED_POOL, or --seed-as-ratio / --as-table, which belong to good); every other stage, `all` included, keeps good.
+if [ -z "$SEED_POOL" ]; then if [ "$STAGE" = assemble ] && [ "$SEED_RATIO_FLAG" = 0 ] && [ -z "$AS_TABLE" ]; then SEED_POOL=primary; else SEED_POOL=good; fi; fi
 # The seeding pool (see the SEEDING POOL note above): a misspelling must not quietly run another pool. Same `case "$STAGE"`
 # form as the check above.
 case "$STAGE" in
@@ -593,9 +597,11 @@ esac
 #                                  fall under it (r1524: rescues 2-read family chains; genome-wide too broad, 68,749 chains at 1% CAT match)
 #   RUSTLE_CHECK_SPLICE=1          copy_assign --check-splice (FLAIR --check_splice on each spliced read)
 #   RUSTLE_TERMINAL_EXON_ANCHOR=N  copy_assign --terminal-exon-anchor N (bp; FLAIR --stringent's end rule is 25)
-#   RUSTLE_EXTEND_TRANSFRAGS=0     DEFAULT ON since 2026-11-16 (user; register 1760: its new chains beat the default's 2-read chains
+#   RUSTLE_EXTEND_TRANSFRAGS=1     OPT-IN again since 2026-11-19 (user; register 1811: primate-only, +2.5% / +3.6% correct chains on
+#                                  OR6737 / A119b, under 0.4% on five non-primate datasets with 7 or more wrong chains per correct
+#                                  one). Default on from 2026-11-16 to 2026-11-19 (register 1760: its new chains beat the default's 2-read chains
 #                                  on four unseen cell-line samples, +580 to +1,352 correct chains for -0.001 to -0.004 precision):
-#                                  copy_assign --extend-transfrags (StringTie-style greedy extension, no flow); 0 = off
+#                                  copy_assign --extend-transfrags (StringTie-style greedy extension, no flow); unset or 0 = off
 #   RUSTLE_TRANSFER_ENDS=1         copy_assign --transfer-ends (ends from reads sharing the first / last junctions)
 #   RUSTLE_READ_ISOFORM_K=K        copy_assign --read-isoform-k K (also admit a chain whose every junction >= K reads carry;
 #                                  2 = StringTie's single-read choice, register 1267; buffered reader, slower)
@@ -609,7 +615,7 @@ case "${RUSTLE_CHECK_SPLICE:-}" in ""|0) ;; 1) POLISH="$POLISH --check-splice" ;
   *) echo "[rustle_pipeline] RUSTLE_CHECK_SPLICE must be 0 or 1 (got '$RUSTLE_CHECK_SPLICE')" >&2; exit 2 ;; esac
 case "${RUSTLE_TERMINAL_EXON_ANCHOR:-}" in ""|0) ;; *[!0-9]*) echo "[rustle_pipeline] RUSTLE_TERMINAL_EXON_ANCHOR must be a whole number of bp (got '$RUSTLE_TERMINAL_EXON_ANCHOR')" >&2; exit 2 ;;
   *) POLISH="$POLISH --terminal-exon-anchor $RUSTLE_TERMINAL_EXON_ANCHOR" ;; esac
-case "${RUSTLE_EXTEND_TRANSFRAGS:-}" in 0) ;; ""|1) POLISH="$POLISH --extend-transfrags" ;;
+case "${RUSTLE_EXTEND_TRANSFRAGS:-}" in ""|0) ;; 1) POLISH="$POLISH --extend-transfrags" ;;
   *) echo "[rustle_pipeline] RUSTLE_EXTEND_TRANSFRAGS must be 0 or 1 (got '$RUSTLE_EXTEND_TRANSFRAGS')" >&2; exit 2 ;; esac
 case "${RUSTLE_TRANSFER_ENDS:-}" in ""|0) ;; 1) POLISH="$POLISH --transfer-ends" ;;
   *) echo "[rustle_pipeline] RUSTLE_TRANSFER_ENDS must be 0 or 1 (got '$RUSTLE_TRANSFER_ENDS')" >&2; exit 2 ;; esac
@@ -871,6 +877,10 @@ stage_assemble() {
     say "assemble: $(grep -c 'fusion_of "' "$OUT.gtf") bridge transcripts kept as fusion_of relations; families input $FAM_GTF"
   fi
 }
+# Register 1816 (user, 2026-11-19): the default model is r1813 (register 1813: nothing taken from the sample, so a chain's score does
+# not move with the rest of the chain set; RUSTLE_CHAINSCORE_MODEL=r1769 = the model before), and the 5' truncation rule is on.
+# RUSTLE_TRUNC5_RATIO=R (register 1815; unset = 3.22, 0 = off): the same pass also drops a chain when the reads
+# that carry it and splice on past its 5' end outnumber the reads matching it exactly by more than R. Needs the chain score pass on.
 # Register 1761, default since 2026-11-16 (user; RUSTLE_CHAINSCORE=0 = off): the layered assembly loses the multi-exon chains the
 # frozen chain score puts below its fixed cut. The score is computed on $OUT.gtf (what the rule was tested on) and the same chain
 # list is taken out of $OUT.final.gtf;
@@ -881,8 +891,9 @@ stage_assemble() {
 # register 1769: decile model fit on 11 samples of six species, no ORF feature, cut 0.02 since register 1810 (was 0.055 = at least 0.95 of the correct chains kept
 # on each of the 12 samples; HG002 unseen keeps 0.978 at precision 0.280 against 0.970 at 0.259 for r1677); r1677 = the default
 # until then (fit on OR6737 + A119b, cut 0.061); or a path to a model file.
+export RUSTLE_TRUNC5_RATIO=${RUSTLE_TRUNC5_RATIO:-3.22}
 chainscore_model() {
-  local m="${RUSTLE_CHAINSCORE_MODEL:-r1769}"
+  local m="${RUSTLE_CHAINSCORE_MODEL:-r1813}"
   case "$m" in */*|*.json) printf '%s\n' "$m" ;; *) printf '%s\n' "$RP_DRIVER_DIR/data/chainscore_$m.json" ;; esac
 }
 final_chainscore() {
