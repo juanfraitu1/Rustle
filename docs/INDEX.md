@@ -30,6 +30,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PRECISION_RULES_2026-11-18.md`](PRECISION_RULES_2026-11-18.md) | Precision rules on 12 samples, and the new chain score default (17-18 Nov 2026) | 2026-11-18 | memory ×1 |
 | [`PREREG_family_ties_2026-11-18.md`](PREREG_family_ties_2026-11-18.md) | PREREG r1790: are the near-tied reads concentrated in a few families? (2026-11-18) | 2026-11-18 | register ×1 |
 | [`PREREG_famwise_origin_2026-11-18.md`](PREREG_famwise_origin_2026-11-18.md) | PREREG r1796 / r1794 / r1795: the family-wise layer against the origin of the reads (2026-11-18) | uncommitted | register ×1, memory ×1 |
+| [`PREREG_pooled_filter_2026-11-19.md`](PREREG_pooled_filter_2026-11-19.md) | Row 1818: chain score fitted on primate and non-primate data together, judged leave-one-species-out against today's filter |
 | [`PREREG_simulation_transfer_rerun_2026-11-19.md`](PREREG_simulation_transfer_rerun_2026-11-19.md) | Row 1817: the transfer bars of rows 1779 / 1780 again at the defaults of 2026-11-19, against the unchanged outputs of the other tools |
 | [`PREREG_wrong_chain_rules_primate_2026-11-19.md`](PREREG_wrong_chain_rules_primate_2026-11-19.md) | Row 1815: the row 1814 rule search with OR6737 and A119b as development samples, checked on chimpanzee testis and six non-primate datasets |
 | [`PREREG_wrong_chain_rules_2026-11-19.md`](PREREG_wrong_chain_rules_2026-11-19.md) | Row 1814: single-evidence rules against wrong chains, found on mouse ES and zebrafish simulated, checked on six other datasets |
