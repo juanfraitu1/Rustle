@@ -55,15 +55,35 @@ Counts (multi-unit models flagged by any signature): StringTie 7 of 50 in regula
 default pool 1 of 70; protocadherin control 0-1 of 111-128 (real multi-unit splicing is left alone). Most multi-unit models
 carry no signature (e.g. SPATA31D's canonical, varied introns) and cannot be judged without truth.
 
-## Proposed rule (not built into the assembler, not judged)
-1. Per regular array, fold the primaries onto the period per strand -> member interval and size.
+## 5. Why StringTie joins units: a causal test on A119b
+Removing only the 1,488 primaries longer than one period inside the regular arrays (0.3% of the slice; protocadherins left
+untouched) and rerunning StringTie: multi-unit models in regular arrays 50 -> 4 (CT47A 6 -> 1, longest 13.5 -> 4.6 kb;
+USP17L 2 -> 0; SPATA31D 17 -> 1); protocadherin control 114 -> 114. StringTie chains neighbouring units through the few reads
+that physically span from one unit into the next (read-through and run-on molecules); Rustle's primaries-only assembly does not.
+
+## 6. The member-size rule, validated on simulated arrays with the real read classes
+`tandem.member_sizes`: reads on the array's strand (the strand of its spliced reads), assigned to the unit nearest at or before
+their start; antisense reads and reads longer than one period set apart; per unit with >= 5 reads, the member = from the mode
+of the reads' 5' ends to the mode of their 3' ends (25 bp bins, inside the unit's window); fewer reads: the folded interval.
+Simulation: 10 TSPY3 units 20 kb apart, 5 expressed with different members (full, 5' exon truncated, middle exon deleted, 3'
+exon truncated), plus 100 antisense, 50 run-on and 40 read-through molecules (`arrays_sim/inject.py`, `score_rich.py`):
+| estimator | 0.3% diverged units: members within 5% | silent units given a member | identical units: within 5% | silent |
+| rule (read-end modes) | **5 / 5** (median error 0.4%) | 0 / 5 | 5 / 5 | 5 / 5 |
+| rule v1 (coverage run at 20% of peak) | 4 / 5 (run-on reads inflate one member) | 1 / 5 | 1 / 5 | 5 / 5 |
+| StringTie | 0 / 5 (models 24-47 kb) | 3 / 5 | 0 / 5 | 5 / 5 |
+| Rustle primaries | 5 / 5 | 0 / 5 | 5 / 5 | 5 / 5 |
+Identical units scatter their reads, so every method puts a member on silent units: that case stays with the copy-set call.
+Real data (no truth): CT47A, rule 3,325 bp per member (5 members) vs annotation 3,323 and Rustle 3,348; StringTie 13,541.
+
+## The rule (validated on simulation; built as `tandem.py`, not in the assembler)
+1. Per regular array, per member: the read-end modes of `member_sizes` (section 6); the folded interval where a unit has few reads.
 2. Split a model at the member boundary when it carries a jump, repeat or bridge signature, or spans > 1.5 x the member
    without a canonical junction crossing the boundary.
 3. Do not seed arrays from secondaries (the default pool's 265 kb USP17L blob and FAM197Y's 104 over-long models); use
    `RUSTLE_SEED_SPLICED=support` (row 1821) and leave identical units to the copy-set call.
 4. Report antisense and annotation-free transcribed units as such: they are not artifacts.
 
-## What would judge it
+## What would judge it on real data
 No origin truth exists for expressed testis arrays (A119b has no assembled haplotypes; HG002 is a cell line). Options: a testis
 Iso-Seq sample of an individual with assembled haplotypes; or a famsim array with the observed read classes added (antisense
 reads, reads longer than the gene, period jumps at the observed rate) so that the split rule can be scored against truth.

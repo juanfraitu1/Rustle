@@ -210,3 +210,62 @@ def classify_model(exons, units, period, motif_of, tol=0.02, same_bp=10):
     gaps = [(units[i][1], units[i + 1][0]) for i in range(len(units) - 1) if units[i][1] < units[i + 1][0]]
     bridge = any(s <= g0 and g1 <= e for s, e in exons for g0, g1 in gaps)
     return dict(jump=jump, repeat=repeat, bridge=bridge)
+
+
+def member_sizes(reads, units, period, strand, min_reads=5, min_share=0.2, bin_bp=25, ends="mode"):
+    """Per member (unit) of a tandem array: its transcribed interval from the reads, on the array's strand.
+    reads: (start, end, strand, spliced). A read belongs to the unit whose start is nearest at or before it (+ half a period);
+    antisense reads and reads whose span exceeds one period (multi-unit) are set apart. Per unit with >= min_reads reads, the
+    member = the contiguous run of positions covered by >= min_share of that unit's peak coverage; units with fewer reads take
+    the FOLDED interval (fold_member's, from every unit's reads) placed at their own start; units with no read: no member.
+    -> list per unit of dict(start, end, size, reads, source in {reads, folded, none}) and the counts set apart."""
+    starts = [u[0] for u in units]
+    per = collections.defaultdict(list)
+    apart = collections.Counter()
+    for s, e, rs, sp in reads:
+        if rs != strand:
+            apart["antisense"] += 1; continue
+        if e - s > period:
+            apart["multi_unit"] += 1; continue
+        i = max((k for k, u0 in enumerate(starts) if u0 <= s + period / 2), default=None)
+        if i is None:
+            apart["before_array"] += 1; continue
+        per[i].append((s, e))
+    fold = fold_member([(s, e, strand) for i in per for s, e in per[i]], units, period, min_share, bin_bp).get(strand)
+    out = []
+    for i, (u0, u1) in enumerate(units):
+        rs = per.get(i, [])
+        if len(rs) >= min_reads and ends == "mode":
+            # the member's ends = the modes of the reads' 5' and 3' ends (25 bp bins) inside the unit's window: run-on and
+            # truncated reads scatter their ends, full-length transcripts share them
+            lo_w, hi_w = u0 - period / 2, u0 + period
+            ss = collections.Counter(s // bin_bp for s, e in rs if lo_w <= s < hi_w)
+            es = collections.Counter(e // bin_bp for s, e in rs if lo_w < e <= hi_w)
+            if strand == "-":
+                ss, es = es, ss                                  # transcript 5' end is the right end on the minus strand
+            if not ss or not es:                                 # every read of the unit lies outside its window
+                out.append(dict(start=None, end=None, size=0, reads=len(rs), source="none"))
+                continue
+            a5 = max(ss, key=lambda b: (ss[b], -b if strand == "+" else b))
+            a3 = max(es, key=lambda b: (es[b], b if strand == "+" else -b))
+            lo, hi = (a5, a3) if strand == "+" else (a3, a5)
+            if hi < lo:
+                lo, hi = hi, lo
+            out.append(dict(start=lo * bin_bp, end=(hi + 1) * bin_bp, size=(hi + 1 - lo) * bin_bp, reads=len(rs), source="reads"))
+        elif len(rs) >= min_reads:
+            cov = collections.Counter()
+            for s, e in rs:
+                for b in range(s // bin_bp, e // bin_bp + 1):
+                    cov[b] += 1
+            pk = max(cov, key=cov.get); thr = min_share * cov[pk]
+            lo = hi = pk
+            while cov.get(lo - 1, 0) >= thr:
+                lo -= 1
+            while cov.get(hi + 1, 0) >= thr:
+                hi += 1
+            out.append(dict(start=lo * bin_bp, end=(hi + 1) * bin_bp, size=(hi + 1 - lo) * bin_bp, reads=len(rs), source="reads"))
+        elif rs and fold:
+            out.append(dict(start=u0 + fold["start"], end=u0 + fold["end"], size=fold["size"], reads=len(rs), source="folded"))
+        else:
+            out.append(dict(start=None, end=None, size=0, reads=len(rs), source="none"))
+    return out, apart
