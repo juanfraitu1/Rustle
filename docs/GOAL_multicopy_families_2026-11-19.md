@@ -69,3 +69,6 @@ Development ledger: workspace `goal_multicopy_dev/LEDGER.md` (steps 1-11). Judge
 Family-member completeness (user's question): missing members are mostly silent; none lost to wrong placement; tied
 seeding restores 3-7; the actionable gap is the assembler's low-support floor (StringTie finds 24-75 more expressed
 members; RUSTLE_READ_ISOFORM_K=2 closes 9 of 22 on development).
+Later the same day: row 1822 (KB3781): K1 (`RUSTLE_READ_ISOFORM_K=2`) and B1 (borrowed structure) FAIL; shared isoforms
+(user's reading of borrowing) descriptive. The user cleared the goal; summary `MULTICOPY_FAMILIES_2026-11-19.md`, open
+items `PARKED.md` item 3.

@@ -3,6 +3,24 @@
 Each item says where it stands, what is in the repository, what is not (workspace files of the Fritz cluster do not travel), and
 the first steps. Newest first. Remove an item when it is closed in `NEGATIVE_RESULTS_REGISTER.md`.
 
+## 3. Multi-copy families after rows 1820-1822 (parked 2026-11-19, user cleared the goal)
+
+**Stands at.** `MULTICOPY_FAMILIES_2026-11-19.md` (summary), `GOAL_multicopy_families_2026-11-19.md` (the goal and its status),
+`MULTICOPY_DEV_LEDGER_2026-11-19.md` (every development number). Rows 1820 (C1 fails), 1821 (R1 fails narrowly, R2 / R3 pass),
+1822 (K1, B1 fail on KB3781).
+**In the repository.** `RUSTLE_SEED_SPLICED=support` (opt-in), `bench/famwise_eval/{copyset_score,resolution_call,borrow,
+family_isoform,member_completeness,member_bed,support_filter,array_score,sim_truth,undecidable}.py`.
+**Not in the repository.** PSU workspace folders `r1820_undecidable_copies`, `r1821_resolution_call`, `r1822_borrow_isoformk`,
+`goal_multicopy_dev` (rsync line at the end of the summary).
+**To do.**
+1. The member gap: Rustle drops low-support family members that StringTie keeps (19 of 24 on the HG002 truth quarter get no
+   transcript; row 1536's class). Judge a lever on a sample with room (A119b has 835 expressed members, but no truth).
+2. Shared isoforms (`family_isoform.py`) as a promotion rule for one-read chains: 17 of 19 right on KB3781, too few. Needs
+   bars; KB3781 with `DENOVO_GGO_ENS_MAP` on Fritz gives a larger family truth.
+3. Tandem arrays on real data: needs a testis Iso-Seq sample of an individual with assembled haplotypes.
+4. `RUSTLE_SEED_SPLICED=support` as a default: the user's call (row 1821: wrong-copy new chains 60 -> 15).
+**Data.** No unseen HG002 quarter remains.
+
 ## 1. Junction replacement by support ratio, inside the assembler (parked 2026-11-19, user)
 
 **Stands at.** Row 1819, `PREREG_junction_replace_2026-11-19.md`: as a post-step on `PREFIX.gtf`, replacing intron K by the

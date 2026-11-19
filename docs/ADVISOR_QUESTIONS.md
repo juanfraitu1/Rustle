@@ -106,6 +106,12 @@ Yes. Default since 09-25 (§0★): exon-sum representatives, `mcl_families --min
 Narrowly defensible. External support only at >= 0.90 while 86.31% of edges sit below 0.90; 61.4% of nodes have no reciprocal gene match. Two reference annotations agree with each other only at F 0.67-0.81 (§6kl): cite before conceding any F in 0.6-0.8. Protein families F 0.977 (first pass was a superfamily artifact; at aa identity >= 0.50 sensitivity 0.867). Soto under-merges, never over-merges: pair precision 0.711 -> 0.888 (r945/946); protein edges NOT adopted (r906); nothing beats MCL held-out (r922); protein reconciler on de novo families NULL (r1480). Scoring rule: pair precision/recall only (pairscore.py). (full: archive/2026-11/ADVISOR_QUESTIONS.md:681)
 
 ### Q3. "Does the method borrow information across the family?"
+Update 2026-11-19 (rows 1820-1822, `MULTICOPY_FAMILIES_2026-11-19.md`): reads that fit several copies do not reveal hidden
+copies (row 1820 C1 fails); reported as one copy set they raise precision 0.888 -> 0.909 and resolved units +2.5% over the
+per-copy output (row 1821 R2), with little over the existing `famwise` layer (R1 fails narrowly); secondaries as support only
+(`RUSTLE_SEED_SPLICED=support`) cut wrong-copy chains 4x; borrowed structure must stay labelled (0.17 right as expression;
+row 1822 B1 fails); family members are missing because they are silent or below the assembler's floor, never because their
+reads went to another copy (0 of 936 misses on the HG002 truth quarter).
 In O1 assembly no: cross-copy borrowing inert/dead (§6bd). Shared multimappers are evidence; `E_c` splits large families 0.2406 -> 0.5431 (§6bi). Re-tried as FAMASM (r1479, 10-31): pool a family's reads, define chains family-wide, emit at a copy only with >= 2 certified reads. Held-out HG002 FAIL: multi-copy recall 11.3 -> 12.7 (first positive gain) but precision 14.0 -> 8.5 (~20,000 appended transcripts for 219 new matches), single-copy precision 19.2 -> 18.3; A119b recall +0.7, precision 12.7 -> 8.0. Not adopted; borrowing helps ASSIGNMENT, the 2-read certificate is not selective enough for ASSEMBLY. (full: archive/2026-11/ADVISOR_QUESTIONS.md:726)
 
 ### Q4. "What about isoforms? Could two extremely similar copies produce the same isoforms?"
