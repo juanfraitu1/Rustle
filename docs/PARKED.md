@@ -3,6 +3,20 @@
 Each item says where it stands, what is in the repository, what is not (workspace files of the Fritz cluster do not travel), and
 the first steps. Newest first. Remove an item when it is closed in `NEGATIVE_RESULTS_REGISTER.md`.
 
+## 4. Correlation clustering for copies the reference lacks (2026-11-19, step 0 done, row 1823)
+
+**Stands at.** `CORRELATION_CLUSTERING_2026-11-19.md`: copy_phasing (the Strainy port, correlation clustering) against HG002's
+own-haplotype truth: no gain for assignment; for O3 its certified flag hits 13 / 13 families with >= 6 `outside` molecules, with
+false flags rising with depth. Development only (all HG002 quarters spent).
+**In the repository.** `bench/famwise_eval/cp_truth.py` (inputs from the truth families; O2 / O3 scorer); `src/copy_phasing/`.
+**Not in the repository.** PSU workspace `goal_multicopy_dev/cc`, `cc_all` (linked from `r1823_correlation_clustering`).
+**To do.**
+1. Split `outside` molecules into a copy CHM13 lacks vs an HG002 allele too far from CHM13's copy (the truth records the HG002 place).
+2. A judged O3 row with a held-out own-haplotype truth (KB3781 on its own reference; or HG002 reads against `hg002.pat.fa`, where
+   maternal-only copies are the positives), bars on recall and on false flags WITHIN depth bins.
+3. A depth-aware certificate (cluster size scaled to the pile) if the false flags hold up.
+4. Untried variants: Paraphase-style collapse onto one archetype copy; SDA's PSV-level graph. For O3, not for O2.
+
 ## 3. Multi-copy families after rows 1820-1822 (parked 2026-11-19, user cleared the goal)
 
 **Stands at.** `MULTICOPY_FAMILIES_2026-11-19.md` (summary), `GOAL_multicopy_families_2026-11-19.md` (the goal and its status),

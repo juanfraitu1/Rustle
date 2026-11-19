@@ -2,7 +2,7 @@
 
 User's request: look for ways to use correlation clustering in the assignment (O2) or in finding a copy the reference lacks
 (O3); the advisor admires Strainy; use the ThesisVault for implementations. Development only (no bar): all four HG002
-quarters are spent and were reused under the user's ruling. Workspace `goal_multicopy_dev/cc`, `cc_all` (PSU).
+quarters are spent and were reused under the user's ruling. Workspace `goal_multicopy_dev/cc`, `cc_all` (PSU; linked from `r1823_correlation_clustering`). Register row 1823 (descriptive). Open items: `PARKED.md` item 4.
 
 ## The lineage in the vault
 | paper | unit clustered | edges | count of copies | what the thesis took |

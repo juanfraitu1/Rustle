@@ -28,7 +28,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 
 | file | title | last commit | cited by |
 |---|---|---|---|
-| [`CORRELATION_CLUSTERING_2026-11-19.md`](CORRELATION_CLUSTERING_2026-11-19.md) | Correlation clustering (Strainy / SDA lineage) for assignment and for copies the reference lacks (2026-11-19, PSU) | uncommitted | memory ×1 |
+| [`CORRELATION_CLUSTERING_2026-11-19.md`](CORRELATION_CLUSTERING_2026-11-19.md) | Correlation clustering (Strainy / SDA lineage) for assignment and for copies the reference lacks (2026-11-19, PSU) | 2026-11-19 | register ×1, memory ×1 |
 | [`GOAL_multicopy_families_2026-11-19.md`](GOAL_multicopy_families_2026-11-19.md) | Goal: resolution-aware assembly of multi-copy gene families (set by the user 2026-11-19) | 2026-11-19 | register ×1, memory ×1 |
 | [`MULTICOPY_DEV_LEDGER_2026-11-19.md`](MULTICOPY_DEV_LEDGER_2026-11-19.md) | Development ledger of the multi-copy goal (copy of PSU workspace goal_multicopy_dev/LEDGER.md, 2026-11-19) | 2026-11-19 | memory ×1 |
 | [`MULTICOPY_FAMILIES_2026-11-19.md`](MULTICOPY_FAMILIES_2026-11-19.md) | Multi-copy gene families: what the reads can decide (session of 2026-11-18 / 19, on PSU Roar) | 2026-11-19 | memory ×1 |
