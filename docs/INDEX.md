@@ -24,7 +24,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-18 | register ×1 |
 | [`seeded_family_definition.md`](seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-08 | — |
 
-## Open studies and current handoff (251)
+## Open studies and current handoff (252)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
@@ -42,7 +42,8 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_undecidable_copies_2026-11-19.md`](PREREG_undecidable_copies_2026-11-19.md) | PREREG r1820: do undecidable reads depict the copies they cannot be placed on? (2026-11-19) | 2026-11-18 | register ×1, memory ×1 |
 | [`PREREG_wrong_chain_rules_2026-11-19.md`](PREREG_wrong_chain_rules_2026-11-19.md) | Row 1814: single-evidence rules against wrong chains, found on two non-primate samples (pre-registered 2026-11-19) | 2026-11-19 | register ×1 |
 | [`PREREG_wrong_chain_rules_primate_2026-11-19.md`](PREREG_wrong_chain_rules_primate_2026-11-19.md) | Row 1815: the single-evidence rule search of row 1814, with primate development samples (pre-registered 2026-11-19) | 2026-11-19 | register ×1 |
-| [`PRIMARY_CORRECTION_CEILING_2026-11-19.md`](PRIMARY_CORRECTION_CEILING_2026-11-19.md) | What is a corrected primary worth? The oracle ceiling (2026-11-19, PSU, register 1824) | uncommitted | register ×1 |
+| [`PRIMARY_CORRECTION_CEILING_2026-11-19.md`](PRIMARY_CORRECTION_CEILING_2026-11-19.md) | What is a corrected primary worth? The oracle ceiling (2026-11-19, PSU, register 1824) | 2026-11-19 | register ×1, memory ×1 |
+| [`SHADOW_LOCI_2026-11-19.md`](SHADOW_LOCI_2026-11-19.md) | Secondary alignments as shadow loci: real missed loci, or shadows? (2026-11-19, PSU, register 1825) | uncommitted | register ×1 |
 | [`OVERFIT_LEVERS_2026-11-18.md`](OVERFIT_LEVERS_2026-11-18.md) | Which assembler levers are overfit to the primate samples, and what was toned down (18 Nov 2026) | 2026-11-19 | register ×1, memory ×1 |
 | [`PRECISION_RULES_2026-11-18.md`](PRECISION_RULES_2026-11-18.md) | Precision rules on 12 samples, and the new chain score default (17-18 Nov 2026) | 2026-11-18 | memory ×1 |
 | [`PREREG_crosscopy_splicing_2026-11-18.md`](PREREG_crosscopy_splicing_2026-11-18.md) | PREREG r1802 / r1803 / r1804: splicing differences between the copies of a family, against the splice sites and against  | 2026-11-19 | memory ×1 |

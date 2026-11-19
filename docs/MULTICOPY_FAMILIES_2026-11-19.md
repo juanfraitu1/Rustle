@@ -114,3 +114,5 @@ PSU workspace (`/storage/group/kdm16/default/jxi21/fritz/ws`): `r1820_undecidabl
 - Correlation clustering (Strainy port) against the HG002 truth: `CORRELATION_CLUSTERING_2026-11-19.md` (register 1823).
 - The oracle ceiling of correcting wrongly chosen primaries: +0.2% resolved units, no family member
   (`PRIMARY_CORRECTION_CEILING_2026-11-19.md`, register 1824).
+- Secondary-only places, real or shadow: a few real (mostly pseudogenes), each dominated by another copy's reads
+  (`SHADOW_LOCI_2026-11-19.md`, register 1825).
