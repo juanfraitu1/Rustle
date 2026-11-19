@@ -5,7 +5,10 @@ the Fritz setup at `/storage/group/kdm16/default/jxi21/fritz` (`psu:makova_group
 folders, the session notes (memory) and the ThesisVault edits are NOT, and steps 3-5 bring them over.
 
 ## 0. Already done from PSU (2026-11-19, evening, once Fritz was back)
-- `~/Rustle` on Fritz fast-forwarded to origin/main (it was at 59c9b80d, tree clean) and rebuilt into `~/rustle_target`.
+- `~/Rustle` on Fritz fast-forwarded to origin/main (it was at 59c9b80d, tree clean). The rebuild was NOT done: `cargo build` on fritz1
+  hung in a Lustre sync wait (`cl_sync_io_wait`) on its lock files in `~/rustle_target/release/` (/anvme, right after the maintenance);
+  process 582694 on fritz1 may still be stuck there. When /anvme answers, rebuild (section 1) and check the SIRV md5; the binaries in
+  `~/rustle_target` are the pre-PSU ones until then.
 - Run folders of section 4 copied (light copy) into `~/ws/`, plus `r1828_support_profile` and `r1829_near_tie_census`.
 - The PSU session notes and the five ThesisVault files of sections 5 and 6 are STAGED in `~/psu_handoff_2026-11-19/{memory,ThesisVault}`:
   merge them as sections 5 and 6 say (read from there instead of rsync from psu); nothing in the Fritz memory or vault was touched.
