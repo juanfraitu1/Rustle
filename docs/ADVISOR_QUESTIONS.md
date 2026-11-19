@@ -112,6 +112,9 @@ per-copy output (row 1821 R2), with little over the existing `famwise` layer (R1
 (`RUSTLE_SEED_SPLICED=support`) cut wrong-copy chains 4x; borrowed structure must stay labelled (0.17 right as expression;
 row 1822 B1 fails); family members are missing because they are silent or below the assembler's floor, never because their
 reads went to another copy (0 of 936 misses on the HG002 truth quarter).
+Update 2026-11-19 (row 1824, `PRIMARY_CORRECTION_CEILING_2026-11-19.md`), on "the primary of a tied read is a coin toss, so seeding
+may start from the wrong copy": on HG002 the primary is off its true copy for 0.33% of the reads that can be told apart; moving
+every one of them to its true copy (an oracle) adds 0.2% resolved units and no family member, and removes 7 wrong-copy chains.
 In O1 assembly no: cross-copy borrowing inert/dead (§6bd). Shared multimappers are evidence; `E_c` splits large families 0.2406 -> 0.5431 (§6bi). Re-tried as FAMASM (r1479, 10-31): pool a family's reads, define chains family-wide, emit at a copy only with >= 2 certified reads. Held-out HG002 FAIL: multi-copy recall 11.3 -> 12.7 (first positive gain) but precision 14.0 -> 8.5 (~20,000 appended transcripts for 219 new matches), single-copy precision 19.2 -> 18.3; A119b recall +0.7, precision 12.7 -> 8.0. Not adopted; borrowing helps ASSIGNMENT, the 2-read certificate is not selective enough for ASSEMBLY. (full: archive/2026-11/ADVISOR_QUESTIONS.md:726)
 
 ### Q4. "What about isoforms? Could two extremely similar copies produce the same isoforms?"
