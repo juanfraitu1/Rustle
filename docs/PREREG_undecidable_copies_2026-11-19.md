@@ -188,3 +188,47 @@ and the truth keeps at most 12 loci per read, so arrays cannot be judged by orig
 
 ## Freeze (2026-11-19, before residues 50-74 are selected)
 Snapshot `~/ws/r1820_undecidable_copies/snap/` (tools, bench, release binaries copied); hashes in `snap/FROZEN.sha256`.
+
+## Result (2026-11-19, job 57494600 on PSU, 37 min; workspace `judge/` and `arrays/`)
+Integrity: the text above this section, minus its final blank line, hashes to the frozen value in `snap/FROZEN.sha256`
+(068bd12a..., written 22:17 EST, before job 57494600 started). Correction to that text: "Fritz sessions told" was not
+true when written; the Fritz session is to be told by the user before row 1820 is pushed.
+
+**C1 FAILS: adding the undecidable reads' records gives the annotated chain to almost no copy that the primaries do not
+already reach. C1b, C2 not met; C3 not read.** The share bar alone decides it (upper bound 0.30 < 0.5); the count bar
+asked for 20 of 35 claim copies.
+- Of the 35 claim copies, 30 carry an annotated multi-exon chain; the exact chain is emitted at 5 by P, 6 by P+U*, 7 by
+  P+Ums, 8 by D, 6 by PROJ (contained part: 6 / 9 / 10 / 12 / 9). StringTie `-L` (beside, no bar): 6 by P, 6 by P+U*;
+  it adds no chain from the secondaries.
+- Judging quarter (HG002 residues 50-74): 136,262 reads selected; truth kinds one 18,321, several (U) 2,985, one place
+  1,227, tie unsplit 589, outside 1,459. U* records 4,021 (Ums 3,904, both 2,589).
+- Q1: 116 landing copies: protein_coding 82, lncRNA 13, unprocessed pseudogene 10, processed pseudogene 1, none 8,
+  other 2. U reads land on protein-coding paralogs (65 of the 116 copies have own evidence from decidable reads), rarely
+  on pseudogenes (my prediction 10-30% pseudogenes: 9.5%).
+- Q2: own 65, own_1 16, shadow 23 (6 under the within-10-ms rule), unjudgeable 12 -> 35 claim copies (prediction:
+  unjudgeable largest; wrong, shadow is).
+- C1 (`PREFIX.gtf`): added depicted copies 1 (bar >= 20); depicted share of the chains P+U* adds 2/20 = 0.10
+  [0.03, 0.30]. C1b: 0 of them missed by projection. C2: D already depicts it (0/1). C3: P+Ums reaches it (1/1).
+- Cost: P+U* adds 82 unmatched chains on own copies and 6 on shadow copies; P+Ums 19 and 5.
+- Beside, `PREFIX.final.gtf`: same verdicts (added depicted 1; share 2/13; unmatched on own copies 16).
+- Development sets (no bar) agreed: seen quarter 2 added depicted copies, share 0.13; KB3781 0.
+
+Side table, A119b tandem arrays (descriptive; `arrays/arrays_summary.tsv`, `arrays_depicted.tsv`): 227 arrays, 1.16 M
+reads in the slices. Units with an annotated chain, depicted by P / P+Ums / D / PROJ:
+- all protein_coding 1,166 units: 570 / 593 / 630 / 185; all pseudogene units 364: 27 / 32 / 47 / 15; lncRNA 155:
+  36 / 36 / 37 / 0. Unmatched chains P / P+Ums / D: protein_coding 4,528 / 4,666 / 6,184; pseudogenes 460 / 492 / 949.
+- TSPY coding units 38: 11 / 25 / 38 / 38 (unmatched 4 / 58 / 138 / 165); TSPY pseudogene units 14: 3 / 4 / 6 / 6
+  (unmatched 6 / 16 / 48 / 36). FAM90A pseudogene units 35: 0 / 4 / 16 / 0 (unmatched 0 / 8 / 59). USP17L 14 coding and
+  REXO1L 52 processed-pseudogene units: none depicted by any arm.
+- Reading (mine): inside near-identical arrays, tied records do spread the expressed unit's structure onto other units
+  (TSPY coding 11 -> 25 with exact ties, 38 at the default band), at a cost of 4 -> 58 / 138 unmatched chains; pseudogene
+  units gain little (TSPY 3 -> 4 / 6). No truth here: a unit "depicted" in an array of identical units says the
+  structure fits it, not that it is expressed.
+
+Registered items not delivered, or changed:
+- Q1 per family: not done (the family table of row 1790 was not fetched; `classes.tsv` carries each copy's CAT gene name
+  instead). Q1 in `ms` and AS versions: not split (the U set is the truth's, no score enters it).
+- The ONE PLACE table: not made (1,227 such reads counted in `inputs.tsv`, not classed).
+- Processed-pseudogene single-exon line: computed in `depicted.tsv` (`*_single`), 1 such copy, depicted by no arm.
+- Panel first on 10 KB3781 families: replaced by the whole KB3781 selection (100,810 molecules; arms 30-60 s each).
+- StringTie on P and P+U*: run after the job, on the login node, same BAMs (`judge/stringtie/`).
