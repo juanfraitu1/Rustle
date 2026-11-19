@@ -116,3 +116,5 @@ PSU workspace (`/storage/group/kdm16/default/jxi21/fritz/ws`): `r1820_undecidabl
   (`PRIMARY_CORRECTION_CEILING_2026-11-19.md`, register 1824).
 - Secondary-only places, real or shadow: a few real (mostly pseudogenes), each dominated by another copy's reads
   (`SHADOW_LOCI_2026-11-19.md`, register 1825).
+- Tandem arrays: how StringTie and Rustle assemble them, read artifacts, member size by folding reads onto the period
+  (`TANDEM_ARRAYS_2026-11-19.md`, register 1826).
