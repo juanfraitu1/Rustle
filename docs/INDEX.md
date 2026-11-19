@@ -24,7 +24,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-18 | register ×1 |
 | [`seeded_family_definition.md`](seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-08 | — |
 
-## Open studies and current handoff (257)
+## Open studies and current handoff (258)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
@@ -37,6 +37,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_borrow_isoformk_2026-11-19.md`](PREREG_borrow_isoformk_2026-11-19.md) | PREREG r1822: borrowed structure (question 4), shared isoforms and RUSTLE_READ_ISOFORM_K=2 on KB3781 (2026-11-19) | 2026-11-19 | register ×1 |
 | [`PREREG_chainscore_ties_2026-11-19.md`](PREREG_chainscore_ties_2026-11-19.md) | Row 1813: the chain score without the tie instability (pre-registered 2026-11-19) | 2026-11-19 | register ×1 |
 | [`PREREG_junction_replace_2026-11-19.md`](PREREG_junction_replace_2026-11-19.md) | Row 1819: replace a weak junction by its strong neighbour instead of dropping the chain (pre-registered 2026-11-19) | 2026-11-19 | register ×1 |
+| [`PREREG_near_tie_census_2026-11-19.md`](PREREG_near_tie_census_2026-11-19.md) | PREREG r1829: how many near-tied reads exist, and what could separate them (2026-11-19) | uncommitted | — |
 | [`PREREG_pooled_filter_2026-11-19.md`](PREREG_pooled_filter_2026-11-19.md) | Row 1818: a chain score fitted on primate and non-primate data together, judged leave-one-species-out (pre-registered 20 | 2026-11-19 | register ×1 |
 | [`PREREG_resolution_call_2026-11-19.md`](PREREG_resolution_call_2026-11-19.md) | PREREG r1821: resolution-aware output of multi-copy families, judged once on the last HG002 quarter (2026-11-19) | 2026-11-19 | register ×1 |
 | [`PREREG_rule_ablation2_2026-11-19.md`](PREREG_rule_ablation2_2026-11-19.md) | Row 1811: second ablation at the toned-down defaults: primate-only levers and untested levers (pre-registered 2026-11-19 | 2026-11-19 | register ×1 |

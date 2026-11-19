@@ -89,7 +89,7 @@ row-1826 held-out tests). Development results are labelled as such in every docu
 Row 1828 (`docs/SUPPORT_PROFILE_2026-11-19.md`) only DETECTS. On SIRV `final.gtf` its flags (SHIFTED_DOMINANT / THIN_EXACT, relative)
 caught 23 / 28 false transcripts and 2 / 48 true ones, but SIRV and the HG002 seen quarter were used to build the rule, so those
 numbers are development results and say nothing about a filter. The user asked to test the filter on Fritz:
-1. Claim the next register row on origin/main (1829 unless taken) and write `docs/PREREG_support_filter_<date>.md`, committed
+1. Claim the next free register row on origin/main (1829 is taken on PSU by the near-tie census; check the tail) and write `docs/PREREG_support_filter_<date>.md`, committed
    BEFORE any judging data is opened. Fix in it:
    - the filter: drop multi-exon transcripts of `PREFIX.final.gtf` flagged SHIFTED_DOMINANT or THIN_EXACT, rule exactly as
      committed in `bench/famwise_eval/support_profile.py` (no re-tuning; NEAR_MISS_DOMINANT, WEAK_JUNCTION, UNCOVERED, NO_FULL_READ
