@@ -7,7 +7,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | file | title | last commit | cited by |
 |---|---|---|---|
 | [`ADVISOR_QUESTIONS.md`](ADVISOR_QUESTIONS.md) | The advisor's standing questions — and what the codebase can answer | 2026-11-19 | memory ×1 |
-| [`AUDIT_ROUNDS_2026-11.md`](AUDIT_ROUNDS_2026-11.md) | Audit rounds, November 2026 (ponytail-audit, goal: 100 rounds) | 2026-11-15 | memory ×1 |
+| [`AUDIT_ROUNDS_2026-11.md`](AUDIT_ROUNDS_2026-11.md) | Audit rounds, November 2026 (ponytail-audit, goal: 100 rounds) | 2026-11-19 | memory ×1 |
 | [`DATA.md`](DATA.md) | Datasets — what they are, where they came from, how to rebuild them | 2026-11-19 | register ×1, memory ×2 |
 | [`LEDGER_GENERAL.md`](LEDGER_GENERAL.md) | Ledger: general (handoffs, pending lists, register drafts, overviews) | 2026-11-18 | — |
 | [`LEDGER_O1.md`](LEDGER_O1.md) | Ledger: O1 (family definition, assembler, locus units) | 2026-11-18 | register ×1, memory ×2 |

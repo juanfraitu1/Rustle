@@ -7484,12 +7484,8 @@ fn main() -> Result<()> {
                 missing[0]
             );
         }
-        if let Some((c, _, hi)) = regions.iter().find(|(c, _, hi)| *hi > lens[c.as_str()]) {
-            anyhow::bail!(
-                "region {c} ends at {hi} but {fai_path} gives {c} length {}: the BAM was aligned to another genome build",
-                lens[c.as_str()]
-            );
-        }
+        // no check of a region's END against the length: the families' regions are padded 5 kb past the copies without a
+        // clamp (KB3781 has 3 such rows), and the BAM query tolerates it; a wrong build is caught by name and under --genome-wide
         if args.genome_wide {
             if let Some((c, _, hi)) = regions.iter().find(|(c, _, hi)| *hi != lens[c.as_str()]) {
                 anyhow::bail!(
