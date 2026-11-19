@@ -75,8 +75,27 @@ exon truncated), plus 100 antisense, 50 run-on and 40 read-through molecules (`a
 Identical units scatter their reads, so every method puts a member on silent units: that case stays with the copy-set call.
 Real data (no truth): CT47A, rule 3,325 bp per member (5 members) vs annotation 3,323 and Rustle 3,348; StringTie 13,541.
 
+## 7. The rule on REAL arrays, against the curated annotation (protein-coding members)
+No haplotype truth exists for expressed testis arrays; the closest independent yardstick is the annotated full-length span of
+PROTEIN-CODING members (real gene models, unlike the pseudogene pieces of section 1). A119b, every array of row 1820 with >= 2
+protein-coding units, members with >= 5 sense reads; StringTie and Rustle take the same-strand model with the largest overlap
+with the member (`goal_multicopy_dev/tandem/eval_real*.py`).
+First version (end modes alone): tandem families 48 / 77 within 20%; its errors were members with 5-10 reads sized 9-22 kb (an
+end mode taken from one run-on read) or shorter partial fragments. Two safeguards were then added, chosen AFTER seeing these
+real errors (so the numbers below are development, not an independent test): each end must be shared by >= 2 reads, and a member
+cannot exceed one period; otherwise the unit takes the folded array consensus. Simulations unchanged (5 / 5).
+| | tandem families (CT45A, CT47A, GAGE, MAGEA, TSPY, AMY, SSX, PRAMEF, SPATA31D, DEFA, TBC1D3): within 20% of annotation | all 919 protein-coding cluster members |
+| rule | **73 / 100** (17 longer, 10 shorter) | 285 / 919 |
+| StringTie | 44 / 100 | 240 / 919 |
+| Rustle primaries | 44 / 100 | 237 / 919 |
+Examples: CT47A 3,325 per member (annotated 3,323; StringTie up to 13,541); TSPY members 2,775-2,800 (2,797); MAGEA3 3,600 (3,570);
+GAGE12 members 7,325 (7,290). Disagreements left: PRAMEF (annotated 3-9 kb, reads give 2-25 kb), members whose reads cover only a
+fragment, MAGEA11 (annotated 29 kb, reads 5.2 kb: a long annotated isoform). On diverged gene clusters (ZNF, KRT, olfactory
+receptors) every method agrees with the annotation for about a third of members: member size is not the problem there.
+
 ## The rule (validated on simulation; built as `tandem.py`, not in the assembler)
-1. Per regular array, per member: the read-end modes of `member_sizes` (section 6); the folded interval where a unit has few reads.
+1. Per array, per member: the read-end modes of `member_sizes` (section 6), each end shared by >= 2 reads and the member no longer
+   than one period; otherwise the folded array consensus.
 2. Split a model at the member boundary when it carries a jump, repeat or bridge signature, or spans > 1.5 x the member
    without a canonical junction crossing the boundary.
 3. Do not seed arrays from secondaries (the default pool's 265 kb USP17L blob and FAM197Y's 104 over-long models); use

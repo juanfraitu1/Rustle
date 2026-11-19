@@ -212,7 +212,7 @@ def classify_model(exons, units, period, motif_of, tol=0.02, same_bp=10):
     return dict(jump=jump, repeat=repeat, bridge=bridge)
 
 
-def member_sizes(reads, units, period, strand, min_reads=5, min_share=0.2, bin_bp=25, ends="mode"):
+def member_sizes(reads, units, period, strand, min_reads=5, min_share=0.2, bin_bp=25, ends="mode", min_end_reads=2):
     """Per member (unit) of a tandem array: its transcribed interval from the reads, on the array's strand.
     reads: (start, end, strand, spliced). A read belongs to the unit whose start is nearest at or before it (+ half a period);
     antisense reads and reads whose span exceeds one period (multi-unit) are set apart. Per unit with >= min_reads reads, the
@@ -251,7 +251,15 @@ def member_sizes(reads, units, period, strand, min_reads=5, min_share=0.2, bin_b
             lo, hi = (a5, a3) if strand == "+" else (a3, a5)
             if hi < lo:
                 lo, hi = hi, lo
-            out.append(dict(start=lo * bin_bp, end=(hi + 1) * bin_bp, size=(hi + 1 - lo) * bin_bp, reads=len(rs), source="reads"))
+            size = (hi + 1 - lo) * bin_bp
+            # safeguards: each end shared by >= min_end_reads reads, and a member cannot exceed one period; else the fold
+            if ss[a5] < min_end_reads or es[a3] < min_end_reads or size > period:
+                if fold:
+                    out.append(dict(start=u0 + fold["start"], end=u0 + fold["end"], size=fold["size"], reads=len(rs), source="folded"))
+                else:
+                    out.append(dict(start=None, end=None, size=0, reads=len(rs), source="none"))
+                continue
+            out.append(dict(start=lo * bin_bp, end=(hi + 1) * bin_bp, size=size, reads=len(rs), source="reads"))
         elif len(rs) >= min_reads:
             cov = collections.Counter()
             for s, e in rs:
