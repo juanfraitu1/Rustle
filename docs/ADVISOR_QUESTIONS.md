@@ -119,6 +119,10 @@ Update 2026-11-19 (row 1825, `SHADOW_LOCI_2026-11-19.md`), on "unexpressed paral
 secondaries": in a whole HG002 sample 51 places are reached only by near-tied secondaries; 6 hold reads truly from them (mostly
 pseudogenes: CBWD4P, NUDT4P2, POTEB, LRRC37A4P), but each is dominated by another copy's reads (CBWD4P 32 of 782); KB3781 on its
 own reference has none. Real missed loci exist, rarely, and seeding them from secondaries would use the wrong reads.
+Update 2026-11-19 (row 1826, `TANDEM_ARRAYS_2026-11-19.md`), on tandem arrays: StringTie joins neighbouring units through the few
+reads longer than one period (removing them: 50 -> 4 multi-unit models; Rustle's primaries do not join); most apparent artifacts are
+unannotated transcription (USP17L reads are antisense); a read-end rule sizes members exactly on simulations and on near-identical
+arrays (CT47A, TSPY) but failed two held-out tests on gorilla testis, so no general member-size rule exists yet.
 In O1 assembly no: cross-copy borrowing inert/dead (§6bd). Shared multimappers are evidence; `E_c` splits large families 0.2406 -> 0.5431 (§6bi). Re-tried as FAMASM (r1479, 10-31): pool a family's reads, define chains family-wide, emit at a copy only with >= 2 certified reads. Held-out HG002 FAIL: multi-copy recall 11.3 -> 12.7 (first positive gain) but precision 14.0 -> 8.5 (~20,000 appended transcripts for 219 new matches), single-copy precision 19.2 -> 18.3; A119b recall +0.7, precision 12.7 -> 8.0. Not adopted; borrowing helps ASSIGNMENT, the 2-read certificate is not selective enough for ASSEMBLY. (full: archive/2026-11/ADVISOR_QUESTIONS.md:726)
 
 ### Q4. "What about isoforms? Could two extremely similar copies produce the same isoforms?"

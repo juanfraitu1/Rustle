@@ -3,6 +3,24 @@
 Each item says where it stands, what is in the repository, what is not (workspace files of the Fritz cluster do not travel), and
 the first steps. Newest first. Remove an item when it is closed in `NEGATIVE_RESULTS_REGISTER.md`.
 
+## 5. Tandem arrays: member size (2026-11-19, goal cleared by the user, row 1826)
+
+**Stands at.** `TANDEM_ARRAYS_2026-11-19.md` (sections 1-8), `PREDICTION_tandem_heldout_2026-11-19.md`. Established: StringTie joins
+neighbouring units through reads longer than one period (removing them: 50 -> 4 multi-unit models in A119b's regular arrays,
+protocadherins unchanged); reads split across units are rare (5 of 15,115); the read classifier (antisense and > 1-period reads set
+apart) keeps 330 / 330 real reads on simulated arrays and sets apart every antisense and read-through read. Not established: a
+member-size rule for real arrays. The read-end rule (`tandem.py member_sizes`) is exact on simulations and right on near-identical
+arrays (CT47A, TSPY in both species) but failed both held-out tests on OR6737 (0.60 vs StringTie 0.80 / Rustle 0.75; 0.55 vs 0.55 /
+0.66).
+**In the repository.** `bench/famwise_eval/{tandem,tandem_heldout,tandem_eval_annot,array_inject}.py`.
+**Not in the repository.** PSU workspace `goal_multicopy_dev/{tandem,arrays_sim,heldout}` (linked from `r1826_tandem_arrays`).
+**To do.**
+1. A truth better than the longest annotated isoform: a testis Iso-Seq sample of an individual with assembled haplotypes, or
+   full-length (capped) reads per member.
+2. OR6737 and A119b are spent for this rule; any new variant needs another sample. Do not re-tune on them.
+3. Optional, cheap: drop reads longer than one period inside regular arrays before StringTie (removes its unit joins; member sizes
+   on A119b 56 -> 59 of 131 within 20%).
+
 ## 4. Correlation clustering for copies the reference lacks (2026-11-19, step 0 done, row 1823)
 
 **Stands at.** `CORRELATION_CLUSTERING_2026-11-19.md`: copy_phasing (the Strainy port, correlation clustering) against HG002's
