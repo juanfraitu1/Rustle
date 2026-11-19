@@ -453,7 +453,8 @@ MM_THREADS=$JOB_THREADS; [ "$LOW_MEM" = 1 ] && [ "$MM_THREADS" -gt 16 ] && MM_TH
 # skip lists that `merged` and the --candidates assign do not apply: refused here, before assemble and families run (round-23 audit);
 # the stage functions refuse them again. Same `case "$STAGE"` form as the checks above.
 case "$STAGE" in
-  *) if [ "$MAX_WINDOW_RECORDS" -gt 0 ] || [ -n "${RUSTLE_ANNOTATED_ONLY:-}" ] || [ -n "${RUSTLE_EXCLUDE_BED:-}${RUSTLE_EXCLUDE_SOFTMASK:-}${RUSTLE_EXCLUDE_FASTA:-}" ]; then
+  *) if [ "$MAX_WINDOW_RECORDS" -gt 0 ] || [ -n "${RUSTLE_ANNOTATED_ONLY:-}" ] || [ -n "${RUSTLE_EXCLUDE_BED:-}${RUSTLE_EXCLUDE_SOFTMASK:-}${RUSTLE_EXCLUDE_FASTA:-}" ] \
+        || { [ "$STAGE" = merged ] && [ -z "${RUSTLE_EXCLUDE_BED+x}" ] && [ -s "$FASTA.exclude.bed" ]; }; then
        if [ "$STAGE" = merged ]; then
          echo "[rustle_pipeline] merged applies no --max-window-records / --low-mem / RUSTLE_ANNOTATED_ONLY / RUSTLE_EXCLUDE_BED / RUSTLE_EXCLUDE_SOFTMASK / RUSTLE_EXCLUDE_FASTA: use \`all\` for them" >&2; exit 2
        elif [ "$CANDIDATES" = 1 ] && { [ "$STAGE" = all ] || [ "$STAGE" = assign ]; }; then
@@ -843,12 +844,12 @@ stage_assemble() {
   # at 4M chr1/chr2/chr13 (5-6M records each) run alone and the sweep stays near serial.
   local fin_pid=""
   # the side products of the previous assembly go too: a failed or switched-off step must not leave them beside the new GTF
-  rm -f "$OUT.final.gtf" "$OUT.final.pid" "$OUT".final_run.* "$OUT.final.named.gtf" "$OUT.named.gtf" "$OUT.chainscore.gtf" "$OUT.earlyends.gtf" "$OUT.capstarts.gtf"
+  rm -f "$OUT.final.gtf" "$OUT.final.pid" "$OUT.final.rc" "$OUT".final_run.* "$OUT.final.named.gtf" "$OUT.named.gtf" "$OUT.chainscore.gtf" "$OUT.earlyends.gtf" "$OUT.capstarts.gtf"
   if [ "${#layers[@]}" -gt 0 ]; then
     # one subshell = the run, then its product under its final name (a rename, so PREFIX.final.gtf is whole or absent)
     ( env "${seed_env[@]}" RUSTLE_REGION_READ_BUDGET="$ASM_BUDGET" "$BIN/copy_assign" --assemble-only --region-threads "${RUSTLE_REGION_THREADS:-$ASM_REGIONS}" "${scope[@]}" --assembly-junctions strict $POLISH "${layers[@]}" --gtf-tpm \
       --bam "$BAM" --fasta "$FASTA" --out "$OUT.final_run" > "$OUT.final.log" 2>&1 \
-        && [ -s "$OUT.final_run.gtf" ] && mv -f "$OUT.final_run.gtf" "$OUT.final.gtf"; rm -f "$OUT".final_run.* ) &
+        && [ -s "$OUT.final_run.gtf" ] && mv -f "$OUT.final_run.gtf" "$OUT.final.gtf"; rc=$?; rm -f "$OUT".final_run.*; echo "$rc" > "$OUT.final.rc" ) &
     fin_pid=$!
   fi
   # set -e ends the stage when the base run fails: the background layered run must not outlive it holding memory and threads
@@ -861,7 +862,9 @@ stage_assemble() {
   fi
   if [ -n "$fin_pid" ] && [ "${RP_LAYERS_BG:-0}" = 1 ]; then
     # round 66: under `all` the layered run (about 25 s longer on A119b) ends under families; `all` waits for this pid
-    echo "$fin_pid" > "$OUT.final.pid"; say "assemble: the layered assembly $OUT.final.gtf is finishing in the background"
+    # pid, host and start time: a later run must not take another process that reuses the pid for this one (audit 2026-11-19)
+    echo "$fin_pid $(hostname) $(ps -o lstart= -p "$fin_pid" 2>/dev/null | tr -s ' ' '_')" > "$OUT.final.pid"
+    say "assemble: the layered assembly $OUT.final.gtf is finishing in the background"
   elif [ -n "$fin_pid" ]; then
     wait "$fin_pid" || true; layered_report
   fi
@@ -980,6 +983,8 @@ stage_siblings() {
   local f; for f in gtf fam.copies.tsv molecules.tsv; do
     [ -s "$OUT.$f" ] || { echo "[rustle_pipeline] siblings needs $OUT.$f (run assemble and families first)" >&2; exit 2; }
   done
+  # shortcut: RUSTLE_PYTHON runs UNQUOTED on purpose, so it can be a command with arguments ("pixi run python", the tests' "bash py.sh");
+  # a python path that contains a space is therefore not supported (audit 2026-11-19, finding 15 withdrawn)
   local py=${RUSTLE_PYTHON:-python3} b="$RP_DRIVER_DIR/../bench"
   { $py "$b/project/project_models.py" "$OUT.gtf" "$OUT.fam.copies.tsv" "$FASTA" "$BAM" "$OUT.sibling.d" --threads "$THREADS" --as-table "$OUT.molecules.tsv" \
       && $py "$b/famcmp/sibling_chains.py" emit "$OUT.gtf" "$OUT.sibling.d" "$OUT.sibling.gtf.tmp"; } > "$OUT.sibling.log" 2>&1 \
@@ -1028,7 +1033,8 @@ stage_famreps() {
   ( RUSTLE_FAMREPS=0; RUSTLE_SDCORE=0; FAM_GTF=$r.families.gtf; OUT=$r; stage_families )  # no `|| exit 1`: it switches set -e off inside
   { $py "$d/piece_merge.py" "$r" "$r.merged.copies.tsv" \
       && $py "$d/piece_attach.py" "$A.tsv" "$r" "$r.merged.copies.tsv" "$r.attached.tsv" --keep-all --direct \
-      && $py "$d/reps_table.py" "$A" "$r.fam.copies" "$r.merged.copies.tsv" "$r.attached.tsv" "$r.table"; } >> "$OUT.famreps.log" 2>&1 \
+      && $py "$d/reps_table.py" "$A" "$r.fam.copies" "$r.merged.copies.tsv" "$r.attached.tsv" "$r.table" \
+      && $py "$d/copy_table_check.py" "$r.table"; } >> "$OUT.famreps.log" 2>&1 \
     || { echo "[rustle_pipeline] famreps failed (see $OUT.famreps.log); $A.tsv is unaffected" >&2; exit 1; }
   if [ "$A" = "$OUT.fam.copies" ]; then for e in tsv fa regions; do mv -f "$OUT.fam.copies.$e" "$OUT.fam.base.copies.$e"; done; fi
   for e in tsv fa regions; do mv -f "$r.table.$e" "$OUT.fam.copies.$e"; done
@@ -1647,7 +1653,9 @@ merged_env() {
   if [ -z "${RUSTLE_SEDEF_BED+x}" ] && [ -s "$FASTA.sedef.bed" ]; then stat -L -c "sedef_sidecar %s %Y" "$FASTA.sedef.bed"; fi
   if [ -z "${RUSTLE_EXCLUDE_BED+x}" ] && [ -s "$FASTA.exclude.bed" ]; then stat -L -c "exclude_sidecar %s %Y" "$FASTA.exclude.bed"; fi
   # every RUSTLE_* knob changes some stage's products: a resume must not skip a stage run with other values (audit 2026-11-07)
-  env | grep '^RUSTLE_' | LC_ALL=C sort || true
+  # minus the speed knobs the driver derives from the allocation (threads, read budget): products are byte-identical across
+  # them, and a resume in a differently sized job must not redo every stage (audit 2026-11-19)
+  env | grep '^RUSTLE_' | grep -vE '^RUSTLE_(BAM_THREADS|REGION_READ_BUDGET|FAMILY_THREADS|STAR_THREADS|REGION_THREADS)=' | LC_ALL=C sort || true
   # and the binaries: a rebuild must rerun the stages it changes, not replay the old products (audit 2026-11-07, second pass)
   local b; for b in copy_assign mcl_families as_table utilities missing_copy_flag candidate_copies gw_family_catalog; do
     [ -n "${BIN:-}" ] && [ -e "$BIN/$b" ] && stat -L -c "bin $b %s %Y" "$BIN/$b"
@@ -1656,22 +1664,24 @@ merged_env() {
 stage_merged() {
   # computed once, before stage_families sets RUSTLE_SEDEF_BED from the sidecar: the record written at the end used to lack
   # the sedef_sidecar line the next run's check has, so a genome with FASTA.sedef.bed never resumed
-  local env_ok=0 env_now; env_now=$(merged_env)
-  if [ -f "$OUT.merged.env" ] && [ "$(cat "$OUT.merged.env")" = "$env_now" ]; then env_ok=1; fi
+  local env_ok=0 env_now rec_t=0; env_now=$(merged_env)
+  if [ -f "$OUT.merged.env" ] && [ "$(cat "$OUT.merged.env")" = "$env_now" ]; then env_ok=1; rec_t=$(stat -c %Y "$OUT.merged.env"); fi
+  # a product rewritten after the record (a separate `assemble` / `families` on this prefix) is not the merged run's (audit 2026-11-19)
+  recorded() { [ -s "$1" ] && [ "$(stat -c %Y "$1")" -le "$rec_t" ]; }
   # removed before any phase runs (a run that dies midway must not leave the record vouching for its products), and once one
   # phase runs every later phase runs too (its input changed), as in stage_all
   rm -f "$OUT.merged.env"
-  if [ "$env_ok" = 1 ] && [ -s "$OUT.gtf" ]; then
+  if [ "$env_ok" = 1 ] && recorded "$OUT.gtf"; then
     say "merged: phase 1 assemble SKIPPED ($OUT.gtf present, env matches)"
   else
     stage_assemble; env_ok=0
   fi
-  if [ "$env_ok" = 1 ] && [ -s "$OUT.fam.copies.tsv" ]; then
+  if [ "$env_ok" = 1 ] && recorded "$OUT.fam.copies.tsv"; then
     say "merged: phase 2 families SKIPPED ($OUT.fam.copies.tsv present, env matches)"
   else
     stage_families; env_ok=0
   fi
-  if [ "$env_ok" = 1 ] && [ -s "$OUT.assign_fam.assignments.tsv" ]; then
+  if [ "$env_ok" = 1 ] && recorded "$OUT.assign_fam.assignments.tsv"; then
     say "merged: phase 3 assign SKIPPED ($OUT.assign_fam.assignments.tsv present, env matches)"
   else
     stage_assign_fam
@@ -1732,8 +1742,13 @@ stage_index() {
   if [ -s "$idx" ] && [ "$(cat "$idx.key" 2>/dev/null)" = "$key" ]; then say "index: $idx present"; return 0; fi
   rm -f "$idx.key"
   say "index: minimap2 -x splice -I ${INDEX_GB}G -d $idx"
-  "${RUSTLE_MINIMAP2:-minimap2}" -x splice -I "${INDEX_GB}G" -t "$JOB_THREADS" -d "$idx.tmp.$$" "$FASTA" > "$OUT.index.log" 2>&1
-  mv -f "$idx.tmp.$$" "$idx"
+  # a failed or killed build must not leave a ~13 GB partial index beside a shared genome (audit 2026-11-19)
+  # added to the EXIT trap, not replacing it: the owner's trap removes the driver snapshot (line ~289)
+  local prev_trap; prev_trap=$(trap -p EXIT | sed "s/^trap -- '//; s/' EXIT\$//")
+  trap "rm -f '$idx.tmp.$$'; $prev_trap" EXIT
+  "${RUSTLE_MINIMAP2:-minimap2}" -x splice -I "${INDEX_GB}G" -t "$JOB_THREADS" -d "$idx.tmp.$$" "$FASTA" > "$OUT.index.log" 2>&1 \
+    || { rm -f "$idx.tmp.$$"; echo "[rustle_pipeline] index: minimap2 failed (see $OUT.index.log)" >&2; exit 1; }
+  mv -f "$idx.tmp.$$" "$idx"; if [ -n "$prev_trap" ]; then trap "$prev_trap" EXIT; else trap - EXIT; fi
   printf '%s\n' "$key" > "$idx.key"
 }
 # stage_all_env STAGE: what a finished `all` stage was run with; a stage is skipped only when it matches (and its product is there)
@@ -1762,6 +1777,9 @@ stage_all() {
   elif [ "$CANDIDATES" = 1 ]; then plan+=(candidates:"$OUT.cand.candidates.tsv"); fi
   plan+=(assign:"$OUT.assign.assignments.tsv")
   local env_now ran=0 st prod args=("${ORIG_ARGS[@]}")
+  # audit 2026-11-19: the child stages get this run's pool explicitly; without it a child `assemble` took the assemble-alone
+  # default (primary, register 1812) while PREFIX.assemble.env recorded good
+  if [ -n "${SEED_POOL:-}" ]; then args+=(--seed-pool "$SEED_POOL"); fi
   # GNU time: the system's, else one on PATH or pixi's (`pixi global install time`; compute nodes have no /usr/bin/time)
   local gtime=/usr/bin/time; [ -x "$gtime" ] || gtime=$(PATH="$PATH:$HOME/.pixi/bin" type -P time || true)
   export RP_ALL=1   # the stage calls below are part of `all`: assemble leaves the guided assembly to this loop
@@ -1808,9 +1826,19 @@ stage_all() {
   kill_tree() { local c; for c in $(pgrep -P "$1" 2>/dev/null); do kill_tree "$c"; done; kill "$1" 2>/dev/null || true; }
   # round 66: the layered assembly finishing in the background (PREFIX.final.pid, not a child of this shell)
   [ "$LOW_MEM" = 1 ] || export RP_LAYERS_BG=1
+  # the layered run of PREFIX.final.pid is alive only when its pid runs on this host with the recorded start time
+  final_alive() {
+    local p h t; read -r p h t < "$OUT.final.pid" 2>/dev/null || return 1
+    [ -n "$p" ] && [ "$h" = "$(hostname)" ] && [ "$(ps -o lstart= -p "$p" 2>/dev/null | tr -s ' ' '_')" = "$t" ] && kill -0 "$p" 2>/dev/null
+  }
   all_layers_wait() {
     [ -s "$OUT.final.pid" ] || return 0
-    local p; p=$(cat "$OUT.final.pid"); while kill -0 "$p" 2>/dev/null; do sleep 0.2; done
+    while final_alive; do sleep 0.2; done
+    if [ ! -s "$OUT.final.rc" ]; then
+      # it ended without writing its code (killed): the assembly has to run again
+      rm -f "$OUT.final.pid" "$OUT.assemble.env"
+      echo "[rustle_pipeline] the layered assembly of $OUT stopped before finishing (no $OUT.final.rc): rerun to redo assemble" >&2; exit 1
+    fi
     layered_report; rm -f "$OUT.final.pid"   # the pid file goes last: a run killed in the post-steps redoes them
   }
   time_record() { { cat "$OUT.$1.time.tmp" 2>/dev/null | grep -E '^(wall_s|peak_rss_kb)' || true; printf 'exit\t%s\n' "$2"; } > "$OUT.$1.time"; rm -f "$OUT.$1.time.tmp"; }
@@ -1818,8 +1846,8 @@ stage_all() {
     if [ -n "$scan_pid" ]; then kill_tree "$scan_pid"; fi
     # only a layered run that is still going is stopped, and then assemble must run again (its record goes); a finished one
     # keeps its pid file, so the rerun's all_layers_wait still applies the chain score and ptc steps to PREFIX.final.gtf
-    if [ -s "$OUT.final.pid" ] && kill -0 "$(cat "$OUT.final.pid")" 2>/dev/null; then
-      kill_tree "$(cat "$OUT.final.pid")"; rm -f "$OUT.final.pid" "$OUT".final_run.* "$OUT.assemble.env"
+    if [ -s "$OUT.final.pid" ] && final_alive; then
+      kill_tree "$(cut -d' ' -f1 "$OUT.final.pid")"; rm -f "$OUT.final.pid" "$OUT".final_run.* "$OUT.assemble.env"
     fi
   }
   all_guided() {

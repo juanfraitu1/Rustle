@@ -47,7 +47,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PRIMARY_CORRECTION_CEILING_2026-11-19.md`](PRIMARY_CORRECTION_CEILING_2026-11-19.md) | What is a corrected primary worth? The oracle ceiling (2026-11-19, PSU, register 1824) | 2026-11-19 | register ×1, memory ×1 |
 | [`SD_FAMILIES_2026-11-19.md`](SD_FAMILIES_2026-11-19.md) | Are segmental duplications where recent multi-copy gene families live? (2026-11-19, PSU, register 1827) | 2026-11-19 | register ×1, memory ×1 |
 | [`SHADOW_LOCI_2026-11-19.md`](SHADOW_LOCI_2026-11-19.md) | Secondary alignments as shadow loci: real missed loci, or shadows? (2026-11-19, PSU, register 1825) | 2026-11-19 | register ×1, memory ×1 |
-| [`SUPPORT_PROFILE_2026-11-19.md`](SUPPORT_PROFILE_2026-11-19.md) | What do whole reads really support? A support profile per transcript (2026-11-19, PSU, register 1828) | uncommitted | register ×1 |
+| [`SUPPORT_PROFILE_2026-11-19.md`](SUPPORT_PROFILE_2026-11-19.md) | What do whole reads really support? A support profile per transcript (2026-11-19, PSU, register 1828) | 2026-11-19 | register ×1 |
 | [`TANDEM_ARRAYS_2026-11-19.md`](TANDEM_ARRAYS_2026-11-19.md) | Tandem arrays: how StringTie and Rustle assemble them, read artifacts, and the size of a member (2026-11-19, PSU, regist | 2026-11-19 | register ×1, memory ×1 |
 | [`OVERFIT_LEVERS_2026-11-18.md`](OVERFIT_LEVERS_2026-11-18.md) | Which assembler levers are overfit to the primate samples, and what was toned down (18 Nov 2026) | 2026-11-19 | register ×1, memory ×1 |
 | [`PRECISION_RULES_2026-11-18.md`](PRECISION_RULES_2026-11-18.md) | Precision rules on 12 samples, and the new chain score default (17-18 Nov 2026) | 2026-11-18 | memory ×1 |

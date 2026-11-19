@@ -618,3 +618,60 @@ fn a_failed_base_assembly_stops_the_layered_run() {
     let alive = Command::new("kill").args(["-0", pid.trim()]).status().unwrap().success();
     assert!(!alive, "the layered run {pid} outlived the failed stage");
 }
+
+// ---- audit 2026-11-19 ----
+
+/// `all` runs `assemble` as a child process; the child must get the parent's pool. Before the fix it took the assemble-alone
+/// default (primary, register 1812) while PREFIX.assemble.env recorded seed_sec=1 (good).
+#[test]
+fn all_passes_its_pool_to_the_child_assemble() {
+    let dir = case_dir("all_child_pool");
+    let _ = std::fs::remove_dir_all(&dir);
+    let bin = dir.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    write_exec(&bin.join("copy_assign"), COPY_ASSIGN_STUB);
+    write_exec(&bin.join("as_table"), AS_TABLE_STUB);
+    let (bam, fasta, out) = (dir.join("reads.bam"), dir.join("g.fa"), dir.join("run"));
+    std::fs::write(&bam, "").unwrap();
+    std::fs::write(&fasta, "").unwrap();
+    std::fs::write(dir.join("g.fa.fai"), FAI).unwrap();
+    let stub_log = dir.join("stub.log");
+    let o = Command::new("bash")
+        .arg(DRIVER)
+        .arg("all")
+        .args(["--to", "assemble", "--bam", bam.to_str().unwrap(), "--fasta", fasta.to_str().unwrap(), "--out", out.to_str().unwrap()])
+        .args(["--bin", bin.to_str().unwrap(), "--no-cache", "--index", fasta.to_str().unwrap()])
+        .env_clear()
+        .env("PATH", std::env::var("PATH").unwrap_or_default())
+        .env("TMPDIR", &dir)
+        .env("STUB_LOG", &stub_log)
+        .env("RUSTLE_ASSEMBLY_LAYERS", "off")
+        .output()
+        .expect("bash failed to spawn");
+    let log = std::fs::read_to_string(&stub_log).unwrap_or_default();
+    let seen = log.lines().find(|l| l.starts_with("copy_assign ")).unwrap_or("").replace(&dir.to_string_lossy().to_string(), "<dir>");
+    assert_eq!(seen, GOOD, "all must seed with the good pool\nstdout {}\nstderr {}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+}
+
+/// The resume record leaves out the speed knobs the driver derives from the allocation (a resume in a differently sized job
+/// redid every stage), and keeps every other RUSTLE_* setting.
+#[test]
+fn the_resume_record_ignores_the_derived_speed_knobs() {
+    let dir = case_dir("merged_env_speed");
+    std::fs::create_dir_all(&dir).unwrap();
+    let (bam, fasta) = (dir.join("reads.bam"), dir.join("g.fa"));
+    std::fs::write(&bam, "").unwrap();
+    std::fs::write(&fasta, "").unwrap();
+    let script = format!("BAM=$1; FASTA=$2; THREADS=4; SEED_POOL=good; SEED_RATIO=0.98; CONTIG=; BRIDGE_MODE=f1v2\n{}\nmerged_env\n", merged_env_block());
+    let run = |threads: &str| {
+        let o = Command::new("bash")
+            .arg("-c").arg(&script).arg("merged_env").arg(&bam).arg(&fasta)
+            .env("RUSTLE_BAM_THREADS", threads).env("RUSTLE_REGION_READ_BUDGET", threads).env("RUSTLE_STAR_THREADS", threads)
+            .env("RUSTLE_SOME_SETTING", "7")
+            .output().expect("bash failed to spawn");
+        String::from_utf8_lossy(&o.stdout).into_owned()
+    };
+    let (a, b) = (run("4"), run("16"));
+    assert_eq!(a, b, "a differently sized allocation must give the same record");
+    assert!(a.contains("RUSTLE_SOME_SETTING=7") && !a.contains("RUSTLE_BAM_THREADS"), "{a}");
+}

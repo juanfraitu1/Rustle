@@ -1130,3 +1130,33 @@ Found, not applied, with the reason:
 - Added after the decisions: test `unit_seq_joins_the_exons_and_follows_the_strand` pins the routine finding 103
   uses (test-only change; binaries unchanged). Finding 102 (unit positions kept after the trim) still has no test:
   it needs an annotation-mode fixture with two families sharing an exon, which the suite does not have.
+
+## Audit of 2026-11-19 (on PSU Roar, one ponytail-audit pass over the whole repo)
+
+20 findings were reported. The user asked to apply every must-fix and should-fix finding (1-15) except finding 2. On
+finding 2 the user said: the PREFIX lock was meant for a home computer (i5, 32 GB) and is no longer needed on the HPC
+clusters, so it is not extended and no new lock is added (finding 3 uses a unique temporary name instead). Findings 16-20
+(nice to have) were not applied.
+
+| # | what | done | check |
+|---|---|---|---|
+| 1 | `all` ran its child `assemble` on the primary pool (the assemble-alone default, register 1812) while `PREFIX.assemble.env` recorded good; `rustle_samples.sh` had the same gap | `stage_all` passes `--seed-pool "$SEED_POOL"` to its children; `rustle_samples.sh` passes `--seed-pool ${RUSTLE_SEED_POOL:-good}` unless a pool flag is given | test `all_passes_its_pool_to_the_child_assemble`; SIRV `all --to families` logs "seeding pool: good" |
+| 3 | two `rustle_samples.sh` runs on one prefix wrote the same `POOLED.tmp` | `POOLED.tmp.$$` | `bash -n` |
+| 4 | `PREFIX.final.pid` held a bare pid: a reused pid was waited on or killed; a killed layered run looked finished | the pid file holds pid, host and start time (`final_alive`); the background run writes `PREFIX.final.rc`; no rc file = the run stopped, `all` drops `assemble.env` and fails | dispatch test `all_lets_the_layered_assembly_finish_under_families` (stub updated); SIRV run wrote `s.final.rc` = 0 |
+| 5 | `copy_assign` found a contig missing from the FASTA only when its region ran (hours in); a BAM of another build ran on the wrong bases; after a failed region the others ran on | startup check against `FASTA.fai` (refused without one; contig names, region ends, and under `--genome-wide` exact lengths); the parallel sweep stops taking regions after a failure | full `cargo test`; SIRV md5 unchanged |
+| 6 | `RUSTLE_SEED_SPLICED=support` with `--read-junction-snap`, `--extend-transfrags` or the direct modes checked chains the support rule never saw | refused in that combination | build |
+| 7 | the representatives cache keyed a file-valued setting (`RUSTLE_FOOTPRINT_WINDOWS=w.bed`) on its path alone | `env_fingerprint` adds the file's size and mtime when a value names a file; other keys unchanged | test `the_cache_key_changes_when_a_file_named_by_a_setting_changes` |
+| 8 | a set but unparsable setting (`0,98`) silently became the default | `rustle::env_parse` / `env_opt` stop the run naming the variable, at the sites the audit named; `RUSTLE_SEED_SPLICED` / `RUSTLE_SEED_UNSPLICED` refuse unknown words | test `unset_or_empty_is_the_default_and_a_set_value_must_parse` |
+| 9 | the resume record held the speed knobs the driver derives from the allocation, so a resume in a differently sized job redid every stage | `merged_env` leaves out `RUSTLE_{BAM,FAMILY,STAR,REGION}_THREADS` and `RUSTLE_REGION_READ_BUDGET` | test `the_resume_record_ignores_the_derived_speed_knobs`; the existing key test unchanged |
+| 10 | `merged` ignored the genome's `.exclude.bed` sidecar; a product rewritten after the record was skipped as the merged run's | `merged` is refused when the sidecar exists and `RUSTLE_EXCLUDE_BED` is unset (as for the other skip lists); a phase is skipped only when its product is not newer than `PREFIX.merged.env` | driver tests |
+| 11 | `eq_classes.py` ordered loci with equal start by set order (run-to-run differences) | the locus name breaks ties | pytest |
+| 12 | `eq_classes.py`, `psi_bunches.py` took the read's alignment strand, not the transcript's (minimap2 `ts:A:-`) | `tx_strand()` flips on `ts:A:-`. The bench scripts behind rows 1826 and 1828 are NOT changed: their reads are oriented FLNC, where the two agree, and their registered numbers stay reproducible | pytest |
+| 13 | no test ran the tools' selftests; `gtf_exclude_bed --selftest` exited 1 on success; nothing checked the copy table famreps writes | `tools/test_selftests.py` runs 9 selftests; `pixi run test-py` runs them with the bench tests (155 pass); new `tools/copy_table_check.py` (copy_idx 0..n-1 per family, unique, FASTA records = rows) runs inside `stage_famreps` before the table is replaced (passes on the OR6737 and KB3781 tables) | pytest |
+| 14 | a failed index build left its ~13 GB temporary file beside the genome | removed on failure and by an EXIT trap added to the snapshot's trap, not replacing it | trap checked in isolation |
+| 15 | unquoted `$RUSTLE_PYTHON` | **withdrawn**: quoting broke 14 dispatch tests, because `RUSTLE_PYTHON` is meant to be a command with arguments (`pixi run python`, the tests' `bash py.sh`); kept unquoted with a `shortcut:` comment (a python path with a space is not supported) | dispatch tests |
+
+Default products: SIRV `final.gtf` md5 `5cb0e7e4e7eb4cccc8f9def75cce2f65` (assemble alone and `all`) unchanged. Full
+`cargo test` passes (37 test binaries), the 90 driver tests pass, `pixi run test-py` 155 pass. Behaviour changes a user
+can meet: `copy_assign` refuses a FASTA without `.fai` or of another build; a malformed `RUSTLE_*` number stops the run;
+`all` on a pool-less command line really seeds with the good pool (before this fix, `all` runs seeded with primaries
+whatever `assemble.env` said, see finding 1).

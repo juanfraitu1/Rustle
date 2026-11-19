@@ -5975,9 +5975,8 @@ pub mod arms {
             impl HiddenCopyParams {
                 pub fn from_env() -> Self {
                     let mut p = HiddenCopyParams::default();
-                    let getf = |k: &str| std::env::var(k).ok().and_then(|s| s.parse::<f64>().ok());
-                    let getu =
-                        |k: &str| std::env::var(k).ok().and_then(|s| s.parse::<usize>().ok());
+                    let getf = |k: &str| crate::env_opt::<f64>(k);
+                    let getu = |k: &str| crate::env_opt::<usize>(k);
                     if let Some(v) = getf("RUSTLE_VG_HIDDEN_ALT_LO") {
                         p.balanced_lo = v;
                     }
@@ -13817,14 +13816,22 @@ pub mod arms {
                 .unwrap_or_else(|_| "unknown".into())
         }
 
-        /// Every `RUSTLE_*` variable, sorted, one `k=v` per line, minus `exclude`.
+        /// Every `RUSTLE_*` variable, sorted, one `k=v` per line, minus `exclude`. A value that names an existing FILE also
+        /// adds that file's fingerprint (audit 2026-11-19: `RUSTLE_FOOTPRINT_WINDOWS=w.bed` keyed on the path alone, so an
+        /// edited `w.bed` replayed the old representatives); keys of runs with no file-valued setting are unchanged.
         pub fn env_fingerprint(exclude: &[&str]) -> String {
             let mut v: Vec<(String, String)> = std::env::vars()
                 .filter(|(k, _)| k.starts_with("RUSTLE_") && !exclude.contains(&k.as_str()))
                 .collect();
             v.sort();
             v.into_iter()
-                .map(|(k, val)| format!("env\t{k}={val}\n"))
+                .map(|(k, val)| {
+                    if std::path::Path::new(&val).is_file() {
+                        format!("env\t{k}={val}\nenvfile\t{k}\t{}\n", file_fingerprint(&val))
+                    } else {
+                        format!("env\t{k}={val}\n")
+                    }
+                })
                 .collect()
         }
 
@@ -29194,10 +29201,7 @@ pub mod denovo_pipeline {
     /// run is byte-identical. Lets `bench/soto/gate_sensitivity_sweep.sh` vary the readthrough/mis-chain gates
     /// without recompiling.
     fn env_num<T: std::str::FromStr>(key: &str, default: T) -> T {
-        std::env::var(key)
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(default)
+        crate::env_parse(key, default)
     }
 
     pub fn retain_non_readthrough(
@@ -46243,7 +46247,11 @@ pub mod denovo_pipeline {
         /// `RUSTLE_SEED_SPLICED=support` (opt-in; docs/GOAL_multicopy_families_2026-11-19.md, question 3): spliced
         /// secondaries as support only, never as seeds (the spliced counterpart of `RUSTLE_SEED_UNSPLICED=support`).
         pub fn seed_spliced_support() -> bool {
-            matches!(std::env::var("RUSTLE_SEED_SPLICED").as_deref(), Ok("support"))
+            match std::env::var("RUSTLE_SEED_SPLICED").as_deref().map(str::trim) {
+                Ok("support") => true,
+                Ok("") | Err(_) => false,
+                Ok(v) => panic!("RUSTLE_SEED_SPLICED={v:?}: the only value is `support` (unset it for the default)"),
+            }
         }
 
         fn dup_admit_enabled() -> bool {
@@ -46540,10 +46548,11 @@ pub mod denovo_pipeline {
             if seed_unspliced_primary_only() {
                 return UnsplicedSecondary::Drop;
             }
-            match std::env::var("RUSTLE_SEED_UNSPLICED").as_deref() {
+            match std::env::var("RUSTLE_SEED_UNSPLICED").as_deref().map(str::trim) {
                 Ok("primary") => UnsplicedSecondary::Drop,
                 Ok("support") => UnsplicedSecondary::Support,
-                _ => UnsplicedSecondary::Seed,
+                Ok("") | Err(_) => UnsplicedSecondary::Seed,
+                Ok(v) => panic!("RUSTLE_SEED_UNSPLICED={v:?}: the values are `primary` and `support` (unset it for the default)"),
             }
         }
 
@@ -48452,10 +48461,7 @@ pub mod denovo_pipeline {
         /// ties only. The same principle (and the same 0.98 default width) as `copy_assign --as-ratio`, applied to
         /// site construction instead of assignment.
         pub fn gtf_secondary_as_ratio() -> f64 {
-            std::env::var("RUSTLE_GTF_SECONDARY_AS_RATIO")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0.0)
+            crate::env_parse("RUSTLE_GTF_SECONDARY_AS_RATIO", 0.0)
         }
 
         /// Which records of a region survive the AS-tie filter, by index into `recs`.
@@ -70075,8 +70081,8 @@ pub mod family_detect {
             /// Build from RUSTLE_VG_MOSAIC_* env overrides, falling back to defaults.
             pub fn from_env() -> Self {
                 let mut p = MosaicParams::default();
-                let getf = |k: &str| std::env::var(k).ok().and_then(|s| s.parse::<f64>().ok());
-                let getu = |k: &str| std::env::var(k).ok().and_then(|s| s.parse::<usize>().ok());
+                let getf = |k: &str| crate::env_opt::<f64>(k);
+                let getu = |k: &str| crate::env_opt::<usize>(k);
                 if let Some(v) = getu("RUSTLE_VG_MOSAIC_MIN_DECISIVE") {
                     p.min_decisive_sites = v;
                 }
@@ -70814,18 +70820,8 @@ pub mod family_detect {
             /// Read overrides from `RUSTLE_CONFLICT_DE_DELTA`, `RUSTLE_CONFLICT_DE_MAX`, `RUSTLE_CONFLICT_MIN_READS`.
             pub fn from_env() -> Self {
                 let d = Self::default();
-                let f = |k: &str, v: f64| {
-                    std::env::var(k)
-                        .ok()
-                        .and_then(|s| s.parse().ok())
-                        .unwrap_or(v)
-                };
-                let u = |k: &str, v: usize| {
-                    std::env::var(k)
-                        .ok()
-                        .and_then(|s| s.parse().ok())
-                        .unwrap_or(v)
-                };
+                let f = |k: &str, v: f64| crate::env_parse(k, v);
+                let u = |k: &str, v: usize| crate::env_parse(k, v);
                 // Significance de-tie is DEFAULT ON: the conflict edge uses the SAME IsoCon real-vs-error test (and the
                 // SAME level `alpha`) as the assignment gate, so no hand-set score-gap `delta` decides the conflict
                 // scope. eps = per-distinguishing-column error proxy (e/3 ~ 0.001 HiFi), alpha = significance.

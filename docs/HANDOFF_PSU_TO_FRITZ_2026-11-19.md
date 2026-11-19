@@ -15,6 +15,10 @@ secondaries still add support; refused off the streaming `--assemble-only` path;
 test `spliced_support_mode_seeds_only_primary_chains_and_counts_secondary_support`). Default output byte-identical (checked on PSU:
 SIRV final.gtf md5 5cb0e7e4e7eb4cccc8f9def75cce2f65 and a whole HG002 quarter at `--seed-pool good`). Check the SIRV md5 again on
 Fritz after the rebuild. No other default changed.
+Later on 2026-11-19: the audit fixes of `docs/AUDIT_ROUNDS_2026-11.md` ("Audit of 2026-11-19") also need the rebuild. They do
+not change the SIRV md5, but `all` runs before them seeded the assembly with PRIMARIES although `PREFIX.assemble.env` says good
+(finding 1): an `all` result quoted as the good pool from before this commit was in fact the primary pool. `copy_assign` now
+refuses a FASTA without `.fai`, and a malformed `RUSTLE_*` number stops the run.
 
 ## 2. What the rows say (register 1820-1828; read the documents, not this summary, before quoting)
 | row | question | answer | document |

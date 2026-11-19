@@ -29,6 +29,15 @@ import argparse, collections, multiprocessing, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gtf_names import overlap_genes, opn
 
+
+def tx_strand(r):
+    """The transcript's strand of a read: minimap2's ts:A tag says whether the transcript runs against the read (ts:A:-), so a
+    reverse-complemented cDNA read counts on its gene's strand (audit 2026-11-19). Without the tag: the alignment strand."""
+    rev = r.is_reverse
+    if r.has_tag("ts") and r.get_tag("ts") == "-":
+        rev = not rev
+    return "-" if rev else "+"
+
 OUTSIDE = "outside"
 G_NODES = None  # {locus: {intron chain: node}} with --famwise
 
@@ -87,7 +96,7 @@ def scan(contig):
                 continue
         elif r.is_secondary and r.get_tag(G_TAG) < G_FLOOR(best):
             continue
-        s = "-" if r.is_reverse else "+"
+        s = tx_strand(r)
         ov = overlap_genes([(a + 1, b) for a, b in r.get_blocks()], G_GEX[(contig, s)], *idx[s]) if s in idx else None
         g = max(ov, key=lambda k: (ov[k], k)) if ov else OUTSIDE
         m = None if G_NODES is None else famwise.member_of(g, famwise.record_chain(r.reference_start, r.cigartuples), G_NODES)
@@ -146,7 +155,7 @@ def summarise(placed, classes, meta, repeat=frozenset()):
     for l, g in gid.items():
         gplaced[g] += placed.get(l, 0); gchrom[g].add(meta[l][0])
     loci = []
-    for l in sorted(meta, key=lambda l: (meta[l][0], meta[l][1])):
+    for l in sorted(meta, key=lambda l: (meta[l][0], meta[l][1], l)):   # locus name breaks start ties (audit 2026-11-19: run order)
         lo, hi = placed.get(l, 0), placed.get(l, 0) + extra[l]
         if hi == 0:
             continue
@@ -218,7 +227,7 @@ def main():
     cols = "label\tplaced\tmax\tem\tgroup\tgroup_loci\tgroup_chroms\tgroup_placed".split("\t")
     with open(a.out + ".loci.tsv", "w") as fh:
         fh.write("locus\tchrom\tstart\tend\tstrand\tref_name\t" + "\t".join(cols) + "\t" + "\t".join(c + "_w" for c in cols) + "\n")
-        for l in sorted(set(rows["exact"]) | set(rows["wide"]), key=lambda l: (meta[l][0], meta[l][1])):
+        for l in sorted(set(rows["exact"]) | set(rows["wide"]), key=lambda l: (meta[l][0], meta[l][1], l)):
             e, w = rows["exact"].get(l), rows["wide"].get(l)
             none = ["none", 0, 0, "0.0", ".", 0, 0, 0]  # a locus only weaker-than-best records reach has no exact row
             fh.write("\t".join(map(str, (e or w)[:6] + (e[6:] if e else none) + (w[6:] if w else none))) + "\n")

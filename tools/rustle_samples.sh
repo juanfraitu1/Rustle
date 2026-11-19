@@ -96,7 +96,8 @@ else
   [ -z "$dup" ] || die "read name $dup: samples must not share read names"
   rm -f "$OUT.pool.key"
   # `a && b` is exempt from set -e: without the die a failed merge went on to index and key the OLD pool
-  { samtools merge -f -@ "$THREADS" -o "$POOLED.tmp" "${B[@]}" && mv -f "$POOLED.tmp" "$POOLED"; } || { rm -f "$POOLED.tmp"; die "samtools merge failed: $POOLED not updated"; }
+  # a per-process temporary name (audit 2026-11-19): two runs on one prefix must not write the same .tmp
+  { samtools merge -f -@ "$THREADS" -o "$POOLED.tmp.$$" "${B[@]}" && mv -f "$POOLED.tmp.$$" "$POOLED"; } || { rm -f "$POOLED.tmp.$$"; die "samtools merge failed: $POOLED not updated"; }
   samtools index -@ "$THREADS" "$POOLED"
   printf '%s\n' "$key" > "$OUT.pool.key"
   say "pool: $POOLED from ${S[*]}"
@@ -106,7 +107,9 @@ fi
 P=$RS_DIR/rustle_pipeline.sh
 say "all: assemble + families on the pooled reads"
 # the stages one by one, not `all --to families`: run_all times each stage with /usr/bin/time, absent on some compute nodes
-for st in assemble families; do bash "$P" "$st" --bam "$POOLED" --out "$OUT" "${REST[@]}"; done
+# the pool `all` uses (audit 2026-11-19): `assemble` alone defaults to primary (register 1812), so it is named unless given
+POOL=(); case " ${REST[*]} " in *" --seed-pool "*|*" --seed-secondaries "*|*" --no-seed-secondaries "*) ;; *) POOL=(--seed-pool "${RUSTLE_SEED_POOL:-good}");; esac
+for st in assemble families; do bash "$P" "$st" --bam "$POOLED" --out "$OUT" "${REST[@]}" ${POOL[@]+"${POOL[@]}"}; done
 SD=$OUT.samples; mkdir -p "$SD"
 for i in "${!B[@]}"; do
   n=${S[$i]}

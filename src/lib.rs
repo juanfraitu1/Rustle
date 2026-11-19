@@ -174,3 +174,56 @@ mod module_status_tests {
         );
     }
 }
+
+/// An environment setting that is unset (or empty) gives `None`; one that is set must parse, or the run stops with a message
+/// naming it. Audit 2026-11-19: `.parse().ok()` let a typo (`0,98`, `1e-3 `, `3_000_000`) silently become the default, so an
+/// experiment arm could be recorded as "no effect" when it never ran. Surrounding whitespace is ignored.
+pub fn env_opt<T: std::str::FromStr>(key: &str) -> Option<T> {
+    match std::env::var(key) {
+        Ok(v) if !v.trim().is_empty() => match v.trim().parse() {
+            Ok(x) => Some(x),
+            Err(_) => panic!("{key}={v:?} is not a valid value (unset it for the default)"),
+        },
+        _ => None,
+    }
+}
+
+/// [`env_opt`] with a default for an unset variable.
+pub fn env_parse<T: std::str::FromStr>(key: &str, default: T) -> T {
+    env_opt(key).unwrap_or(default)
+}
+
+#[cfg(test)]
+mod env_parse_tests {
+    // each test uses its own variable names: tests run in parallel threads of one process
+    #[test]
+    fn unset_or_empty_is_the_default_and_a_set_value_must_parse() {
+        std::env::remove_var("RUSTLE_TEST_ENVP_A");
+        assert_eq!(super::env_parse("RUSTLE_TEST_ENVP_A", 7usize), 7);
+        std::env::set_var("RUSTLE_TEST_ENVP_A", "  ");
+        assert_eq!(super::env_parse("RUSTLE_TEST_ENVP_A", 7usize), 7);
+        std::env::set_var("RUSTLE_TEST_ENVP_A", " 12 ");
+        assert_eq!(super::env_parse("RUSTLE_TEST_ENVP_A", 7usize), 12);
+        std::env::set_var("RUSTLE_TEST_ENVP_B", "0,98");
+        let r = std::panic::catch_unwind(|| super::env_parse("RUSTLE_TEST_ENVP_B", 0.5f64));
+        assert!(r.is_err(), "a typo must stop the run, not become the default");
+    }
+
+    #[test]
+    fn the_cache_key_changes_when_a_file_named_by_a_setting_changes() {
+        use crate::run_cache::env_fingerprint;
+        let dir = std::env::temp_dir().join(format!("rustle_envfp_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("w.bed");
+        std::fs::write(&f, "chr1\t0\t10\n").unwrap();
+        std::env::set_var("RUSTLE_TEST_ENVFP_FILE", &f);
+        let k1 = env_fingerprint(&[]);
+        std::fs::write(&f, "chr1\t0\t10\nchr2\t0\t10\n").unwrap();
+        let k2 = env_fingerprint(&[]);
+        std::env::remove_var("RUSTLE_TEST_ENVFP_FILE");
+        let _ = std::fs::remove_dir_all(&dir);
+        let line = |k: &str| k.lines().filter(|l| l.contains("RUSTLE_TEST_ENVFP_FILE")).collect::<Vec<_>>().join("\n");
+        assert_ne!(line(&k1), line(&k2), "an edited file must change the key");
+        assert!(line(&k1).contains("envfile"), "{k1}");
+    }
+}

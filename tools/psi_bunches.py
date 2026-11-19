@@ -26,6 +26,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from eq_classes import load_ties, floor_fn
 from gtf_names import opn
 
+
+def tx_strand(r):
+    """The transcript's strand of a read: minimap2's ts:A tag says whether the transcript runs against the read (ts:A:-), so a
+    reverse-complemented cDNA read counts on its gene's strand (audit 2026-11-19). Without the tag: the alignment strand."""
+    rev = r.is_reverse
+    if r.has_tag("ts") and r.get_tag("ts") == "-":
+        rev = not rev
+    return "-" if rev else "+"
+
 def gtf_introns(gtf):
     """{(chrom, strand, start, end): gene_id} for the introns of the GTF's transcripts (1-based, first / last intron base)."""
     ex, loc = collections.defaultdict(list), {}
@@ -64,7 +73,7 @@ def scan(contig):
                 continue
         elif r.is_secondary and r.get_tag(G_TAG) < G_FLOOR(best):
             continue
-        st = "-" if r.is_reverse else "+"
+        st = tx_strand(r)
         keys = tuple((contig, st, s, e) for s, e in introns_of(r.reference_start, r.cigartuples))
         if best is None:
             solo.update(keys)

@@ -7462,6 +7462,43 @@ fn main() -> Result<()> {
         }
         _ => anyhow::bail!("provide exactly one of --region, --regions or --genome-wide"),
     };
+    // audit 2026-11-19: the FASTA must be indexed and must be the genome the BAM was aligned to. Before, a contig missing from
+    // the FASTA failed only when its region ran (hours in, after every other region), and a BAM aligned to another build ran
+    // to the end on the wrong bases; without a .fai every region thread loaded the whole genome.
+    {
+        let fai_path = format!("{}.fai", args.fasta);
+        let fai = std::fs::read_to_string(&fai_path)
+            .with_context(|| format!("{fai_path} missing or unreadable: index the genome first (samtools faidx {})", args.fasta))?;
+        let lens: std::collections::HashMap<&str, u64> = fai
+            .lines()
+            .filter_map(|l| {
+                let mut f = l.split('\t');
+                Some((f.next()?, f.next()?.parse().ok()?))
+            })
+            .collect();
+        let missing: Vec<&str> = regions.iter().map(|(c, _, _)| c.as_str()).filter(|c| !lens.contains_key(c)).collect();
+        if !missing.is_empty() {
+            anyhow::bail!(
+                "{} contig(s) of the regions are not in {fai_path} (first: {}): the BAM and the FASTA must use the same genome and names",
+                missing.len(),
+                missing[0]
+            );
+        }
+        if let Some((c, _, hi)) = regions.iter().find(|(c, _, hi)| *hi > lens[c.as_str()]) {
+            anyhow::bail!(
+                "region {c} ends at {hi} but {fai_path} gives {c} length {}: the BAM was aligned to another genome build",
+                lens[c.as_str()]
+            );
+        }
+        if args.genome_wide {
+            if let Some((c, _, hi)) = regions.iter().find(|(c, _, hi)| *hi != lens[c.as_str()]) {
+                anyhow::bail!(
+                    "{c} has length {hi} in the BAM header but {} in {fai_path}: the BAM was aligned to another genome build",
+                    lens[c.as_str()]
+                );
+            }
+        }
+    }
     let mut by_contig: std::collections::BTreeMap<String, Vec<(u64, u64)>> =
         std::collections::BTreeMap::new();
     for (c, lo, hi) in regions {
@@ -7827,16 +7864,12 @@ fn main() -> Result<()> {
         // a warning, not a refusal: the Figure 5 hard-set shards run exactly this
         eprintln!("[copy_assign] WARNING: --gtf with a cross-chromosome family: its ~xchrom~ sweep has no contig to assemble on and re-assembles loci the real regions emit");
     }
-    // without a .fai every load is the whole genome: keep ONE cache entry instead of one whole genome per contig
-    let has_fai = std::path::Path::new(&format!("{}.fai", args.fasta)).exists();
-    if !has_fai {
-        eprintln!("[copy_assign] WARNING: {}.fai missing: the whole genome is loaded (samtools faidx)", args.fasta);
-    }
+    // the .fai is checked at startup (audit 2026-11-19), so every load is one contig
     let genome_cap = NonZeroUsize::new((args.region_threads + 1).max(2)).unwrap();
     let genome_cache: Arc<Mutex<LruCache<String, Arc<GenomeIndex>>>> =
         Arc::new(Mutex::new(LruCache::new(genome_cap)));
     let genome_for = |contig: &str| -> Result<Arc<GenomeIndex>> {
-        let key = if has_fai { contig } else { "" }; // shortcut: concurrent first misses still double-load, lock the load if that bites
+        let key = contig; // shortcut: concurrent first misses still double-load one contig, lock the load if that bites
         if let Some(g) = genome_cache.lock().unwrap().get(key).cloned() {
             return Ok(g);
         }
@@ -7932,7 +7965,7 @@ fn main() -> Result<()> {
             Some(c) if args.region_threads > 1 => {
                 let pool = READ_BUDGET.get_or_init(|| {
                     rustle::family::Permits::new(
-                        std::env::var("RUSTLE_REGION_READ_BUDGET").ok().and_then(|v| v.parse().ok()).unwrap_or(2_500_000),
+                        rustle::env_parse("RUSTLE_REGION_READ_BUDGET", 2_500_000),
                     )
                 });
                 let est = c.estimate_records(&args.bam, &wins)? as usize;
@@ -7984,6 +8017,13 @@ fn main() -> Result<()> {
                 || rustle::denovo_assemble::global_best_as().is_some());
         if !streaming && rustle::denovo_assemble::seed_spliced_support() {
             anyhow::bail!("RUSTLE_SEED_SPLICED=support needs the streaming --assemble-only path (no read-level extras)");
+        }
+        // audit 2026-11-19: the support-only mode checks chains against the primaries' RAW chains; junction snapping re-keys the
+        // groups first (a snapped primary chain was dropped), extension and the direct modes build chains past that check
+        if rustle::denovo_assemble::seed_spliced_support()
+            && (args.read_junction_snap > 0 || args.extend_transfrags || args.direct_transfrags || args.direct_transfrags_union)
+        {
+            anyhow::bail!("RUSTLE_SEED_SPLICED=support cannot be combined with --read-junction-snap, --extend-transfrags or the direct transfrag modes");
         }
         if !streaming && (args.check_splice || args.terminal_exon_anchor > 0) {
             anyhow::bail!("--check-splice / --terminal-exon-anchor need the streaming --assemble-only path (no read-level extras)");
@@ -9077,10 +9117,15 @@ fn main() -> Result<()> {
             let deferred: std::sync::Mutex<std::collections::VecDeque<usize>> = std::sync::Mutex::new(Default::default());
             let in_flight = std::sync::atomic::AtomicUsize::new(0);
             let nthreads = args.region_threads.min(chunk.len());
+            // audit 2026-11-19: one failed region stops the sweep; the others stop taking regions instead of running for hours
+            let failed = std::sync::atomic::AtomicBool::new(false);
             std::thread::scope(|sc| {
                 for _ in 0..nthreads {
                     sc.spawn(|| {
                         loop {
+                            if failed.load(std::sync::atomic::Ordering::Relaxed) {
+                                break;
+                            }
                             let k = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                             let Some(&i) = order.get(k) else { break };
                             let (c, lo, hi) = &chunk[i];
@@ -9096,6 +9141,9 @@ fn main() -> Result<()> {
                             if defer && k == 0 {
                                 open_gate(); // covers the error path, where compute returned before holding
                             }
+                            if r.is_err() {
+                                failed.store(true, std::sync::atomic::Ordering::Relaxed);
+                            }
                             match r {
                                 Ok(None) => deferred.lock().unwrap().push_back(i),
                                 r => *slots[i].lock().unwrap() = Some(r.map(|o| o.expect("not deferred"))),
@@ -9108,6 +9156,9 @@ fn main() -> Result<()> {
                         // is still running or still being dispatched
                         let mut cycled = 0usize;
                         loop {
+                            if failed.load(std::sync::atomic::Ordering::Relaxed) {
+                                break;
+                            }
                             let front = deferred.lock().unwrap().pop_front();
                             let Some(i) = front else {
                                 let busy = in_flight.load(std::sync::atomic::Ordering::SeqCst) > 0
@@ -9138,6 +9189,9 @@ fn main() -> Result<()> {
                                 }
                                 r => {
                                     cycled = 0;
+                                    if r.is_err() {
+                                        failed.store(true, std::sync::atomic::Ordering::Relaxed);
+                                    }
                                     *slots[i].lock().unwrap() = Some(r.map(|o| o.expect("not deferred")));
                                 }
                             }
@@ -9145,10 +9199,12 @@ fn main() -> Result<()> {
                     });
                 }
             });
-            slots
-                .into_iter()
-                .map(|m| m.into_inner().unwrap().expect("region computed"))
-                .collect::<Result<Vec<_>>>()?
+            let done: Vec<Option<Result<_>>> = slots.into_iter().map(|m| m.into_inner().unwrap()).collect();
+            if failed.load(std::sync::atomic::Ordering::Relaxed) {
+                // the first failure in region order; regions skipped after it hold None
+                return Err(done.into_iter().flatten().find_map(|r| r.err()).expect("a failed region left its error"));
+            }
+            done.into_iter().map(|r| r.expect("region computed")).collect::<Result<Vec<_>>>()?
         } else {
             chunk
                 .iter()

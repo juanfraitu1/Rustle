@@ -369,7 +369,7 @@ fn all_lets_the_layered_assembly_finish_under_families() {
             &stub_driver,
             "echo \"$1\" >> \"$LOG\"\n\
              if [ \"$1\" = assemble ]; then\n\
-               if [ \"${RP_LAYERS_BG:-0}\" = 1 ]; then ( sleep 2; echo x > \"$OUT.final.gtf\" ) > /dev/null 2>&1 & echo $! > \"$OUT.final.pid\"\n\
+               if [ \"${RP_LAYERS_BG:-0}\" = 1 ]; then ( sleep 2; echo x > \"$OUT.final.gtf\"; echo 0 > \"$OUT.final.rc\" ) > /dev/null 2>&1 & p=$!; echo \"$p $(hostname) $(ps -o lstart= -p $p | tr -s ' ' '_')\" > \"$OUT.final.pid\"\n\
                else echo layers_in_stage >> \"$LOG\"; fi\n\
              fi\n\
              if [ \"$1\" = families ] && [ -e \"$OUT.final.gtf\" ]; then echo families_saw_final >> \"$LOG\"; fi\n\

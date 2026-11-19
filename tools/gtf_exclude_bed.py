@@ -86,7 +86,8 @@ def _selftest():
 if __name__ == "__main__":
     if len(sys.argv) == 2 and sys.argv[1] == "--selftest":
         _selftest()
-        sys.exit("ok")
+        print("ok")
+        sys.exit(0)
     if len(sys.argv) not in (4, 5):
         sys.exit(__doc__)
     main(sys.argv[1], sys.argv[2], sys.argv[3], *(float(x) for x in sys.argv[4:]))
