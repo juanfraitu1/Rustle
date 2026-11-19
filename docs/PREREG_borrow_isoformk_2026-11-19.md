@@ -41,3 +41,18 @@ row 1611 gene -> human Ensembl map, `DENOVO_GGO_ENS_MAP`, which is not on PSU). 
 
 ## Prediction (mine)
 K1 passes; B1 is undecidable or fails on KB3781 (few tied reads: 186 exact ms ties of 100,810 molecules).
+
+## Result (2026-11-19, job on PSU, workspace `run/`)
+First submission: the snapshot lacked the binaries, every assemble failed, nothing was scored; rerun with `--bin` pointing to
+the build of commit e93f8cf3 (`goal_multicopy_dev/target/release`; default output byte-identical to the shared binary).
+KB3781 truth: true units one 929 / set 2; family truth 70 families, 152 members, 69 with >= 2 own primaries.
+- **K1 FAILS**: P_k2 finds 66 expressed members as P does (66 of 69; bar +2%); one-copy precision 1307/1361 = 0.960
+  [0.949, 0.969] vs P 0.966 (bar lower bound >= 0.951). P already finds 66 of 69: little room on KB3781.
+- **B1 FAILS** (and is nearly vacuous): copy-set units with structure 2 -> 2 of the 2 that exist (bar +3). B2: the 60
+  borrowed chains have no judged supporter (0 judged).
+- **F (descriptive)**: P's multi-exon isoforms matching an isoform at another place 118 of 1,437 (8%); one-read chains
+  promoted by a shared isoform 49, judged 19, EQUAL 17 (0.895 [0.686, 0.971]); all one-read chains (P1) add 412 EQUAL of
+  431 judged new claims and complete the member list (69 of 69 vs 66). On this measure (the copy, not the structure) one-read
+  chains are not wrong on KB3781; rows 1805-1808 judged their STRUCTURE (annotation), where they were.
+- StringTie: 0.955, 67 of 69 members.
+My prediction (K1 passes; B1 undecidable or fails) was wrong on K1.
