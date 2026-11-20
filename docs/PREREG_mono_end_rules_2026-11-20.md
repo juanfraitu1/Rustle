@@ -49,3 +49,65 @@ unavailable storage target).
   1487-1489 stand beside this table.
 - One switch at a time; `final.gtf` also passes the chain score filter and the 5' truncation rule.
 - The scorer was tested on the `base`-like fly files of row 1830 (default output, no arm) before registration.
+
+## Result (2026-11-20): no lever is GENERAL; mono-model OVERFIT by the reading; the 3' extension acts on primates only
+
+Jobs 4484140-4484146, every arm exit 0; tables `r1831_mono_end_rules/score.NAME.txt`. Repo `b7de7072`, binaries of 2026-11-20.
+The `base` chain sets equal row 1817's on every dataset (checked chain by chain on mouse heart).
+
+Datasets in the order fly, mouse simulated, zebrafish, mouse ES, mouse heart | OR6737, A119b. "with -> without" = base -> arm.
+
+**Single-exon filters, `x.gtf`** (model precision with / without the lever; truth single-exon transcripts found with / without):
+| lever | fly | mouse sim | zebrafish | mouse ES | heart | OR6737 | A119b | verdict |
+|---|---|---|---|---|---|---|---|---|
+| shadow, precision | 0.921 / 0.905 | 0.966 / 0.967 | 0.861 / 0.799 | 0.121 / 0.076 | 0.557 / 0.178 | 0.216 / 0.043 | 0.021 / 0.007 | |
+| shadow, found | 343 / 409 | 85 / 117 | 144 / 165 | 275 / 375 | 59 / 82 | 74 / 142 | 234 / 341 | MIXED: pays nowhere (cost 13-48%) |
+| quantile 0.82, precision | 0.921 / 0.877 | 0.966 / 0.958 | 0.861 / 0.614 | 0.121 / 0.032 | 0.557 / 0.144 | 0.216 / 0.057 | 0.021 / 0.011 | |
+| quantile 0.82, found | 343 / 1,800 | 85 / 850 | 144 / 927 | 275 / 532 | 59 / 221 | 74 / 211 | 234 / 396 | MIXED: pays nowhere (cost 41-90%) |
+| primed, precision | 0.921 / 0.926 | 0.966 / 0.961 | 0.861 / 0.864 | 0.121 / 0.095 | 0.557 / 0.576 | 0.216 / 0.210 | 0.021 / 0.011 | |
+| primed, found | 343 / 423 | 85 / 126 | 144 / 155 | 275 / 287 | 59 / 120 | 74 / 85 | 234 / 241 | MIXED: pays on mouse ES and A119b only |
+
+- All three raise single-exon precision on the real libraries (the primed rule not on heart) and all three fail the 5% cost bar
+  nearly everywhere. None is primate-specific: the pattern is the same on mouse and on the apes.
+- The quantile floor is the expensive one. On the simulated sets it removes 81-90% of the true single-exon transcripts that are
+  found without it, where precision without it is still 0.88-0.96 on fly and mouse (0.61 on zebrafish). Fly truth has 3,656
+  single-exon transcripts: 343 found by default, 1,800 without the floor.
+- The primed rule removes true single-exon transcripts on simulated reads (7-33% of those found) and half of them on heart
+  (59 / 120), at no precision gain there.
+- None of the three changes a multi-exon chain of `x.gtf`.
+
+**mono-model, `x.final.gtf`** (precision with / without; found with / without):
+| fly | mouse sim | zebrafish | mouse ES | heart | OR6737 | A119b | verdict |
+|---|---|---|---|---|---|---|---|
+| 0.989 / 0.921; 342 / 343 | 0.969 / 0.966; 301 / 85 | 1.000 / 0.861; 80 / 144 | 0.103 / 0.121; 270 / 275 | 0.351 / 0.557; 128 / 59 | 0.222 / 0.216; 134 / 74 | 0.169 / 0.021; 315 / 234 | **OVERFIT** (pays on both P, fails zebrafish, ES, heart) |
+The failures differ in kind: zebrafish loses 44% of the found truth at higher precision; ES and heart lose precision (heart finds
+twice as many). The large gain is A119b's (0.021 -> 0.169).
+
+**tssend, `x.final.gtf`** (share of correct-chain transcripts with the 5' end within 50 bp, with / without):
+| fly | mouse sim | zebrafish | mouse ES | heart | OR6737 | A119b | verdict |
+|---|---|---|---|---|---|---|---|
+| 0.979 / 0.994 | 0.982 / 0.994 | 0.980 / 0.995 | 0.674 / 0.500 | 0.634 / 0.655 | 0.368 / 0.602 | 0.713 / 0.461 | MIXED: helps mouse ES (+17 points) and A119b (+25); worse on the other five, OR6737 by 23 points |
+With the layer `final.gtf` also holds 3-49 fewer correct chains (it changes the features the chain score filter reads) and base
+sensitivity is 0.4-1.5 points lower on all seven datasets.
+
+**tesext, `x.final.gtf`** (base sensitivity with / without; base precision with / without; 3' share within 50 bp with / without):
+| fly | mouse sim | zebrafish | mouse ES | heart | OR6737 | A119b | verdict |
+|---|---|---|---|---|---|---|---|
+| 0.6836 / 0.6835 | 0.7392 / 0.7389 | 0.7579 / 0.7578 | 0.3562 / 0.3552 | 0.2553 / 0.2549 | 0.4443 / 0.4388; 0.692 / 0.696; 0.608 / 0.601 | 0.4727 / 0.4534; 0.410 / 0.429; 0.596 / 0.557 | MIXED: helps OR6737; A119b +1.9 points sensitivity for -1.9 precision (outside the bound) |
+On the five non-primate datasets the layer moves base sensitivity by at most 0.1 point: its effect exists on the two ape testis
+libraries only (as transfrag extension, row 1811). It also removes single-exon models there (A119b 14,121 -> 9,212, model
+precision 0.111 -> 0.169).
+
+**Reading for the user (my interpretation, beyond the registered verdicts).**
+1. The registered question "overfit to primates?" gets a yes for one lever (mono-model) and "acts on primates only" for a second
+   (tesext). The other four are not primate-specific.
+2. The larger finding is single-exon recall: the three `x.gtf` filters together keep 9% of fly's true single-exon transcripts.
+   On real libraries they buy precision that stays low anyway (A119b 0.02, mouse ES 0.12).
+3. tssend is right where it was tuned (A119b) and on mouse ES, and wrong on OR6737 and slightly on four others. The row cannot
+   say why; A119b and mouse ES are the two libraries where the earlier cap-start work found usable 5' signal, and OR6737 is one
+   where it did not (not tested here).
+Limits as stated before the run; in addition, several models can match one truth transcript, so "matching models" exceeds
+"found" in `final.gtf`, and precision there counts models.
+
+Candidates, the user's call (none made): quantile floor lower than 0.82 (a grid, checked on mouse adrenal or cortex); mono-model
+and tesext as opt-in layers; tssend conditional on a 5' signal test.
