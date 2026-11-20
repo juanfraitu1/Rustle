@@ -14,6 +14,17 @@ folders, the session notes (memory) and the ThesisVault edits are NOT, and steps
   merge them as sections 5 and 6 say (read from there instead of rsync from psu); nothing in the Fritz memory or vault was touched.
 Still to do on Fritz: the SIRV md5 check (section 1), the merges, then the support-filter task (section 8).
 
+**Done on Fritz, 2026-11-20:**
+- Rebuild: the in-place build could not run (the hung `cargo` 582694 keeps the lock and cannot be killed). All binaries were built
+  from `4e9bb9be` into `~/ws/rustle_target_b` and copied into `~/rustle_target/release/`; the earlier binaries are in
+  `~/ws/rustle_target_bins_before_2026-11-20/`. The `.fingerprint` files there are older than the binaries: the next in-place
+  `cargo build` recompiles once.
+- SIRV md5 check: NOT done. Cause of the hang: Lustre target `nvme-OST000b` of /anvme is unavailable (`lfs check osts`); every
+  file with data on it blocks its reader for good (`lfs find --ost 11 DIR` lists them). `r1801_sirv_wrong/sirv.bam` and several
+  libraries of the Python environment (`libmpfr`, `zlib`, `_json`, parts of numpy / scipy) are among them.
+- Session notes and the five vault files merged (earlier Fritz copies: `~/psu_handoff_2026-11-19/fritz_{memory,vault}_before_merge`).
+- Section 8: row 1830 claimed and pre-registered, `docs/PREREG_support_filter_2026-11-20.md`; runs wait for the storage target.
+
 ## 1. Pull and rebuild (code)
 ```bash
 cd ~/Rustle && git fetch && git log --oneline HEAD..origin/main   # every commit since fe9e7c23 (rows 1820-1829, the audit, this guide)
