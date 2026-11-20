@@ -24,13 +24,15 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-18 | register ×1 |
 | [`seeded_family_definition.md`](seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-08 | — |
 
-## Open studies and current handoff (261)
+## Open studies and current handoff (263)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
+| [`PREREG_count_all_reads_2026-11-20.md`](PREREG_count_all_reads_2026-11-20.md) | Row 1833: every read counted (no collapse of coordinate duplicates), tested off the spike-ins (pre-registered 2026-11-20 | 2026-11-20 | — |
 | [`PREREG_mono_end_rules_2026-11-20.md`](PREREG_mono_end_rules_2026-11-20.md) | Row 1831: are the single-exon rules and the end layers overfit to primates? (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_mono_quantile_grid_2026-11-20.md`](PREREG_mono_quantile_grid_2026-11-20.md) | Row 1832: the read floor of single-exon transcripts, a grid of its quantile (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_support_filter_2026-11-20.md`](PREREG_support_filter_2026-11-20.md) | Row 1830: does the support profile, used as a FILTER, remove wrong transcripts? (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
+| [`PREREG_tssend_cap_gate_2026-11-20.md`](PREREG_tssend_cap_gate_2026-11-20.md) | Row 1834: does the assembler's cap signal say where the median 5' end helps? (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`CORRELATION_CLUSTERING_2026-11-19.md`](CORRELATION_CLUSTERING_2026-11-19.md) | Correlation clustering (Strainy / SDA lineage) for assignment and for copies the reference lacks (2026-11-19, PSU) | 2026-11-19 | register ×1, memory ×1 |
 | [`GOAL_multicopy_families_2026-11-19.md`](GOAL_multicopy_families_2026-11-19.md) | Goal: resolution-aware assembly of multi-copy gene families (set by the user 2026-11-19) | 2026-11-19 | register ×1, memory ×1 |
 | [`HANDOFF_PSU_TO_FRITZ_2026-11-19.md`](HANDOFF_PSU_TO_FRITZ_2026-11-19.md) | Handoff: what was done on PSU Roar (2026-11-18 / 19) and how a Fritz session takes it over | 2026-11-20 | memory ×1 |
@@ -39,7 +41,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREDICTION_tandem_heldout_2026-11-19.md`](PREDICTION_tandem_heldout_2026-11-19.md) | Prediction before a held-out test of the tandem member-size rule (2026-11-19, written before OR6737 is opened) | 2026-11-19 | register ×1 |
 | [`PREREG_borrow_isoformk_2026-11-19.md`](PREREG_borrow_isoformk_2026-11-19.md) | PREREG r1822: borrowed structure (question 4), shared isoforms and RUSTLE_READ_ISOFORM_K=2 on KB3781 (2026-11-19) | 2026-11-19 | register ×1 |
 | [`PREREG_chainscore_ties_2026-11-19.md`](PREREG_chainscore_ties_2026-11-19.md) | Row 1813: the chain score without the tie instability (pre-registered 2026-11-19) | 2026-11-19 | register ×1 |
-| [`PREREG_junction_replace_2026-11-19.md`](PREREG_junction_replace_2026-11-19.md) | Row 1819: replace a weak junction by its strong neighbour instead of dropping the chain (pre-registered 2026-11-19) | 2026-11-19 | register ×1 |
+| [`PREREG_junction_replace_2026-11-19.md`](PREREG_junction_replace_2026-11-19.md) | Row 1819: replace a weak junction by its strong neighbour instead of dropping the chain (pre-registered 2026-11-19) | 2026-11-20 | register ×1 |
 | [`PREREG_near_tie_census_2026-11-19.md`](PREREG_near_tie_census_2026-11-19.md) | PREREG r1829: how many near-tied reads exist, and what could separate them (2026-11-19) | 2026-11-19 | register ×1, memory ×1 |
 | [`PREREG_pooled_filter_2026-11-19.md`](PREREG_pooled_filter_2026-11-19.md) | Row 1818: a chain score fitted on primate and non-primate data together, judged leave-one-species-out (pre-registered 20 | 2026-11-19 | register ×1 |
 | [`PREREG_resolution_call_2026-11-19.md`](PREREG_resolution_call_2026-11-19.md) | PREREG r1821: resolution-aware output of multi-copy families, judged once on the last HG002 quarter (2026-11-19) | 2026-11-19 | register ×1 |
