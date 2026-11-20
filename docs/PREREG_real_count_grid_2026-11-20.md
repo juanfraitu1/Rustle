@@ -70,3 +70,25 @@ not by the registered rule. The step-2 bar is unchanged: the arm qualifies (prec
 correct chains) on bonobo testis, KB3781, mouse adrenal, mouse cortex and chimpanzee testis; S1 is already known from the grid
 (SIRV 0.877). Single-exon models are reported per arm. A pass makes a candidate default for the user's ruling, stated together
 with the two development misses (mouse ES, mouse simulated).
+
+## Step 2 result (2026-11-20): FAIL (4 of 5; mouse cortex less precise); not a candidate default
+
+Jobs 4484301-4484305; arm = `RUSTLE_DUP_COUNT=1`, fraction 0.01, ratio 0.3, against `base`. `PREFIX.gtf`:
+
+| dataset | precision | correct chains kept | correct gained / lost | wrong gained / lost | qualifies | `final.gtf` precision |
+|---|---|---|---|---|---|---|
+| bonobo testis (unseen) | 0.308 -> 0.311 | 0.999 | +62 / -78 | +748 / -1,278 | yes | 0.337 -> 0.338 |
+| KB3781 (unseen) | 0.334 -> 0.351 | 0.982 | +243 / -708 | +1,929 / -6,501 | yes | 0.373 -> 0.389 |
+| mouse adrenal | 0.5402 -> 0.5410 | 0.996 | +52 / -107 | +482 / -572 | yes (by 0.001) | 0.578 -> 0.576 |
+| mouse cortex | 0.465 -> 0.463 | 0.998 | +58 / -82 | +690 / -575 | **no** | 0.487 -> 0.484 |
+| chimpanzee testis | 0.351 -> 0.356 | 0.999 | +71 / -87 | +524 / -1,451 | yes | 0.416 -> 0.418 |
+
+The bar asked for all five. Truth single-exon transcripts found fall 7-10% on every one of the five (the side effect of row
+1836, not re-set here): bonobo 71 -> 66, KB3781 56 -> 51, adrenal 80 -> 72, cortex 106 -> 96, chimpanzee 104 -> 95.
+
+**Reading.** With the fraction halved, real counts are about neutral: nothing loses more than 1.8% of its correct chains, the
+ape libraries gain 0.003-0.017 precision (KB3781 4,572 wrong chains fewer), the three mouse tissues do not gain (adrenal
++0.001, cortex -0.002, mouse ES -0.007 in step 1), and `final.gtf` is slightly less precise on two of them. What it buys for
+certain is the spike-in result (SIRV 0.589 -> 0.877) and A119b's 5,376 fewer wrong chains. That is not enough for a default by
+the bars set here. `RUSTLE_DUP_COUNT=1` with `--polish-isoform-fraction 0.01` stays an opt-in combination; the driver has no
+switch for the fraction (arms patched a driver copy).
