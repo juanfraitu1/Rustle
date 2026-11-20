@@ -61,7 +61,7 @@ explain yet and expect this table to show.
 ## Result (2026-11-20): FAIL; no end signature separates on the non-primate side
 
 Jobs 4489918-4489929, all exit 0 (24-167 s); `r1841_end_through/ends.NAME.txt`, per candidate `cand.NAME.tsv`. Every
-candidate has a container; 2 of 255,804 have no reads of their own chain.
+candidate has a container; 2 of 255,803 have no reads of their own chain.
 
 Precision of the candidates holding the signature / of the rest (share of the correct candidates held); **bold** = SEPARATES:
 | | fly sim | mouse sim | zebrafish sim | mouse ES | heart | adrenal | cortex | OR6737 | A119b | chimp | bonobo | KB3781 |
@@ -69,7 +69,7 @@ Precision of the candidates holding the signature / of the rest (share of the co
 | all candidates | 0.182 | 0.533 | 0.155 | 0.052 | 0.086 | 0.087 | 0.081 | 0.005 | 0.006 | 0.006 | 0.009 | 0.006 |
 | T05 | 0.151 / 0.238 | 0.335 / 0.632 | 0.098 / 0.244 | 0.185 / 0.046 (0.15) | **0.150 / 0.074** | 0.129 / 0.080 | **0.181 / 0.066** | **0.027 / 0.004** | **0.031 / 0.005** | **0.021 / 0.004** | **0.026 / 0.007** | **0.023 / 0.005** |
 | K50 | 0.129 / 0.389 | 0.474 / 0.684 | 0.111 / 0.329 | **0.098 / 0.040** | 0.116 / 0.072 | 0.103 / 0.079 | 0.111 / 0.069 | **0.010 / 0.004** | **0.012 / 0.004** | **0.010 / 0.004** | 0.013 / 0.007 | **0.010 / 0.004** |
-T20, T50 and T20K hold 0-3% of the correct candidates everywhere (a share of 0.2 is reached by 1,097 of 255,804 candidates)
+T20, T50 and T20K hold 0-3% of the correct candidates everywhere (a share of 0.2 is reached by 698 of 255,803 candidates)
 and separate nowhere.
 
 - **T05** separates on 2 of 7 non-primate (heart, cortex; on mouse ES it is four times as precise and holds 15% of the
