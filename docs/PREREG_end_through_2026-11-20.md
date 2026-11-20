@@ -57,3 +57,44 @@ explain yet and expect this table to show.
   junction was re-placed has no reads of its own chain; such candidates are counted and scored as holding no signature.
 - Real-library truths are incomplete annotations; simulated reads carry no degradation.
 - Twelve reused datasets (rows 1837-1840), said.
+
+## Result (2026-11-20): FAIL; no end signature separates on the non-primate side
+
+Jobs 4489918-4489929, all exit 0 (24-167 s); `r1841_end_through/ends.NAME.txt`, per candidate `cand.NAME.tsv`. Every
+candidate has a container; 2 of 255,804 have no reads of their own chain.
+
+Precision of the candidates holding the signature / of the rest (share of the correct candidates held); **bold** = SEPARATES:
+| | fly sim | mouse sim | zebrafish sim | mouse ES | heart | adrenal | cortex | OR6737 | A119b | chimp | bonobo | KB3781 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| all candidates | 0.182 | 0.533 | 0.155 | 0.052 | 0.086 | 0.087 | 0.081 | 0.005 | 0.006 | 0.006 | 0.009 | 0.006 |
+| T05 | 0.151 / 0.238 | 0.335 / 0.632 | 0.098 / 0.244 | 0.185 / 0.046 (0.15) | **0.150 / 0.074** | 0.129 / 0.080 | **0.181 / 0.066** | **0.027 / 0.004** | **0.031 / 0.005** | **0.021 / 0.004** | **0.026 / 0.007** | **0.023 / 0.005** |
+| K50 | 0.129 / 0.389 | 0.474 / 0.684 | 0.111 / 0.329 | **0.098 / 0.040** | 0.116 / 0.072 | 0.103 / 0.079 | 0.111 / 0.069 | **0.010 / 0.004** | **0.012 / 0.004** | **0.010 / 0.004** | 0.013 / 0.007 | **0.010 / 0.004** |
+T20, T50 and T20K hold 0-3% of the correct candidates everywhere (a share of 0.2 is reached by 1,097 of 255,804 candidates)
+and separate nowhere.
+
+- **T05** separates on 2 of 7 non-primate (heart, cortex; on mouse ES it is four times as precise and holds 15% of the
+  correct, under the 20% bar) and 5 of 5 primate. **K50**: 1 of 7 and 4 of 5. Bars were 6 and 4: **FAIL**, and not
+  NON-PRIMATE ONLY either. The pattern is the reverse of the one hoped for: the signatures separate on the apes.
+- Where they separate the admitted chains are still far too poor to keep: 0.02-0.03 on the apes, 0.13-0.19 on the mouse
+  libraries, against `x.gtf` precision of 0.33 (mouse ES) to 0.55 (heart, adrenal).
+- On the three simulated sets both signatures pick the WRONG candidates (as row 1840's did). No cutoff repairs it: precision
+  falls with the contrast on all three (mouse simulated 0.75 at contrast 0.25-0.5, 0.47 at >= 0.75).
+- Expectation (FAIL) held. The part "if anything, the 3' side or K50 on mouse" did not hold as a signature.
+
+**Observation, not registered (post hoc): the internal SIDE carries more than any end signature.** Precision of the
+candidates by which side is internal (5' = cut at the start, 3' = ends early, both):
+| | fly sim | mouse sim | zebrafish sim | mouse ES | heart | adrenal | cortex | OR6737 | A119b | chimp | bonobo | KB3781 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 5' | 0.132 | 0.341 | 0.078 | 0.037 | 0.071 | 0.065 | 0.060 | 0.004 | 0.005 | 0.005 | 0.007 | 0.005 |
+| 3' | 0.955 | 0.984 | 0.401 | 0.236 | 0.335 | 0.222 | 0.338 | 0.015 | 0.023 | 0.011 | 0.017 | 0.010 |
+| both | 0.091 | 0.563 | 0.350 | 0.055 | 0.068 | 0.092 | 0.085 | 0.002 | 0.002 | 0.001 | 0.002 | 0.004 |
+| 3' candidates, correct / all | 21 / 22 | 1,054 / 1,071 | 71 / 177 | 449 / 1,901 | 124 / 370 | 314 / 1,414 | 230 / 680 | 57 / 3,884 | 301 / 13,086 | 34 / 3,228 | 56 / 3,234 | 70 / 7,240 |
+A contained chain that only ends early (no container reaches upstream of it) is 3-6 times as precise as a 5'-cut one on
+every non-primate dataset, and nearly always true on fly and mouse simulated. On the apes it is 0.010-0.023: rows 1064 and
+1486, which closed this class, were read on A119b alone. This also explains the simulated reversal: there the true candidates
+are the early-ending ones, and the 5' signatures are computed on the other side. Not a result: the split was looked at
+after the tables. A rule "the collapse spares a chain that is internal at the 3' side only" would need its own registered row
+(judged by "pays"; mouse ES would gain 2.5% correct chains at about 3 wrong per correct).
+
+**Decision:** read ends at the collapse give no lever (with rows 1064, 1486, 1715, 1840); no build. Open, the user's call: the
+3'-only exemption as a registered row.
