@@ -23,7 +23,8 @@ Still to do on Fritz: the SIRV md5 check (section 1), the merges, then the suppo
   file with data on it blocks its reader for good (`lfs find --ost 11 DIR` lists them). `r1801_sirv_wrong/sirv.bam` and several
   libraries of the Python environment (`libmpfr`, `zlib`, `_json`, parts of numpy / scipy) are among them.
 - Session notes and the five vault files merged (earlier Fritz copies: `~/psu_handoff_2026-11-19/fritz_{memory,vault}_before_merge`).
-- Section 8: row 1830 claimed and pre-registered, `docs/PREREG_support_filter_2026-11-20.md`; runs wait for the storage target.
+- Section 8: row 1830 pre-registered, run (around the storage target: fresh tool environment, zebrafish re-mapped) and judged:
+  FAIL, `docs/PREREG_support_filter_2026-11-20.md`, Result section.
 
 ## 1. Pull and rebuild (code)
 ```bash

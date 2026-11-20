@@ -28,10 +28,10 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 
 | file | title | last commit | cited by |
 |---|---|---|---|
-| [`PREREG_support_filter_2026-11-20.md`](PREREG_support_filter_2026-11-20.md) | Row 1830: does the support profile, used as a FILTER, remove wrong transcripts? (pre-registered 2026-11-20) | uncommitted | — |
+| [`PREREG_support_filter_2026-11-20.md`](PREREG_support_filter_2026-11-20.md) | Row 1830: does the support profile, used as a FILTER, remove wrong transcripts? (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`CORRELATION_CLUSTERING_2026-11-19.md`](CORRELATION_CLUSTERING_2026-11-19.md) | Correlation clustering (Strainy / SDA lineage) for assignment and for copies the reference lacks (2026-11-19, PSU) | 2026-11-19 | register ×1, memory ×1 |
 | [`GOAL_multicopy_families_2026-11-19.md`](GOAL_multicopy_families_2026-11-19.md) | Goal: resolution-aware assembly of multi-copy gene families (set by the user 2026-11-19) | 2026-11-19 | register ×1, memory ×1 |
-| [`HANDOFF_PSU_TO_FRITZ_2026-11-19.md`](HANDOFF_PSU_TO_FRITZ_2026-11-19.md) | Handoff: what was done on PSU Roar (2026-11-18 / 19) and how a Fritz session takes it over | 2026-11-19 | memory ×1 |
+| [`HANDOFF_PSU_TO_FRITZ_2026-11-19.md`](HANDOFF_PSU_TO_FRITZ_2026-11-19.md) | Handoff: what was done on PSU Roar (2026-11-18 / 19) and how a Fritz session takes it over | 2026-11-20 | memory ×1 |
 | [`MULTICOPY_DEV_LEDGER_2026-11-19.md`](MULTICOPY_DEV_LEDGER_2026-11-19.md) | Development ledger of the multi-copy goal (copy of PSU workspace goal_multicopy_dev/LEDGER.md, 2026-11-19) | 2026-11-19 | memory ×1 |
 | [`MULTICOPY_FAMILIES_2026-11-19.md`](MULTICOPY_FAMILIES_2026-11-19.md) | Multi-copy gene families: what the reads can decide (session of 2026-11-18 / 19, on PSU Roar) | 2026-11-19 | memory ×1 |
 | [`PREDICTION_tandem_heldout_2026-11-19.md`](PREDICTION_tandem_heldout_2026-11-19.md) | Prediction before a held-out test of the tandem member-size rule (2026-11-19, written before OR6737 is opened) | 2026-11-19 | register ×1 |
