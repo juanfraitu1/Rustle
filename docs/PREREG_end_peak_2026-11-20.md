@@ -80,3 +80,7 @@ are somewhat more precise than the rest on mouse adrenal (0.40 against 0.22) and
 
 **Decision:** not a candidate. The switch stays in the code as an opt-in (off by default, parity checked); removing it is the
 user's call. The shared `~/rustle_target` was not rebuilt with it.
+
+**Removed (2026-11-20, user's decision):** the switch `--polish-ism-end-peak` / `RUSTLE_POLISH_ISM_END_PEAK` is taken out of
+`copy_assign` and the driver. Code of this row: commit `5e367e57`. After the removal the default output and the kept switch
+of row 1843 (`--polish-ism-ratio-3p`) are byte-identical to row 1843's runs (fly, mouse ES); test suite 1,585 passed, 0 failed.
