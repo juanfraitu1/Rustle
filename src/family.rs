@@ -46217,6 +46217,8 @@ pub mod denovo_pipeline {
             // coordinate-duplicate spliced records per chain (r1524): they count only for chains that would otherwise
             // fall under the floor, so the polish thresholds fitted on de-duplicated counts are untouched
             dups: std::collections::BTreeMap<(String, Vec<(u64, u64)>), u32>,
+            /// `RUSTLE_DUP_COUNT=1` ([`dup_count_enabled`]; read once in `new`): `dups` add to `reads`, not to the floor.
+            pub dup_count: bool,
             /// Unspliced reads, in arrival order, for the position-aware seeding pass.
             pub unspliced: Vec<PrimaryRead>,
             /// `UnsplicedSecondary::Support` (r1520): unspliced SECONDARY records, kept apart so they can add support to a
@@ -46258,6 +46260,15 @@ pub mod denovo_pipeline {
             matches!(std::env::var("RUSTLE_DUP_ADMIT"), Ok(v) if v == "1")
         }
 
+        /// `RUSTLE_DUP_COUNT=1` (opt-in, register 1836): coordinate-duplicate spliced records count in a chain's `reads`
+        /// but NOT toward the floor. The floor stays on distinct (start, end, chain) records, which keeps out chains that
+        /// exist only as identical copies of one record (A119b: 190,624 such chains outside the annotation, register
+        /// 1833); the read count every later rule compares (isoform fraction, sub-chain ratio) is the number of records,
+        /// as under `--keep-coordinate-duplicates`. Unspliced records stay de-duplicated. Wins over `RUSTLE_DUP_ADMIT`.
+        pub fn dup_count_enabled() -> bool {
+            matches!(std::env::var("RUSTLE_DUP_COUNT"), Ok(v) if v == "1")
+        }
+
         impl Pass1Acc {
             pub fn new(min_terminal_support: u32, snap: Option<(u64, f64)>) -> Self {
                 // The boundary is the k-th most extreme terminal, k = `min_terminal_support`. A depth-adaptive rank
@@ -46273,6 +46284,7 @@ pub mod denovo_pipeline {
                     groups: std::collections::BTreeMap::new(),
                     allpos: std::collections::BTreeMap::new(),
                     dups: std::collections::BTreeMap::new(),
+                    dup_count: dup_count_enabled(),
                     unspliced: Vec::new(),
                     unspliced_sec: Vec::new(),
                     n_pushed: 0,
@@ -46398,6 +46410,7 @@ pub mod denovo_pipeline {
                 let (k, snap, unspliced, unspliced_sec) = (self.k, self.snap, self.unspliced, self.unspliced_sec);
                 let primary_chains = self.primary_chains;
                 let dups = self.dups;
+                let dup_count = self.dup_count;
                 let (groups, allpos) = if opts.snap_w > 0 {
                     snap_read_junctions(self.groups, self.allpos, opts.snap_w, k)
                 } else {
@@ -46450,7 +46463,8 @@ pub mod denovo_pipeline {
                             // only maximal transfrags whose transferred abundance reaches the floor
                             return extra.contains_key(&(chrom.clone(), introns.clone()));
                         }
-                        *n + dups.get(&(chrom.clone(), introns.clone())).copied().unwrap_or(0) >= smin
+                        // `RUSTLE_DUP_COUNT=1`: the floor is on distinct coordinate records, duplicates do not lift a chain over it
+                        *n + if dup_count { 0 } else { dups.get(&(chrom.clone(), introns.clone())).copied().unwrap_or(0) } >= smin
                             || (!extra.is_empty() && extra.contains_key(&(chrom.clone(), introns.clone())))
                             || (isoform_k > 0
                                 && !introns.is_empty()
@@ -46492,6 +46506,9 @@ pub mod denovo_pipeline {
                         // over its own reads (`read_rev` / `read_tot`)
                         let n_reads = if (direct || union || n < smin) && !extra.is_empty() {
                             extra.get(&(chrom.clone(), introns.clone())).copied().unwrap_or(n)
+                        } else if dup_count {
+                            // every record counts in `reads` (what the isoform fraction and the sub-chain ratio compare)
+                            n + dups.get(&(chrom.clone(), introns.clone())).copied().unwrap_or(0)
                         } else if n < smin {
                             // shortcut: a chain admitted only through its coordinate duplicates carries the raw count
                             // (as `--keep-coordinate-duplicates` would), so the gate's read floor sees it; chains above
@@ -50542,7 +50559,7 @@ pub mod denovo_pipeline {
             let mut seen: DetHashSet<u64> = DetHashSet::default();
             // r1524/r1525: coordinate duplicates admit a chain that would fall under the floor, opt-in (`RUSTLE_DUP_ADMIT=1`);
             // a different-ZMW restriction was measured vacuous (no same-ZMW coordinate duplicates exist in A119b)
-            let dup_admit = dedupe_coords && dup_admit_enabled();
+            let dup_admit = dedupe_coords && (dup_admit_enabled() || acc.dup_count);
             let mut n_mapped = 0usize;
             let mut ops: Vec<noodles_sam::alignment::record::cigar::Op> = Vec::with_capacity(256);
             // GOOD seeding on the streaming path (r1060/r1100, `docs/archive/2026-09/PREREG_locus_read_pool_2026-09-22.md`): with
@@ -54869,6 +54886,32 @@ pub mod denovo_pipeline {
                 assert_eq!(run(false, false), (2, 1, Some(2)));
                 assert_eq!(run(true, false), (1, 0, None)); // default: the duplicate is dropped, the chain stays under the floor
                 assert_eq!(run(true, true), (1, 1, Some(2))); // opt-in: admitted on 1 + 1 duplicate, carrying the raw count
+            }
+
+            #[test]
+            fn dup_count_keeps_the_floor_on_distinct_records_and_counts_every_record() {
+                // register 1836: a chain that exists only as identical copies stays under the floor; a chain with two
+                // distinct records carries all its records in `reads`
+                let acc_of = |dup_count: bool| {
+                    let mut acc = Pass1Acc::new(1, None);
+                    acc.dup_count = dup_count;
+                    // chain X: one distinct record + 3 copies; chain Y: two distinct records + 5 copies
+                    acc.push("c1", 1_000, 1_700, &[(1_100, 1_600)], false);
+                    for _ in 0..3 {
+                        acc.push_dup("c1", &[(1_100, 1_600)]);
+                    }
+                    acc.push("c1", 5_000, 5_700, &[(5_100, 5_600)], false);
+                    acc.push("c1", 5_010, 5_700, &[(5_100, 5_600)], false);
+                    for _ in 0..5 {
+                        acc.push_dup("c1", &[(5_100, 5_600)]);
+                    }
+                    let mut v: Vec<(u64, u32)> = acc.finish(2, 0, None).iter().map(|s| (s.introns[0].0, s.n_reads)).collect();
+                    v.sort();
+                    v
+                };
+                assert_eq!(acc_of(true), vec![(5_100, 7)]);
+                // the earlier opt-in (`RUSTLE_DUP_ADMIT`, what `push_dup` meant before): X admitted with its raw count, Y de-duplicated
+                assert_eq!(acc_of(false), vec![(1_100, 4), (5_100, 2)]);
             }
 
             #[test]

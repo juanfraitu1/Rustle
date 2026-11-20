@@ -601,6 +601,8 @@ esac
 #   RUSTLE_READ_STRAND=0           assemble: single-exon strand back to the '+' placeholder (default 1 = read-orientation vote, r1525)
 #   RUSTLE_DUP_ADMIT=1             pass 1: coordinate-duplicate spliced records count toward the floor for a chain that would otherwise
 #                                  fall under it (r1524: rescues 2-read family chains; genome-wide too broad, 68,749 chains at 1% CAT match)
+#   RUSTLE_DUP_COUNT=1             pass 1 (opt-in, row 1836): coordinate-duplicate spliced records count in `reads` (isoform fraction,
+#                                  sub-chain ratio) but not toward the 2-read floor, which stays on distinct records
 #   RUSTLE_CHECK_SPLICE=1          copy_assign --check-splice (FLAIR --check_splice on each spliced read)
 #   RUSTLE_TERMINAL_EXON_ANCHOR=N  copy_assign --terminal-exon-anchor N (bp; FLAIR --stringent's end rule is 25)
 #   RUSTLE_EXTEND_TRANSFRAGS=1     OPT-IN again since 2026-11-19 (user; register 1811: primate-only, +2.5% / +3.6% correct chains on
