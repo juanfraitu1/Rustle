@@ -24,17 +24,18 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-18 | register ×1 |
 | [`seeded_family_definition.md`](seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-08 | — |
 
-## Open studies and current handoff (267)
+## Open studies and current handoff (268)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
 | [`PREREG_assembly_compare_2026-11-20.md`](PREREG_assembly_compare_2026-11-20.md) | Row 1838: where do other assemblers find true chains that Rustle misses, primate against non-primate? (pre-registered 20 | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_count_all_reads_2026-11-20.md`](PREREG_count_all_reads_2026-11-20.md) | Row 1833: every read counted (no collapse of coordinate duplicates), tested off the spike-ins (pre-registered 2026-11-20 | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_dup_count_2026-11-20.md`](PREREG_dup_count_2026-11-20.md) | Row 1836: floor on distinct records, read count on every record (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
+| [`PREREG_end_peak_2026-11-20.md`](PREREG_end_peak_2026-11-20.md) | Row 1840: keep a contained chain when its own end is a read-end peak (pre-registered 2026-11-20) | 2026-11-20 | register ×1 |
 | [`PREREG_mono_end_rules_2026-11-20.md`](PREREG_mono_end_rules_2026-11-20.md) | Row 1831: are the single-exon rules and the end layers overfit to primates? (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_mono_quantile_grid_2026-11-20.md`](PREREG_mono_quantile_grid_2026-11-20.md) | Row 1832: the read floor of single-exon transcripts, a grid of its quantile (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_real_count_grid_2026-11-20.md`](PREREG_real_count_grid_2026-11-20.md) | Row 1837: isoform fraction and sub-chain ratio re-set on real read counts (pre-registered 2026-11-20) | 2026-11-20 | register ×1 |
-| [`PREREG_subchain_ratio_001_2026-11-20.md`](PREREG_subchain_ratio_001_2026-11-20.md) | Row 1839: sub-chain collapse ratio at 0.01 (pre-registered 2026-11-20) | 2026-11-20 | register ×1 |
+| [`PREREG_subchain_ratio_001_2026-11-20.md`](PREREG_subchain_ratio_001_2026-11-20.md) | Row 1839: sub-chain collapse ratio at 0.01 (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_support_filter_2026-11-20.md`](PREREG_support_filter_2026-11-20.md) | Row 1830: does the support profile, used as a FILTER, remove wrong transcripts? (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_tssend_cap_gate_2026-11-20.md`](PREREG_tssend_cap_gate_2026-11-20.md) | Row 1834: does the assembler's cap signal say where the median 5' end helps? (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`CORRELATION_CLUSTERING_2026-11-19.md`](CORRELATION_CLUSTERING_2026-11-19.md) | Correlation clustering (Strainy / SDA lineage) for assignment and for copies the reference lacks (2026-11-19, PSU) | 2026-11-19 | register ×1, memory ×1 |
