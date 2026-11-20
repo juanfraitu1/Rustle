@@ -49,3 +49,18 @@ a correct chain moved onto another correct chain (11 to 160 per dataset), and on
 ratio 20 costs 0.2-0.4% for 1-8%.
 **Not done:** the rule inside the assembler (the existing snap is in the binary; a ratio condition there needs a rebuild), and
 the combination with the filter on `final.gtf`.
+
+## Port into the assembler (row 1835, criteria written 2026-11-20 before the parity run)
+
+User (2026-11-20): implement it. Opt-in `copy_assign --polish-junction-ratio R` (`RUSTLE_POLISH_JUNCTION_RATIO=R` in the driver;
+unset or 0 = off): the rule above applied per contig to the final polished transcripts, through the junction snap's own
+re-place and collapse step (`snap_apply`). Differences from `replace.py`, known before the run: a move that would empty an exon
+is skipped per junction (the script refused the whole chain); it runs in the `final.gtf` pass too, where the chain score filter
+then sees the merged read counts; `reads` of a collapsed transcript is the sum.
+Parity run, workspace `r1835_junction_ratio_port`, binaries built into `rustle_target_b` (the shared ones untouched), arms `base`
+(new binary, no switch) and `ratio20`, on the nine datasets of the development and check above:
+- **P1.** `base` `x.gtf` and `x.final.gtf` are byte-identical to the installed binary's (rows 1831 / 1833 `base`).
+- **P2.** `ratio20` on `x.gtf` meets row 1819's across-the-board criteria on its seven check datasets: at least 0.995 of the
+  correct chains, higher precision, and wrong chains at least 3% fewer on at least five.
+- Shown: `x.final.gtf`, zebrafish and OR6737 (development), gained and lost chains.
+P1 and P2 = the switch is committed as opt-in. Default: the user's call.
