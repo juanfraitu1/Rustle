@@ -247,7 +247,8 @@
 #   RUSTLE_POLISH_MONO_PRIMED=0 adds `--no-polish-mono-primed` to `assemble` (default unset = 1 = on since 2026-10-26);
 #   RUSTLE_POLISH_JUNCTION_SNAP=off|equiv|reads sets `--polish-junction-snap` of `assemble` (default unset = reads since
 #     2026-11-18, row 1800; needs the BAM index);
-#   RUSTLE_POLISH_SPLICED_SHARE=X adds `--polish-spliced-share X` to `assemble` (opt-in, r1801; unset or 0 = off): drops a
+#   RUSTLE_POLISH_SPLICED_SHARE=X sets `--polish-spliced-share X` of `assemble` (default unset = 0.05 since row 1848,
+#     2026-11-21; 0 = off, the command before; r1801, row 1847): drops a
 #     transcript with an intron spliced by less than X of the primary reads across it (0.05 in the r1801 diagnosis);
 #   RUSTLE_POLISH_MONO_SHADOW_RATIO=R adds `--polish-mono-shadow-ratio R` (opt-in, r1801; unset or 0 = off): the shadow rule
 #     keeps a single-exon transcript with at least R times the reads of the spliced transcript shadowing it;
@@ -654,7 +655,8 @@ case "${RUSTLE_POLISH_JUNCTION_SNAP:=reads}" in
   *) echo "[rustle_pipeline] RUSTLE_POLISH_JUNCTION_SNAP must be off, equiv or reads (got '$RUSTLE_POLISH_JUNCTION_SNAP')" >&2; exit 2 ;;
 esac
 # RUSTLE_POLISH_SPLICED_SHARE / RUSTLE_POLISH_MONO_SHADOW_RATIO (opt-in, r1801; unset or 0 = off, the same command)
-case "${RUSTLE_POLISH_SPLICED_SHARE:-}" in ""|0) ;; *[!0-9.]*) echo "[rustle_pipeline] RUSTLE_POLISH_SPLICED_SHARE must be a number >= 0 (got '$RUSTLE_POLISH_SPLICED_SHARE')" >&2; exit 2 ;;
+# RUSTLE_POLISH_SPLICED_SHARE: unset = 0.05, the default since row 1848 (user 2026-11-21, after row 1847); 0 = off, the command before
+case "${RUSTLE_POLISH_SPLICED_SHARE:=0.05}" in 0) ;; *[!0-9.]*) echo "[rustle_pipeline] RUSTLE_POLISH_SPLICED_SHARE must be a number >= 0 (got '$RUSTLE_POLISH_SPLICED_SHARE')" >&2; exit 2 ;;
   *) POLISH="$POLISH --polish-spliced-share $RUSTLE_POLISH_SPLICED_SHARE" ;; esac
 case "${RUSTLE_POLISH_MONO_SHADOW_RATIO:-}" in ""|0) ;; *[!0-9.]*) echo "[rustle_pipeline] RUSTLE_POLISH_MONO_SHADOW_RATIO must be a number >= 0 (got '$RUSTLE_POLISH_MONO_SHADOW_RATIO')" >&2; exit 2 ;;
   *) POLISH="$POLISH --polish-mono-shadow-ratio $RUSTLE_POLISH_MONO_SHADOW_RATIO" ;; esac

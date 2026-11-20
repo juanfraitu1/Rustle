@@ -72,3 +72,10 @@ understated.
 **Decision:** no candidate by the registered bars. S stays the opt-in it is (`RUSTLE_POLISH_SPLICED_SHARE=0.05`): harmless or
 better on every real library, a 0.67% loss of true chains on clean simulated reads. Whether that is acceptable for a default
 is the user's call. M (`RUSTLE_POLISH_MONO_SHADOW_RATIO`) should not be used as it stands.
+
+## Row 1848 (2026-11-21, user decision): the spliced share is the driver default
+User, after the result above: "yes, lets make it default". `tools/rustle_pipeline.sh`: `RUSTLE_POLISH_SPLICED_SHARE` unset =
+0.05; `RUSTLE_POLISH_SPLICED_SHARE=0` = the command before. Decided against the registered miss (D1 fails on fly and mouse
+simulated, 0.67% of the true chains lost) because every real library gains. Check (workspace `r1848_spliced_share_default`,
+fly): the new default's `x.gtf` and `x.final.gtf` are byte-identical to row 1847's `S` arm, and `=0` to its `base`. Test
+suite 1,585 passed, 0 failed. Today's `final.gtf` per dataset = the `S` arm of row 1847 (`r1847_sirv_rules/NAME/S`).
