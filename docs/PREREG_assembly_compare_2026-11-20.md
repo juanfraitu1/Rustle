@@ -91,3 +91,15 @@ transcripts, so much of this is the annotation.
 
 Limits as stated; in addition the mouse ES truth is GENCODE and the ape truths RefSeq, which differ in how many partial
 transcripts they list, so PIECE / LONGER shares are not comparable between those two without that caveat.
+
+## Follow-up, registered 2026-11-20 before it was computed: is IsoQuant's precision an operating point on these six datasets?
+User (2026-11-20): IsoQuant had very good metrics; is there anything to port? Row 1765 answered "operating point, nothing to
+model" at junction level on OR6737 and A119b only. Same question at chain level on the six datasets of this row (`iq_point.py`).
+- Rustle `x.final.gtf` multi-exon chains ranked by `reads` (ties: all taken); cut at the smallest read threshold whose kept set
+  still has at least IsoQuant's number of correct chains. **OPERATING POINT** on a dataset when Rustle's precision at that cut
+  is >= IsoQuant's - 0.02 (row 1765's bar). The same against StringTie, beside it.
+- On a dataset that fails: Rustle's wrong chains at the cut by the classes of this row (PIECE, LONGER, NEAR, OTHER FORM, NEW
+  INTRON) beside IsoQuant's, to name the class in which IsoQuant is cleaner. A class with at least half of the excess wrong
+  chains is the pointer for a port; a port is a new pre-registered row.
+- IsoQuant's rules read from its source (4.1.0, `isoquant_lib/model_construction`) are listed with their Rustle counterparts
+  whatever the outcome.
