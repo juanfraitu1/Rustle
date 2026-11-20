@@ -19,7 +19,10 @@ Still to do on Fritz: the SIRV md5 check (section 1), the merges, then the suppo
   from `4e9bb9be` into `~/ws/rustle_target_b` and copied into `~/rustle_target/release/`; the earlier binaries are in
   `~/ws/rustle_target_bins_before_2026-11-20/`. The `.fingerprint` files there are older than the binaries: the next in-place
   `cargo build` recompiles once.
-- SIRV md5 check: NOT done. Cause of the hang: Lustre target `nvme-OST000b` of /anvme is unavailable (`lfs check osts`); every
+- SIRV md5 check: DONE 2026-11-20 11:25, after the storage target came back: `final.gtf` md5 `5cb0e7e4e7eb4cccc8f9def75cce2f65`
+  with the binaries of `3a1005d1`, both from `~/ws/rustle_target_b` and from `~/rustle_target` (rebuilt in place the same hour,
+  so it now carries `--polish-junction-ratio` and `RUSTLE_DUP_COUNT`); `~/ws/handoff_check_2026-11-20/run{2,3}`. Until then it
+  could not run. Cause of the hang: Lustre target `nvme-OST000b` of /anvme is unavailable (`lfs check osts`); every
   file with data on it blocks its reader for good (`lfs find --ost 11 DIR` lists them). `r1801_sirv_wrong/sirv.bam` and several
   libraries of the Python environment (`libmpfr`, `zlib`, `_json`, parts of numpy / scipy) are among them.
 - Session notes and the five vault files merged (earlier Fritz copies: `~/psu_handoff_2026-11-19/fritz_{memory,vault}_before_merge`).
