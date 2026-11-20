@@ -542,6 +542,17 @@ struct Args {
     #[arg(long, default_value_t = 0.0)]
     polish_spliced_share: f64,
 
+    /// JUNCTION REPLACEMENT BY SUPPORT RATIO for `--assembly-polish`, opt-in (register 1819): after every polish step
+    /// of a contig, an intron K is re-placed by the best-supported intron J of the same strand whose donor and
+    /// acceptor lie within 10 bp of K's when J's support is at least this many times K's (support = summed `reads`
+    /// of the contig's transcripts that carry the intron); transcripts whose chains become identical collapse with
+    /// summed reads. The default `--polish-junction-snap reads` moves only junctions their own reads do not prove;
+    /// this moves the ones left by read count alone, so it also removes real alternative sites a few bases apart
+    /// when one is >= R times rarer (20 in register 1819: >= 0.995 of the correct chains kept on seven datasets).
+    /// No BAM pass. 0 (default) = off, byte-identical.
+    #[arg(long, default_value_t = 0.0)]
+    polish_junction_ratio: f64,
+
     /// ⭐ §6p9 LOCUS ISOFORM FRACTION for `--assembly-polish`. Drop a transcript whose read support is
     /// below this fraction of the BEST-supported transcript at the same `gene_id`; the dominant isoform of
     /// a locus is never dropped. This is StringTie's `-f` criterion (fraction of the locus maximum), and it
@@ -5260,6 +5271,23 @@ fn junction_snap(
     if remap.is_empty() {
         return Ok(st);
     }
+    snap_apply(lines, &txs, &remap, &mut st, "snapped", "snapped_from");
+    Ok(st)
+}
+
+/// Re-place the junctions of `remap` ((strand, gene_id, junction) -> junction) in `lines` (the transcripts `txs` parsed
+/// from them), then collapse the transcripts whose chains became identical: the best-supported one stays, with the
+/// summed `reads` and the attribute `from_tag` listing the others; a moved transcript gets `moved_tag "1"`. A move that
+/// would empty an exon is skipped. Sets `st.rewritten` and `st.collapsed`.
+fn snap_apply(
+    lines: &mut Vec<String>,
+    txs: &[SnapTx],
+    remap: &std::collections::BTreeMap<(String, String, SnapJn), SnapJn>,
+    st: &mut SnapStats,
+    moved_tag: &str,
+    from_tag: &str,
+) {
+    use std::collections::BTreeMap;
     // re-place (a move that would empty an exon is skipped), then collapse identical chains
     let mut moved: DetHashMap<usize, Vec<(i64, i64)>> = DetHashMap::default();
     for (i, t) in txs.iter().enumerate() {
@@ -5318,7 +5346,7 @@ fn junction_snap(
         let from: Vec<&str> = members[1..].iter().map(|&i| txs[i].tid.as_str()).collect();
         tags.insert(
             rep.tid.clone(),
-            format!(" snapped_from \"{}\";", from.join(",")),
+            format!(" {from_tag} \"{}\";", from.join(",")),
         );
         drop.extend(from.iter().map(|s| s.to_string()));
     }
@@ -5340,7 +5368,7 @@ fn junction_snap(
                 .collect(),
         );
         let tag = tags.entry(t.tid.clone()).or_default();
-        *tag = format!(" snapped \"1\";{tag}");
+        *tag = format!(" {moved_tag} \"1\";{tag}");
     }
     let mut out: Vec<String> = Vec::with_capacity(lines.len());
     for line in lines.drain(..) {
@@ -5394,7 +5422,67 @@ fn junction_snap(
         }
     }
     *lines = out;
-    Ok(st)
+}
+
+/// `--polish-junction-ratio R` on one contig's FINAL polished lines (register 1819; `ratio` <= 0: nothing). Support of
+/// an intron = summed `reads` of the multi-exon transcripts of `lines` that carry it on its strand. An intron K is
+/// re-placed by the best-supported intron J of the same strand with donor and acceptor within `SNAP_TOL_BP` of K's
+/// when support(J) >= ratio x support(K) (ties: the first in coordinate order); replacements are not chained.
+/// Transcripts whose chains become identical collapse (reads summed). No BAM pass, no annotation.
+/// Returns the stats with `near_pairs` = introns replaced.
+fn junction_ratio_replace(lines: &mut Vec<String>, ratio: f64) -> SnapStats {
+    use std::collections::BTreeMap;
+    let mut st = SnapStats::default();
+    if ratio <= 0.0 {
+        return st;
+    }
+    let txs = snap_parse(lines);
+    let mut support: BTreeMap<(String, SnapJn), u64> = BTreeMap::new();
+    for t in txs.iter().filter(|t| t.exons.len() >= 2) {
+        for j in t.chain() {
+            *support.entry((t.strand.clone(), j)).or_insert(0) += t.reads;
+        }
+    }
+    let mut by_strand: BTreeMap<&str, Vec<(SnapJn, u64)>> = BTreeMap::new();
+    for ((s, j), &n) in support.iter() {
+        by_strand.entry(s.as_str()).or_default().push((*j, n));
+    }
+    let mut target: BTreeMap<(String, SnapJn), SnapJn> = BTreeMap::new();
+    for (s, js) in by_strand.iter() {
+        for &(k, nk) in js.iter() {
+            let lo = js.partition_point(|x| x.0 .0 < k.0 - SNAP_TOL_BP);
+            let mut best: Option<(SnapJn, u64)> = None;
+            for &(j, nj) in js[lo..].iter() {
+                if j.0 > k.0 + SNAP_TOL_BP {
+                    break;
+                }
+                if j != k
+                    && (j.1 - k.1).abs() <= SNAP_TOL_BP
+                    && nj as f64 >= ratio * nk as f64
+                    && best.map_or(true, |b| nj > b.1)
+                {
+                    best = Some((j, nj));
+                }
+            }
+            if let Some((j, _)) = best {
+                target.insert((s.to_string(), k), j);
+            }
+        }
+    }
+    st.near_pairs = target.len();
+    if target.is_empty() {
+        return st;
+    }
+    let mut remap: BTreeMap<(String, String, SnapJn), SnapJn> = BTreeMap::new();
+    for t in txs.iter().filter(|t| t.exons.len() >= 2) {
+        for j in t.chain() {
+            if let Some(&nj) = target.get(&(t.strand.clone(), j)) {
+                remap.insert((t.strand.clone(), t.gene.clone(), j), nj);
+            }
+        }
+    }
+    snap_apply(lines, &txs, &remap, &mut st, "junction_replaced", "replaced_from");
+    st
 }
 
 // ============================================================================================ --polish-tss
@@ -7310,6 +7398,13 @@ fn main() -> Result<()> {
             args.gtf && args.assembly_polish != "none",
             "--polish-tes {} needs the assembled GTF (--gtf or --assemble-only) and --assembly-polish mono|full",
             args.polish_tes
+        );
+    }
+    if args.polish_junction_ratio != 0.0 {
+        anyhow::ensure!(
+            args.polish_junction_ratio >= 1.0 && args.gtf && args.assembly_polish != "none",
+            "--polish-junction-ratio {} must be >= 1 and needs the assembled GTF (--gtf or --assemble-only) and --assembly-polish mono|full",
+            args.polish_junction_ratio
         );
     }
     if args.polish_junction_snap != "off" {
@@ -11022,6 +11117,8 @@ fn main() -> Result<()> {
     let mut tes_attrs: DetHashMap<String, String> = DetHashMap::default();
     // --polish-junction-snap: per-contig statistics (params.tsv, the log line)
     let mut snap_stats: Vec<SnapStats> = Vec::new();
+    // --polish-junction-ratio: (introns replaced, transcripts rewritten, collapsed), summed over the contigs
+    let ratio_stats: [std::sync::atomic::AtomicUsize; 3] = Default::default();
     // --gtf-regroup: the pass's counts (params.tsv rows only when set)
     let mut regroup_stats: Option<RegroupStats> = None;
     // --bridge-regroup: the pass's counts (params.tsv rows only when set)
@@ -11438,6 +11535,19 @@ fn main() -> Result<()> {
                          with starts and ends within {} bp (PAS, not primed, no multi-exon exon on the strand)",
                         args.mono_model, c, removed, emitted, MONO_MIN_READS, MONO_W
                     );
+                }
+                // --polish-junction-ratio: on the contig's final lines, after every polish step (0: never entered)
+                if args.polish_junction_ratio > 0.0 {
+                    let st = junction_ratio_replace(&mut part, args.polish_junction_ratio);
+                    plog!(log,
+                        "[copy_assign] JUNCTION RATIO ({}) {}: {} introns re-placed onto a neighbour within {} bp with at \
+                         least that many times their support -> {} transcripts rewritten, {} collapsed into an identical \
+                         chain (reads summed)",
+                        args.polish_junction_ratio, c, st.near_pairs, SNAP_TOL_BP, st.rewritten, st.collapsed
+                    );
+                    for (a, n) in ratio_stats.iter().zip([st.near_pairs, st.rewritten, st.collapsed]) {
+                        a.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
+                    }
                 }
                 Ok((part, (n_ism, n_mono, n_frac, n_ret), floors, tss_attrs, tss_protect, tss_stats, tes_stats, mono_primed_stats, tes_attrs, snap_stats, log))
             };
@@ -13106,6 +13216,13 @@ fn main() -> Result<()> {
         }
         if args.polish_mono_shadow_ratio > 0.0 {
             row("polish_mono_shadow_ratio", format!("{}", args.polish_mono_shadow_ratio))?;
+        }
+        if args.polish_junction_ratio > 0.0 {
+            let n = |i: usize| format!("{}", ratio_stats[i].load(std::sync::atomic::Ordering::Relaxed));
+            row("polish_junction_ratio", format!("{}", args.polish_junction_ratio))?;
+            row("polish_junction_ratio_replaced", n(0))?;
+            row("polish_junction_ratio_rewritten", n(1))?;
+            row("polish_junction_ratio_collapsed", n(2))?;
         }
         if args.polish_junction_snap != "off" {
             let sum = |f: &dyn Fn(&SnapStats) -> usize| -> String {
@@ -16758,6 +16875,34 @@ mod tests {
     }
     const SNAP_J: (i64, i64) = (200, 300);
     const SNAP_K: (i64, i64) = (200, 303);
+
+    /// `--polish-junction-ratio`: off and a ratio the pair does not reach leave the lines alone; at a ratio it reaches
+    /// (MAJ 10 reads on J against 3 on K) K is re-placed, MIN collapses into MAJ with summed reads and MIN2 is rewritten.
+    #[test]
+    fn junction_ratio_replaces_by_support_and_collapses() {
+        for r in [0.0, 4.0] {
+            let mut l = snap_fixture();
+            let st = junction_ratio_replace(&mut l, r);
+            assert_eq!(l, snap_fixture(), "ratio {r}");
+            assert_eq!((st.near_pairs, st.rewritten, st.collapsed), (0, 0, 0));
+        }
+        let mut l = snap_fixture();
+        let st = junction_ratio_replace(&mut l, 3.0);
+        assert_eq!((st.near_pairs, st.rewritten, st.collapsed), (1, 2, 1));
+        let txs = snap_parse(&l);
+        let ids: Vec<&str> = txs.iter().map(|t| t.tid.as_str()).collect();
+        assert_eq!(ids, ["MAJ", "MIN2"]);
+        assert_eq!(txs[0].reads, 12);
+        assert_eq!(txs[1].chain()[0], SNAP_J);
+        assert!(l.iter().any(|x| x.contains("replaced_from \"MIN\"")));
+        assert!(l.iter().any(|x| x.contains("transcript_id \"MIN2\"") && x.contains("junction_replaced \"1\"")));
+        // strands are separate: the same pair on the other strand is not touched by this one
+        let mut l = snap_fixture();
+        l.extend(snap_tx("REV", "H", "-", 1, &[(101, 200), (304, 400)]));
+        junction_ratio_replace(&mut l, 3.0);
+        let rev = snap_parse(&l).into_iter().find(|t| t.tid == "REV").unwrap();
+        assert_eq!(rev.chain()[0], SNAP_K);
+    }
 
     /// `off` never touches the lines and never asks for evidence; `reads` with K proven by its own reads leaves the
     /// lines byte-identical too.

@@ -241,6 +241,8 @@
 #     transcript with an intron spliced by less than X of the primary reads across it (0.05 in the r1801 diagnosis);
 #   RUSTLE_POLISH_MONO_SHADOW_RATIO=R adds `--polish-mono-shadow-ratio R` (opt-in, r1801; unset or 0 = off): the shadow rule
 #     keeps a single-exon transcript with at least R times the reads of the spliced transcript shadowing it;
+#   RUSTLE_POLISH_JUNCTION_RATIO=R adds `--polish-junction-ratio R` (opt-in, row 1819; unset or 0 = off): after the polish an
+#     intron is re-placed by the neighbour within 10 bp that has at least R times its support (20 in row 1819);
 #   RUSTLE_GTF_REGROUP=1 adds `--gtf-regroup` to `assemble` (RG3 regroup after polish; default unset = off; needs
 #     RUSTLE_BRIDGE_REGROUP=off, whose default contains RG3's split);
 #   RUSTLE_BRIDGE_REGROUP=off|f1|f1v2|f1units sets `--bridge-regroup` on `assemble` (unset = f1v2, THE DEFAULT since
@@ -638,6 +640,9 @@ case "${RUSTLE_POLISH_SPLICED_SHARE:-}" in ""|0) ;; *[!0-9.]*) echo "[rustle_pip
   *) POLISH="$POLISH --polish-spliced-share $RUSTLE_POLISH_SPLICED_SHARE" ;; esac
 case "${RUSTLE_POLISH_MONO_SHADOW_RATIO:-}" in ""|0) ;; *[!0-9.]*) echo "[rustle_pipeline] RUSTLE_POLISH_MONO_SHADOW_RATIO must be a number >= 0 (got '$RUSTLE_POLISH_MONO_SHADOW_RATIO')" >&2; exit 2 ;;
   *) POLISH="$POLISH --polish-mono-shadow-ratio $RUSTLE_POLISH_MONO_SHADOW_RATIO" ;; esac
+# RUSTLE_POLISH_JUNCTION_RATIO=R (opt-in, row 1819; unset or 0 = off, the same command): copy_assign --polish-junction-ratio
+case "${RUSTLE_POLISH_JUNCTION_RATIO:-}" in ""|0) ;; *[!0-9.]*) echo "[rustle_pipeline] RUSTLE_POLISH_JUNCTION_RATIO must be a number >= 1 (got '$RUSTLE_POLISH_JUNCTION_RATIO')" >&2; exit 2 ;;
+  *) POLISH="$POLISH --polish-junction-ratio $RUSTLE_POLISH_JUNCTION_RATIO" ;; esac
 # RUSTLE_GTF_REGROUP=1 (opt-in; unset or 0 = off, the same command): copy_assign --gtf-regroup, RG3 — after every polish
 # step, split a gene_id whose surviving transcripts share no same-strand exonic base (a dropped readthrough bridge, or
 # two pre-polish components that collided on one base tid); split-only, intron chains unchanged, the deeper piece keeps

@@ -64,3 +64,16 @@ Parity run, workspace `r1835_junction_ratio_port`, binaries built into `rustle_t
   correct chains, higher precision, and wrong chains at least 3% fewer on at least five.
 - Shown: `x.final.gtf`, zebrafish and OR6737 (development), gained and lost chains.
 P1 and P2 = the switch is committed as opt-in. Default: the user's call.
+
+**Parity result (2026-11-20): P1 and P2 PASS.** Jobs 4484241-4484249; `r1835_junction_ratio_port/score.NAME.txt`.
+- P1: `base` `x.gtf` identical on all nine datasets and `x.final.gtf` on the eight that have a reference file (none for adrenal).
+- P2, `x.gtf` at ratio 20 (correct chains, ratio kept; precision; wrong chains fewer): fly 7,082 -> 7,057 (0.996), 0.926 ->
+  0.928, 3.3%; mouse simulated 27,731 -> 27,614 (0.996), 0.903 -> 0.907, 4.9%; mouse ES 18,058 -> 18,007 (0.997), 0.331 -> 0.349,
+  7.8%; mouse heart 13,234 -> 13,211 (0.998), 0.546 -> 0.557, 4.8%; mouse adrenal 14,596 -> 14,563 (0.998), 0.540 -> 0.552, 4.7%;
+  A119b 39,049 -> 38,889 (0.996), 0.158 -> 0.159, 1.2%; chimpanzee testis 20,940 -> 20,901 (0.998), 0.351 -> 0.353, 1.4%.
+  The correct-chain counts equal `replace.py`'s on every dataset the table above lists.
+- Shown: zebrafish 12,574 -> 12,553, 0.813 -> 0.816; OR6737 25,792 -> 25,723, 0.321 -> 0.325. `x.final.gtf`: mouse ES 17,730 ->
+  17,678 at 0.347 -> 0.367; A119b 38,091 -> 37,936 at 0.219 -> 0.221; the others between.
+- Introns replaced per run: 55 (fly) to 2,721 (mouse ES). Unit test `junction_ratio_replaces_by_support_and_collapses`;
+  whole suite green.
+Committed as opt-in. The shared binaries in `~/rustle_target` still have to be rebuilt to carry it. Default: the user's call.
