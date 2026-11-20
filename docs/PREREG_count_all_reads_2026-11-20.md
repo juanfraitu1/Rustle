@@ -59,3 +59,34 @@ Jobs 4484224-4484230, both arms exit 0 everywhere; `r1833_count_all_reads/score.
 - So the collapse is not a primate fit; it protects one deep library. A default for every library would trade A119b for the rest.
 Not examined: why A119b floods (PCR duplicates of that library, or depth alone), and whether a read floor that scales with
 depth would let `kd` pass there. The driver has no switch for the flag (arms patched a driver copy).
+
+## Why A119b floods (2026-11-20, user asked; descriptive, no bar)
+
+`r1833_count_all_reads/why/dups.py` (job 4484251) over every primary spliced record of eight libraries. A coordinate group =
+records with the same contig, start, end and intron chain (what the default counts once).
+
+| library | spliced records | extra copies (1 - groups / records) | 2-record chains with identical coordinates | 3-record chains, all identical | chains passing only when every read counts: in truth / not |
+|---|---|---|---|---|---|
+| A119b | 12,383,686 | 0.393 | **0.499** (170,512 of 341,874) | 0.164 | 1,351 / 190,624 |
+| OR6737 | 3,969,866 | 0.430 | 0.071 | 0.005 | 166 / 4,208 |
+| chimpanzee testis | 1,189,240 | 0.223 | 0.080 | 0.007 | 226 / 3,026 |
+| mouse ES | 6,766,736 | 0.485 | 0.027 | 0.003 | 38 / 1,796 |
+| mouse heart | 1,480,949 | 0.547 | 0.037 | 0.009 | 44 / 498 |
+| zebrafish simulated | 3,161,221 | 0.751 | 0.169 | 0.065 | 260 / 960 |
+| mouse simulated | 8,016,965 | 0.756 | 0.125 | 0.048 | 572 / 1,237 |
+| fly simulated | 1,735,892 | 0.743 | 0.102 | 0.035 | 90 / 132 |
+
+- **It is the library, not the depth.** The share of 2-record chains whose two records have identical coordinates does not
+  depend on depth: 0.50 in A119b against 0.03-0.08 in the four other real libraries (the simulator's 0.10-0.17 comes from its
+  end tables). A119b's overall share of extra copies is ordinary (0.39; OR6737 0.43, heart 0.55): what is special is that its
+  RARE chains come as two or three identical copies.
+- Those chains are the flood: 190,624 chains outside the annotation pass the 2-read floor only when every read counts, 1,351
+  inside it (0.7%; chains passing the default floor: 7.8% in truth). Row 1833's +59,290 wrong chains are the part of them that
+  survives the polish.
+- Reading (mine): one molecule sequenced as several identical records (amplification copies, or the same library loaded on
+  several cells); the BAM carries no tag to tell which. In the other libraries identical coordinates sit in abundant chains
+  with sharp ends, which is why counting them there helps the isoform fraction without admitting new chains.
+- Consequences: (1) "every read counted" is unsafe on a library with this signature, and the statistic above is a
+  reference-free check for it (one BAM pass); (2) the two jobs of the count can be split: the 2-read FLOOR on distinct
+  coordinate groups (as now), the isoform FRACTION on all reads (as `kd`). That variant does not exist in the binary; it would
+  keep A119b's protection and the SIRV / mouse gain. Not built, not tested.
