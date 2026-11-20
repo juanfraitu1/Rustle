@@ -31,3 +31,42 @@ candidate.
 ## Limits
 Simulated reads lack degraded molecules, the main source of sub-chains, so they understate the cost. On real libraries the
 truths are incomplete: a kept part can be a real unannotated transcript. The row-1838 pointer came from six of these datasets.
+
+## Result (2026-11-20): not a candidate; 0.01 is the rule switched off, and a recall trade that pays on 3 of 12
+
+Jobs 4489087-4489098, 48 arms exit 0; `r1839_subchain_ratio_001/score.NAME.txt`. Repo `509e0a5f`, binaries of `~/rustle_target`
+(rebuilt 2026-11-20 from `3a1005d1`). `base` reproduces row 1837's `base` on every dataset.
+
+**0.01 against 0:** the same output (byte-identical `x.gtf` on mouse simulated; on A119b a different file with the same
+counts). A two-read chain passes a ratio of 0.01 unless the longer chain has more than 200 reads, so 0.01 is the rule off.
+
+`x.final.gtf`, arm `r0.01` against `base` (ratio 0.3):
+| dataset | base correct / precision | correct added | wrong added | precision | marginal precision | pays |
+|---|---|---|---|---|---|---|
+| fly sim | 7,041 / 0.964 | +14 (0.2%) | 0 | 0.964 | 1.000 | yes |
+| mouse sim | 27,159 / 0.953 | +515 (1.9%) | +4 | 0.954 | 0.992 | yes |
+| zebrafish sim | 12,381 / 0.891 | +26 (0.2%) | +26 | 0.890 | 0.500 | no |
+| mouse ES | 17,730 / 0.347 | +276 (1.6%) | +920 | 0.345 | 0.231 | yes (second clause) |
+| mouse heart | 13,091 / 0.577 | +91 (0.7%) | +162 | 0.574 | 0.360 | no |
+| mouse adrenal | 14,394 / 0.578 | +170 (1.2%) | +434 | 0.571 | 0.281 | no |
+| mouse cortex | 15,679 / 0.487 | +137 (0.9%) | +257 | 0.485 | 0.348 | no |
+| OR6737 | 25,635 / 0.377 | +43 (0.2%) | +1,532 | 0.370 | 0.027 | no |
+| A119b | 38,091 / 0.219 | +111 (0.3%) | +1,730 | 0.217 | 0.060 | no |
+| chimpanzee testis | 20,847 / 0.416 | +29 (0.1%) | +1,318 | 0.405 | 0.022 | no |
+| bonobo testis | 17,884 / 0.337 | +37 (0.2%) | +1,397 | 0.329 | 0.026 | no |
+| KB3781 | 25,745 / 0.373 | +39 (0.2%) | +2,328 | 0.361 | 0.016 | no |
+Pays on 3 of 7 non-primate and 0 of 5 primate datasets (bar 6 and 4): **a recall trade, not a candidate.** Arm `r0.1` pays on
+fly and mouse simulated only; it adds about 60-70% of what 0.01 adds on the mouse libraries (ES +159 / +443 wrong, adrenal
++108 / +247) and on the apes +20 to +108 correct for +856 to +1,603 wrong.
+
+- **The rule does act differently on the two groups.** Without it a mouse library gains 0.7-1.9% correct chains at 2-3 wrong
+  chains per correct one; an ape library gains 0.1-0.3% at 16-60 wrong per correct one. Row 1838's pointer was right in
+  direction: the rule costs the non-primates more. It is still worth its cost on real mouse libraries by the registered reading.
+- **Before the `final.gtf` filter the cost is much larger** (`x.gtf`, 0.01): mouse ES +1,347 correct / +24,399 wrong (0.331 ->
+  0.242), mouse simulated +2,287 / +2,017 (0.903 -> 0.857), A119b +569 / +94,352. The filter removes most of what the ratio
+  lets in, wrong and correct alike (ES keeps 276 of the 1,347).
+- Expectation: held for the real libraries; wrong for mouse simulated, where 0.01 adds two thirds more than 0.1 (515 against 309).
+
+Reading (mine): the read ratio does not tell a true contained chain from a truncated copy of the longer one; lowering it buys
+recall at the rate the data allows. The rule from IsoQuant noted in row 1838 (keep a contained chain when its own end is a
+read-end peak) is the test that could separate them; these arms are its reference.
