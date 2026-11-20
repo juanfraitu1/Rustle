@@ -28,7 +28,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 
 | file | title | last commit | cited by |
 |---|---|---|---|
-| [`PREREG_count_all_reads_2026-11-20.md`](PREREG_count_all_reads_2026-11-20.md) | Row 1833: every read counted (no collapse of coordinate duplicates), tested off the spike-ins (pre-registered 2026-11-20 | 2026-11-20 | — |
+| [`PREREG_count_all_reads_2026-11-20.md`](PREREG_count_all_reads_2026-11-20.md) | Row 1833: every read counted (no collapse of coordinate duplicates), tested off the spike-ins (pre-registered 2026-11-20 | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_mono_end_rules_2026-11-20.md`](PREREG_mono_end_rules_2026-11-20.md) | Row 1831: are the single-exon rules and the end layers overfit to primates? (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_mono_quantile_grid_2026-11-20.md`](PREREG_mono_quantile_grid_2026-11-20.md) | Row 1832: the read floor of single-exon transcripts, a grid of its quantile (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_support_filter_2026-11-20.md`](PREREG_support_filter_2026-11-20.md) | Row 1830: does the support profile, used as a FILTER, remove wrong transcripts? (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
