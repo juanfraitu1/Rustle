@@ -61,3 +61,12 @@ bonobo testis and KB3781 stay unseen under any counting variant.
 - So real counts do not give a default that is better on both axes everywhere; they give a cleaner dial. At 0.01 the SIRV
   problem is fixed at almost no cost elsewhere, with mouse ES and mouse simulated the two datasets slightly worse.
 Not done: a fraction between 0.01 and 0.02 (it would be chosen after seeing this table); the single-exon side.
+
+## Deviation (user, 2026-11-20, written before the check ran): step 2 on fraction 0.01, ratio 0.3
+
+No arm met the choice rule. The user chose to run step 2 anyway on the best arm (`RUSTLE_DUP_COUNT=1`, fraction 0.01, ratio 0.3),
+accepting "about neutral plus the SIRV fix" as the aim. This arm was picked after seeing the step-1 table, on the user's word,
+not by the registered rule. The step-2 bar is unchanged: the arm qualifies (precision higher than base, >= 98% of base's
+correct chains) on bonobo testis, KB3781, mouse adrenal, mouse cortex and chimpanzee testis; S1 is already known from the grid
+(SIRV 0.877). Single-exon models are reported per arm. A pass makes a candidate default for the user's ruling, stated together
+with the two development misses (mouse ES, mouse simulated).
