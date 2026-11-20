@@ -24,15 +24,17 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-18 | register ×1 |
 | [`seeded_family_definition.md`](seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-08 | — |
 
-## Open studies and current handoff (272)
+## Open studies and current handoff (274)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
+| [`END_LAYERS_OPTIN_2026-11-20.md`](END_LAYERS_OPTIN_2026-11-20.md) | Row 1846: the three end layers of `final.gtf` become opt-in (user decision, 2026-11-20) | 2026-11-20 | register ×1 |
+| [`JUNCTION_RATIO_DEFAULT_2026-11-20.md`](JUNCTION_RATIO_DEFAULT_2026-11-20.md) | Row 1845: junction replacement at 20 x support becomes the driver default (user decision, 2026-11-20) | 2026-11-20 | register ×1 |
 | [`PREREG_acceptor_near_2026-11-20.md`](PREREG_acceptor_near_2026-11-20.md) | Row 1842: near misses at splice sites, acceptor against donor (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_assembly_compare_2026-11-20.md`](PREREG_assembly_compare_2026-11-20.md) | Row 1838: where do other assemblers find true chains that Rustle misses, primate against non-primate? (pre-registered 20 | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_count_all_reads_2026-11-20.md`](PREREG_count_all_reads_2026-11-20.md) | Row 1833: every read counted (no collapse of coordinate duplicates), tested off the spike-ins (pre-registered 2026-11-20 | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_dup_count_2026-11-20.md`](PREREG_dup_count_2026-11-20.md) | Row 1836: floor on distinct records, read count on every record (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
-| [`PREREG_duplomap_tbc1d3_2026-11-20.md`](PREREG_duplomap_tbc1d3_2026-11-20.md) | PREREG: DuploMap on Iso-Seq reads at TBC1D3 (row 1844, 2026-11-20) | uncommitted | — |
+| [`PREREG_duplomap_tbc1d3_2026-11-20.md`](PREREG_duplomap_tbc1d3_2026-11-20.md) | PREREG: DuploMap on Iso-Seq reads at TBC1D3 (row 1844, 2026-11-20) | uncommitted | register ×1 |
 | [`PREREG_end_peak_2026-11-20.md`](PREREG_end_peak_2026-11-20.md) | Row 1840: keep a contained chain when its own end is a read-end peak (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_end_through_2026-11-20.md`](PREREG_end_through_2026-11-20.md) | Row 1841: does an end peak judged against the reads running through separate true contained chains? (pre-registered 2026 | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_ism_3p_only_2026-11-20.md`](PREREG_ism_3p_only_2026-11-20.md) | Row 1843: the sub-chain collapse spares chains cut at the 3' side only (pre-registered 2026-11-20) | 2026-11-20 | register ×1 |
