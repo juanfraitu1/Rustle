@@ -66,7 +66,8 @@ chains on mouse ES instead of 5,582 (1,405 correct chains lost from `final.gtf`)
 `PREFIX.gtf` barely changed. Likely cause: its decile thresholds are taken within the sample and sit on tied feature values.
 
 ## One-read chains (rows 1805-1808)
-The floor stays at two reads. Opt-in stage `oneread` writes: a strict tier (`PREFIX.oneread.gtf`, row 1766); every one-read chain
+The floor stays at two reads. Stage `oneread` (opt-in until 2026-11-20; since then also a default side step of `all`,
+`RUSTLE_ONEREAD_TIER=0` = off, and `--partners A.bam,B.bam` appends the promoted chains to `final.gtf`) writes: a strict tier (`PREFIX.oneread.gtf`, row 1766); every one-read chain
 ranked by a score from the reads (`PREFIX.oneread.ranked.gtf`; a ranking, not a filter); and, with
 `RUSTLE_ONEREAD_PARTNERS=A.bam:B.bam`, promoted chains (`PREFIX.oneread.promoted.gtf`: seen in a second library of the species
 and in the best 20% of the ranking; as precise as the default's two-read chains or better on three unused libraries, 2.3-3.1%

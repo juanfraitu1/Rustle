@@ -97,8 +97,14 @@
 #     RUSTLE_FW_MIN_LINK (default 1) = tied molecules needed to join two transcripts; RUSTLE_EQ_RATIO is refused.
 #   tools/rustle_pipeline.sh siblings --bam B --fasta G --out PREFIX   OPT-IN (register 1628): PREFIX.sibling.gtf = PREFIX.gtf +
 #                              one-read chains a family sibling's model confirms; after assemble and families
-#   tools/rustle_pipeline.sh oneread --bam B --fasta G --out PREFIX [--threads N]   OPT-IN (register 1766; RUSTLE_ONEREAD=1 = also appended to PREFIX.final.gtf by assemble): PREFIX.oneread.gtf =
-#                              one-read chains with every junction in another read and a clean reading frame (tools/oneread.py); after assemble
+#   tools/rustle_pipeline.sh oneread --bam B --fasta G --out PREFIX [--threads N]   (registers 1766 / 1806 / 1808; also a last step of `all` since 2026-11-20,
+#                              RUSTLE_ONEREAD_TIER=0 = off): side files, never read by another stage. PREFIX.oneread.gtf = one-read chains with every
+#                              junction in another read and a clean reading frame (tools/oneread.py); PREFIX.oneread.ranked.gtf = every one-read chain
+#                              the default lacks, scored (a ranking, not a filter). `--partners A.bam,B.bam` (other libraries of the species; =
+#                              RUSTLE_ONEREAD_PARTNERS=A.bam:B.bam): PREFIX.oneread.promoted.gtf = ranked chains in the best 20% that a partner read
+#                              carries, appended to PREFIX.final.gtf with oneread_promoted "1". RUSTLE_ONEREAD=1 also appends the strict tier,
+#                              RUSTLE_ONEREAD=0 keeps PREFIX.final.gtf free of one-read models. A multi-sample run (--bam a,b) pools the libraries
+#                              first, so a chain seen once in each already has two reads there. After assemble.
 #   tools/rustle_pipeline.sh flairlike --bam B --fasta G --out PREFIX [--threads N]   OPT-IN (register 1640): PREFIX.flairlike.gtf =
 #                              FLAIR collapse's chain set (second minimap2 pass; lower precision than PREFIX.gtf)
 #   tools/rustle_pipeline.sh famreps --bam B --fasta G --out PREFIX   the second half of `families` alone (register 1662):
@@ -312,6 +318,9 @@ while [ $# -gt 0 ]; do
     --bam) BAM=$2; shift 2;; --fasta) FASTA=$2; shift 2;; --out) OUT=$2; shift 2;; --index) INDEX=$2; shift 2;;
     --guide) GUIDE=$2; shift 2;;
     --names) NAMES=$2; shift 2;;
+    --partners) # BAMs of OTHER libraries of the same species, comma-separated (= RUSTLE_ONEREAD_PARTNERS, colon-separated; row 1808)
+      for _p in ${2//,/ }; do [ -s "$_p" ] || { echo "[rustle_pipeline] --partners: no such BAM '$_p'" >&2; exit 2; }; done
+      export RUSTLE_ONEREAD_PARTNERS=${2//,/:}; shift 2;;
     --gff) GFF=$2; shift 2;; --threads) THREADS=$2; THREADS_SET=1; shift 2;; --bin) BIN=$2; shift 2;;
     --confirm) CONFIRM+=(--confirm "$2"); shift 2;; --foreign) FOREIGN+=(--foreign "$2"); shift 2;;
     --seed-pool) SEED_POOL=$2; shift 2;; --seed-as-ratio) SEED_RATIO=$2; SEED_RATIO_FLAG=1; shift 2;; --as-table) AS_TABLE=$2; shift 2;;
@@ -952,9 +961,14 @@ stage_oneread() {
   fi
   say "oneread: $(tail -1 "$OUT.oneread.log") -> $OUT.oneread.gtf"
 }
+# RUSTLE_ONEREAD=1: the strict tier (and the promoted chains, if any) appended to $OUT.final.gtf. Partner libraries alone
+# (--partners / RUSTLE_ONEREAD_PARTNERS, user 2026-11-20): only the promoted chains are appended (row 1808: as precise as the
+# default's two-read chains); RUSTLE_ONEREAD=0 keeps $OUT.final.gtf free of one-read models whatever else is set.
 final_oneread() {
-  [ "${RUSTLE_ONEREAD:-0}" = 1 ] || return 0
-  if stage_oneread; then cat "$OUT.oneread.gtf" >> "$OUT.final.gtf"; say "assemble: one-read models appended to $OUT.final.gtf"
+  local on=${RUSTLE_ONEREAD:-}
+  [ "$on" = 1 ] || { [ "$on" != 0 ] && [ -n "${RUSTLE_ONEREAD_PARTNERS:-}" ]; } || return 0
+  if stage_oneread; then
+    if [ "$on" = 1 ]; then cat "$OUT.oneread.gtf" >> "$OUT.final.gtf"; say "assemble: one-read models appended to $OUT.final.gtf"; fi
     if [ -s "$OUT.oneread.promoted.gtf" ]; then cat "$OUT.oneread.promoted.gtf" >> "$OUT.final.gtf"; say "assemble: promoted one-read models (oneread_promoted \"1\") appended to $OUT.final.gtf"; fi
   else say "assemble: WARNING the one-read step failed; $OUT.final.gtf has no one-read models"; fi
 }
@@ -1885,6 +1899,16 @@ stage_all() {
   # rows 1717 / 1720, default since 2026-11-14 (user): PREFIX.capstarts.gtf, a side product like earlyends. Human-tested only;
   # the stage's self-check refuses a library without usable cap G (both gorilla libraries), which is reported and not a failure.
   # A refusal newer than PREFIX.gtf is not retried, so a rerun of `all` does not repeat the BAM pass.
+  # rows 1766 / 1806, default since 2026-11-20 (user): the one-read tiers as side products like earlyends, outside the plan
+  # (nothing reads them): PREFIX.oneread.gtf (strict) and PREFIX.oneread.ranked.gtf (every one-read chain the default lacks,
+  # scored; a ranking, not a filter), plus PREFIX.oneread.promoted.gtf with partner libraries. Costs a second assemble at a
+  # floor of one read and two BAM passes. RUSTLE_ONEREAD_TIER=0 turns it off. A failure leaves every other product complete.
+  all_oneread() {
+    [ "${RUSTLE_ONEREAD_TIER:-1}" != 0 ] && [ -s "$OUT.gtf" ] || return 0
+    if [ -s "$OUT.oneread.ranked.gtf" ] && [ ! "$OUT.oneread.ranked.gtf" -ot "$OUT.gtf" ]; then return 0; fi
+    say "all: oneread"
+    bash "$0" oneread "${args[@]}" || say "all: oneread FAILED (see $OUT.oneread.log); every other product is complete"
+  }
   all_capstarts() {
     [ "${RUSTLE_CAPSTARTS:-1}" != 0 ] && [ -s "$OUT.gtf" ] || return 0
     if [ -s "$OUT.capstarts.gtf" ] && [ ! "$OUT.capstarts.gtf" -ot "$OUT.gtf" ]; then return 0; fi
@@ -1922,7 +1946,10 @@ stage_all() {
     fi
     if [ "$RESUME" = 1 ] && [ "$ran" = 0 ] && [ -s "$prod" ] && [ -f "$OUT.$st.env" ] && [ "$(cat "$OUT.$st.env")" = "$env_now" ] \
        && grep -qx $'exit\t0' "$OUT.$st.time" 2>/dev/null && [ ! "$prod" -nt "$OUT.$st.time" ]; then
-      say "all: $st SKIPPED ($prod present, settings unchanged)"; continue
+      say "all: $st SKIPPED ($prod present, settings unchanged)"
+      # --to STAGE must stop here too when the stage itself was up to date (before 2026-11-20 a resumed `--to` run went on)
+      if [ -n "$TO_STAGE" ] && [ "$st" = "$TO_STAGE" ]; then [ "$guided_due" = 0 ] || all_guided; all_layers_wait; all_names; all_earlyends; all_capstarts; all_oneread; say "all: stopped after $st (--to $TO_STAGE); product $prod"; return 0; fi
+      continue
     fi
     ran=1
     rm -f "$OUT.$st.env" "$OUT.all.env"   # all.env: the single record of builds before 2026-11-07
@@ -1956,12 +1983,13 @@ stage_all() {
         say "all: flag scan running in the background"
       fi
     fi
-    if [ -n "$TO_STAGE" ] && [ "$st" = "$TO_STAGE" ]; then [ "$guided_due" = 0 ] || all_guided; all_layers_wait; all_names; all_earlyends; all_capstarts; say "all: stopped after $st (--to $TO_STAGE); product $prod"; return 0; fi
+    if [ -n "$TO_STAGE" ] && [ "$st" = "$TO_STAGE" ]; then [ "$guided_due" = 0 ] || all_guided; all_layers_wait; all_names; all_earlyends; all_capstarts; all_oneread; say "all: stopped after $st (--to $TO_STAGE); product $prod"; return 0; fi
   done
   all_layers_wait
   all_names
   all_earlyends
   all_capstarts
+  all_oneread
   say "all: done. stage, wall, peak memory:"
   for item in "${plan[@]}"; do
     st=${item%%:*}
