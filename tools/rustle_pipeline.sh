@@ -237,8 +237,12 @@
 #     tools/data/rdna_human.fa (one human 45S unit with its spacer + one 5S unit; finds human and gorilla rDNA families) or
 #     tools/data/rdna_human.masked.fa (the unit's own repeats masked: lists no other family, misses Alu-rich spacer transcripts).
 #     The lists of the three RUSTLE_EXCLUDE_* switches are joined.
-#   RUSTLE_ASSEMBLY_LAYERS=on|off: `assemble` also writes PREFIX.final.gtf, the assembly with the three end layers, from a second
+#   RUSTLE_ASSEMBLY_LAYERS=on|off: `assemble` also writes PREFIX.final.gtf, the layered assembly, from a second
 #   parallel run (default on; PREFIX.gtf / PREFIX.families.gtf unchanged by construction; registers 1487-1491);
+#   RUSTLE_FINAL_END_LAYERS="tssend tesext monomodel" (or `all`; default unset = none since row 1846, 2026-11-20; `all` = the
+#     output before): the end layers of PREFIX.final.gtf only: median 5' ends (register 1487), 3' UTR extension (1488),
+#     single-exon models from end clusters (1489). Row 1831: each helps only where it was tuned. The sub-chain layer
+#     (RUSTLE_FINAL_SUBCHAIN) is not one of them and stays on;
 #   RUSTLE_POLISH_TES=tag|pas-end adds `--polish-tes` to `assemble` (default unset = off);
 #   RUSTLE_POLISH_MONO_PRIMED=0 adds `--no-polish-mono-primed` to `assemble` (default unset = 1 = on since 2026-10-26);
 #   RUSTLE_POLISH_JUNCTION_SNAP=off|equiv|reads sets `--polish-junction-snap` of `assemble` (default unset = reads since
@@ -834,17 +838,32 @@ stage_assemble() {
   # ... and its seeding environment and contig scope, one word per line (pass 2 must seed and scope as pass 1 did)
   printf '%s\n' "${seed_env[@]}" > "$OUT.assemble.seed_env"
   printf '%s\n' "${scope[@]}" > "$OUT.assemble.scope"
-  # PREFIX.final.gtf (2026-11-02, registers 1487-1491): the assembly with the three end layers (median 5' ends, 3' UTR extension,
-  # single-exon models from end clusters), each PASSED on held-out chromosomes, but each changed the families stage when it read
+  # PREFIX.final.gtf (2026-11-02, registers 1487-1491): the layered assembly. The three end layers (median 5' ends, 3' UTR extension,
+  # single-exon models from end clusters; opt-in since row 1846) each PASSED on held-out chromosomes, but each changed the families stage when it read
   # them (r1490 / r1491). So the layered assembly is a SECOND run, in parallel, written only as PREFIX.final.gtf: PREFIX.gtf and
   # PREFIX.families.gtf (every later stage's input) are byte-identical to a run without it. RUSTLE_ASSEMBLY_LAYERS=off skips it.
   local layers=()
   case "${RUSTLE_ASSEMBLY_LAYERS:-on}" in
     on) # a layer the environment already set (RUSTLE_POLISH_TSS_END / _TES_EXTEND / RUSTLE_MONO_MODEL) is in $POLISH for both
         # runs, and a second copy of the flag stops clap: the user's value wins (audit 2026-11-07, fourth pass)
-        case "$POLISH" in *--polish-tss-end*) ;; *) layers+=(--polish-tss-end median) ;; esac
-        case "$POLISH" in *--polish-tes-extend*) ;; *) layers+=(--polish-tes-extend on) ;; esac
-        case "$POLISH" in *--mono-model*) ;; *) layers+=(--mono-model cluster) ;; esac
+        # RUSTLE_FINAL_END_LAYERS (row 1846, user 2026-11-20): the three end layers are opt-in, named here; unset = none
+        # (before: all three). Row 1831: each helps only where it was tuned (mono-model and 3' extension on ape testis,
+        # median 5' ends on A119b and mouse ES).
+        local fl w; fl=${RUSTLE_FINAL_END_LAYERS:-}; fl=${fl//,/ }
+        for w in $fl; do
+          case "$w" in
+            all) fl="tssend tesext monomodel" ;;
+            tssend|tesext|monomodel|none) ;;
+            *) echo "[rustle_pipeline] RUSTLE_FINAL_END_LAYERS takes tssend, tesext, monomodel, all or none (got '$w')" >&2; exit 2 ;;
+          esac
+        done
+        for w in $fl; do
+          case "$w" in
+            tssend) case "$POLISH" in *--polish-tss-end*) ;; *) layers+=(--polish-tss-end median) ;; esac ;;
+            tesext) case "$POLISH" in *--polish-tes-extend*) ;; *) layers+=(--polish-tes-extend on) ;; esac ;;
+            monomodel) case "$POLISH" in *--mono-model*) ;; *) layers+=(--mono-model cluster) ;; esac ;;
+          esac
+        done
         # RUSTLE_FINAL_SUBCHAIN=drop|off (register 1498 PASS; unset = drop): --polish-subchain drop as a fourth layer of PREFIX.final.gtf only
         case "${RUSTLE_FINAL_SUBCHAIN:-drop}" in
           drop) case "$POLISH" in *--polish-subchain*) ;; *) layers+=(--polish-subchain drop) ;; esac ;;

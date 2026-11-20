@@ -574,21 +574,44 @@ fn the_layered_run_adds_each_end_layer_once_and_needs_polish_tss() {
     let final_argv = |r: &Run| -> Vec<String> {
         r.log.iter().filter(|l| l.starts_with("argv ") && l.contains("final_run")).cloned().collect()
     };
-    let r = assemble("layers_on", &[], &[("RUSTLE_ASSEMBLY_LAYERS", "on")]);
+    // row 1846: the three end layers are opt-in (RUSTLE_FINAL_END_LAYERS); the default layered run has the sub-chain layer only
+    let r = assemble("layers_default", &[], &[("RUSTLE_ASSEMBLY_LAYERS", "on")]);
+    assert_eq!(r.code, 0, "{}", r.stderr);
+    let f = final_argv(&r);
+    assert_eq!(f.len(), 1, "{:?}", r.log);
+    assert!(f[0].contains("--polish-subchain drop"), "{}", f[0]);
+    for flag in ["--polish-tss-end", "--polish-tes-extend", "--mono-model"] {
+        assert!(!f[0].contains(flag), "{flag} is opt-in: {}", f[0]);
+    }
+    let r = assemble("layers_one", &[], &[("RUSTLE_ASSEMBLY_LAYERS", "on"), ("RUSTLE_FINAL_END_LAYERS", "tesext")]);
+    assert_eq!(r.code, 0, "{}", r.stderr);
+    let f = final_argv(&r);
+    assert!(f[0].contains("--polish-tes-extend on") && !f[0].contains("--mono-model") && !f[0].contains("--polish-tss-end"), "{}", f[0]);
+    let r = assemble("layers_bad", &[], &[("RUSTLE_ASSEMBLY_LAYERS", "on"), ("RUSTLE_FINAL_END_LAYERS", "tss")]);
+    assert_eq!(r.code, 2, "{}", r.stderr);
+    let r = assemble("layers_on", &[], &[("RUSTLE_ASSEMBLY_LAYERS", "on"), ("RUSTLE_FINAL_END_LAYERS", "all")]);
     assert_eq!(r.code, 0, "{}", r.stderr);
     let f = final_argv(&r);
     assert_eq!(f.len(), 1, "{:?}", r.log);
     for flag in ["--polish-tss-end median", "--polish-tes-extend on", "--mono-model cluster", "--polish-subchain drop"] {
         assert!(f[0].contains(flag), "{flag} in {}", f[0]);
     }
-    let r = assemble("layers_env", &[], &[("RUSTLE_ASSEMBLY_LAYERS", "on"), ("RUSTLE_POLISH_TSS_END", "off")]);
+    let r = assemble(
+        "layers_env",
+        &[],
+        &[("RUSTLE_ASSEMBLY_LAYERS", "on"), ("RUSTLE_FINAL_END_LAYERS", "all"), ("RUSTLE_POLISH_TSS_END", "off")],
+    );
     assert_eq!(r.code, 0, "{}", r.stderr);
     let f = final_argv(&r);
     assert_eq!(f.len(), 1, "{:?}", r.log);
     assert_eq!(f[0].matches("--polish-tss-end").count(), 1, "{}", f[0]);
     assert!(f[0].contains("--polish-tss-end off"), "the user's value wins: {}", f[0]);
     // RUSTLE_POLISH_TSS=off: the end layers need its evidence pass, the sub-chain layer does not (round-23 audit)
-    let r = assemble("layers_no_tss", &[], &[("RUSTLE_ASSEMBLY_LAYERS", "on"), ("RUSTLE_POLISH_TSS", "off")]);
+    let r = assemble(
+        "layers_no_tss",
+        &[],
+        &[("RUSTLE_ASSEMBLY_LAYERS", "on"), ("RUSTLE_FINAL_END_LAYERS", "all"), ("RUSTLE_POLISH_TSS", "off")],
+    );
     assert_eq!(r.code, 0, "{}", r.stderr);
     let f = final_argv(&r);
     assert_eq!(f.len(), 1, "{:?}", r.log);
@@ -599,7 +622,12 @@ fn the_layered_run_adds_each_end_layer_once_and_needs_polish_tss() {
     let r = assemble(
         "layers_none",
         &[],
-        &[("RUSTLE_ASSEMBLY_LAYERS", "on"), ("RUSTLE_POLISH_TSS", "off"), ("RUSTLE_FINAL_SUBCHAIN", "off")],
+        &[
+            ("RUSTLE_ASSEMBLY_LAYERS", "on"),
+            ("RUSTLE_FINAL_END_LAYERS", "all"),
+            ("RUSTLE_POLISH_TSS", "off"),
+            ("RUSTLE_FINAL_SUBCHAIN", "off"),
+        ],
     );
     assert_eq!(r.code, 0, "{}", r.stderr);
     assert!(final_argv(&r).is_empty(), "{:?}", r.log);
