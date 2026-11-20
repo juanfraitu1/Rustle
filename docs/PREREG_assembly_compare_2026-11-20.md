@@ -103,3 +103,39 @@ model" at junction level on OR6737 and A119b only. Same question at chain level 
   chains is the pointer for a port; a port is a new pre-registered row.
 - IsoQuant's rules read from its source (4.1.0, `isoquant_lib/model_construction`) are listed with their Rustle counterparts
   whatever the outcome.
+
+### Follow-up result (2026-11-20): OPERATING POINT on all six
+`r1838_assembly_compare/iq.NAME.txt`. Rustle `final.gtf` cut by reads to IsoQuant's correct count (precision, Rustle / IsoQuant):
+| | fly sim | mouse sim | mouse ES | chimp testis | bonobo testis | KB3781 |
+|---|---|---|---|---|---|---|
+| read cut | >= 2 (no cut) | >= 3 | >= 9 | >= 3 | >= 3 | >= 10 |
+| precision | 0.964 / 0.972 | 0.958 / 0.967 | 0.564 / 0.471 | 0.516 / 0.441 | 0.427 / 0.369 | 0.591 / 0.427 |
+| difference | -0.008 | -0.008 | +0.093 | +0.075 | +0.057 | +0.163 |
+Against StringTie at its correct count: +0.001, 0.000, +0.033, (count not reached on chimpanzee), +0.056, +0.051.
+On the four real libraries Rustle at IsoQuant's recall is 6-16 points more precise. On the two simulated sets IsoQuant is 0.8
+point ahead, inside the bar. No dataset fails, so no class is a registered pointer.
+
+Descriptive, where IsoQuant is the cleaner one at the matched count:
+- **Pieces of true chains, simulated sets only:** Rustle 70 / 422 wrong chains of this class (fly / mouse), IsoQuant 15 / 173.
+  That difference is the whole 0.8 point. On the real libraries the counts are equal or Rustle's lower.
+- **Near-junction chains, real libraries:** Rustle 484-658, IsoQuant 97-193. On the simulated sets it is the other way
+  (Rustle 67 / 197, IsoQuant 88 / 283): IsoQuant merges close sites that are both real.
+
+**IsoQuant's rules (4.1.0, preset `default_pacbio`) and their Rustle counterparts**
+| IsoQuant | what it does | Rustle |
+|---|---|---|
+| intron clustering (`delta`, then `graph_clustering_distance` 10 bp at ratio 0.5) | an intron within a few bp of a better-supported one is rewritten to it; siblings within 10 bp when under half the count | junction snap (default, read evidence, no ratio); junction ratio 20 (opt-in, rows 1819 / 1835) |
+| `min_novel_count_rel` 0.02 | a chain needs 2% of the strongest intron of its component | isoform fraction 0.02 (general, row 1793) |
+| full-length paths only; `terminal_position_rel` 0.05, `terminal_internal_position_rel` 0.05 | a chain is built only from reads that start and end at read-end peaks; an end inside a longer structure counts only at 5% of the coverage running through | 5' truncation rule (ratio 3.22, default); sub-chain collapse by read ratio 0.3; no 3' counterpart |
+| similar-isoform removal, `remove_unconfirmed` | a chain contained in a longer one is dropped unless its own end is a confirmed peak | sub-chain collapse (read ratio); TSS rescue spares a sub-chain with a proven 5' cluster (acts on A119b only) |
+| novel 2-exon models: strand from canonical sites, mean MAPQ cutoff | | strict junction gate; no MAPQ rule for 2-exon chains |
+| `min_novel_isolated_intron_abs` 2 | a lone intron needs 2 reads | read floor 2 |
+| splice-site correction from deletions next to a junction | | junction snap |
+| novel single-exon needs polyA | | primed rule, quantile floor, shadow rule |
+
+Reading (mine): nothing in IsoQuant explains a precision Rustle cannot reach by its own read cut. Two differences in kind are
+left, both about pieces and ends rather than counts: (1) IsoQuant decides a contained chain by whether its END is a read-end
+peak, Rustle by the read ratio to the longer chain; (2) IsoQuant applies its end test at the 3' side too. The simulated
+PIECE figures say (1) is where IsoQuant is cleaner. Candidate for a pre-registered row: keep a contained chain when its own
+end is a read-end peak, in place of (or beside) the read ratio; judged with row 1839's ratio arms as the reference.
+Not worth porting: the 0.5 junction ratio (it costs true close sites on complete truth; ratio 20 was chosen for that reason).
