@@ -50,11 +50,11 @@ it misses on mouse ES (precision 0.331 -> 0.324) and mouse simulated (0.966 of t
 bonobo testis and KB3781 stay unseen under any counting variant.
 
 **What the grid shows (my interpretation).**
-- The sub-chain ratio should stay 0.3: every 0.15 arm is less precise than its 0.3 partner by 0.010-0.021 for 0.3-1.5% more
-  correct chains.
+- The sub-chain ratio should stay 0.3: every 0.15 arm is less precise than its 0.3 partner (by 0.013-0.033 at fraction 0.02) for 0.3-1.7%
+  more correct chains.
 - The isoform fraction is the dial. Under real counts 0.02 is a strict setting (precision +0.014 to +0.043, 2-8% of the correct
   chains lost), 0.01 is about neutral against today's default (A119b: 297 correct chains fewer, 5,376 wrong chains fewer; the
-  other datasets within +-0.02 precision and >= 0.966 kept), 0.005 and lower give more correct chains than the default
+  other datasets between -0.007 and +0.021 precision and >= 0.966 kept), 0.005 and lower give more correct chains than the default
   (A119b +3.7%) at lower precision on the real libraries.
 - SIRV keeps its gain down to fraction 0.01 (0.877 against base 0.589) and loses it below (0.82, 0.66): the shifted-junction
   chains there sit between 0.5% and 1% of the true isoform's reads.
