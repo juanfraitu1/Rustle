@@ -1,4 +1,4 @@
-# docs/ index — every document, one line each (generated 2026-11-20)
+# docs/ index — every document, one line each (generated 2026-11-21)
 
 Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or archiving a document. Archived files keep their names; only the directory changed, so grepping a filename still finds it. Verdicts of archived studies are in the register rows that cite them; pre-registrations are kept verbatim (the commit that introduced each one is the proof it preceded the result).
 
@@ -24,12 +24,12 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-18 | register ×1 |
 | [`seeded_family_definition.md`](seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-08 | — |
 
-## Open studies and current handoff (274)
+## Open studies and current handoff (276)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
-| [`END_LAYERS_OPTIN_2026-11-20.md`](END_LAYERS_OPTIN_2026-11-20.md) | Row 1846: the three end layers of `final.gtf` become opt-in (user decision, 2026-11-20) | 2026-11-20 | register ×1 |
-| [`JUNCTION_RATIO_DEFAULT_2026-11-20.md`](JUNCTION_RATIO_DEFAULT_2026-11-20.md) | Row 1845: junction replacement at 20 x support becomes the driver default (user decision, 2026-11-20) | 2026-11-20 | register ×1 |
+| [`END_LAYERS_OPTIN_2026-11-20.md`](END_LAYERS_OPTIN_2026-11-20.md) | Row 1846: the three end layers of `final.gtf` become opt-in (user decision, 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
+| [`JUNCTION_RATIO_DEFAULT_2026-11-20.md`](JUNCTION_RATIO_DEFAULT_2026-11-20.md) | Row 1845: junction replacement at 20 x support becomes the driver default (user decision, 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_acceptor_near_2026-11-20.md`](PREREG_acceptor_near_2026-11-20.md) | Row 1842: near misses at splice sites, acceptor against donor (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_assembly_compare_2026-11-20.md`](PREREG_assembly_compare_2026-11-20.md) | Row 1838: where do other assemblers find true chains that Rustle misses, primate against non-primate? (pre-registered 20 | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_count_all_reads_2026-11-20.md`](PREREG_count_all_reads_2026-11-20.md) | Row 1833: every read counted (no collapse of coordinate duplicates), tested off the spike-ins (pre-registered 2026-11-20 | 2026-11-20 | register ×1, memory ×1 |
@@ -37,10 +37,12 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_duplomap_tbc1d3_2026-11-20.md`](PREREG_duplomap_tbc1d3_2026-11-20.md) | PREREG: DuploMap on Iso-Seq reads at TBC1D3 (row 1844, 2026-11-20) | uncommitted | register ×1 |
 | [`PREREG_end_peak_2026-11-20.md`](PREREG_end_peak_2026-11-20.md) | Row 1840: keep a contained chain when its own end is a read-end peak (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_end_through_2026-11-20.md`](PREREG_end_through_2026-11-20.md) | Row 1841: does an end peak judged against the reads running through separate true contained chains? (pre-registered 2026 | 2026-11-20 | register ×1, memory ×1 |
+| [`PREREG_family_benchmark_2026-11-20.md`](PREREG_family_benchmark_2026-11-20.md) | PREREG: one family definition on every assembler's output (row 1847, 2026-11-20) | uncommitted | — |
 | [`PREREG_ism_3p_only_2026-11-20.md`](PREREG_ism_3p_only_2026-11-20.md) | Row 1843: the sub-chain collapse spares chains cut at the 3' side only (pre-registered 2026-11-20) | 2026-11-20 | register ×1 |
 | [`PREREG_mono_end_rules_2026-11-20.md`](PREREG_mono_end_rules_2026-11-20.md) | Row 1831: are the single-exon rules and the end layers overfit to primates? (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_mono_quantile_grid_2026-11-20.md`](PREREG_mono_quantile_grid_2026-11-20.md) | Row 1832: the read floor of single-exon transcripts, a grid of its quantile (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_real_count_grid_2026-11-20.md`](PREREG_real_count_grid_2026-11-20.md) | Row 1837: isoform fraction and sub-chain ratio re-set on real read counts (pre-registered 2026-11-20) | 2026-11-20 | register ×1 |
+| [`PREREG_sirv_rules_run_2026-11-20.md`](PREREG_sirv_rules_run_2026-11-20.md) | Row 1847: the two parked SIRV rules, tested on the twelve datasets (pre-registered 2026-11-20) | 2026-11-20 | register ×1 |
 | [`PREREG_subchain_ratio_001_2026-11-20.md`](PREREG_subchain_ratio_001_2026-11-20.md) | Row 1839: sub-chain collapse ratio at 0.01 (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_support_filter_2026-11-20.md`](PREREG_support_filter_2026-11-20.md) | Row 1830: does the support profile, used as a FILTER, remove wrong transcripts? (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_tssend_cap_gate_2026-11-20.md`](PREREG_tssend_cap_gate_2026-11-20.md) | Row 1834: does the assembler's cap signal say where the median 5' end helps? (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
@@ -77,7 +79,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_one_read_promote_check_2026-11-18.md`](PREREG_one_read_promote_check_2026-11-18.md) | Row 1808: one-read chains seen in a second library and ranked high, against the two-read chains (pre-registered 2026-11- | 2026-11-19 | register ×1, memory ×1 |
 | [`PREREG_one_read_score_2026-11-18.md`](PREREG_one_read_score_2026-11-18.md) | Row 1806: a score for one-read chains from the reads themselves (pre-registered 2026-11-18) | 2026-11-19 | register ×1 |
 | [`PREREG_rule_ablation_2026-11-18.md`](PREREG_rule_ablation_2026-11-18.md) | Row 1793: which assembler rules are overfit to the primate samples? (pre-registered 2026-11-18) | 2026-11-19 | register ×1, memory ×2 |
-| [`PREREG_sirv_rules_2026-11-18.md`](PREREG_sirv_rules_2026-11-18.md) | Row 1801: four rules from the SIRV diagnosis, tested off the spike-ins (DRAFT of 2026-11-18, bars not yet accepted) | 2026-11-19 | memory ×1 |
+| [`PREREG_sirv_rules_2026-11-18.md`](PREREG_sirv_rules_2026-11-18.md) | Row 1801: four rules from the SIRV diagnosis, tested off the spike-ins (DRAFT of 2026-11-18, bars not yet accepted) | 2026-11-19 | register ×1, memory ×1 |
 | [`PREREG_snap_ism_defaults_2026-11-18.md`](PREREG_snap_ism_defaults_2026-11-18.md) | Row 1800: polish junction snap on by default, ISM ratio re-set on non-primate data (pre-registered 2026-11-18) | 2026-11-19 | register ×1, memory ×1 |
 | [`PREREG_splicesite_features_2026-11-18.md`](PREREG_splicesite_features_2026-11-18.md) | Row 1789: does splice-site sequence strength add precision? (pre-registered 2026-11-18) | 2026-11-18 | register ×1 |
 | [`PREREG_testis_replication_2026-11-18.md`](PREREG_testis_replication_2026-11-18.md) | Row 1792: are the "wrong" chains the score keeps in testis real transcripts RefSeq lacks? (pre-registered 2026-11-18, di | 2026-11-18 | register ×1 |

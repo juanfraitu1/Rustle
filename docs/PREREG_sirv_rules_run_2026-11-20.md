@@ -33,3 +33,42 @@ wrong in `final.gtf`), M restores up to 4 true single-exon spike-ins.
 - S re-reads the BAM per contig (wall time reported). Real-library truths are incomplete; an unannotated real intron counts
   as wrong and an unannotated single-exon gene as unmatched.
 - The chain score filter was fitted without either rule.
+
+## Result (2026-11-21): neither rule is a candidate; the spliced share misses by the two simulated sets, the shadow support fails everywhere
+
+Jobs 4490962-4490973, 48 runs exit 0; `r1847_sirv_rules/score.NAME.txt`. The S arm costs 2-9% more wall time (A119b 783 -> 854 s).
+
+**D1, spliced share 0.05 (`x.gtf`): correct chains lost, wrong chains removed, precision.**
+| | fly sim | mouse sim | zebrafish sim | ES | heart | adrenal | cortex | OR6737 | A119b | chimp | bonobo | KB3781 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| correct lost | 47 (0.67%) | 185 (0.67%) | 46 (0.37%) | 41 (0.23%) | 10 (0.08%) | 17 (0.12%) | 29 (0.18%) | 57 (0.22%) | 190 (0.49%) | 29 (0.14%) | 16 (0.09%) | 111 (0.43%) |
+| wrong removed | 8 | 34 | 11 | 755 | 94 | 145 | 166 | 505 | 3,767 | 179 | 263 | 1,032 |
+| precision | 0.9276 -> 0.9281 | 0.9065 -> 0.9070 | 0.8159 -> 0.8159 | 0.3485 -> 0.3531 | 0.5571 -> 0.5591 | 0.5511 -> 0.5539 | 0.4764 -> 0.4783 | 0.3254 -> 0.3270 | 0.1591 -> 0.1609 | 0.3535 -> 0.3542 | 0.3107 -> 0.3119 | 0.3393 -> 0.3430 |
+| D1 | FAIL | FAIL | pass | pass | pass | pass | pass | pass | pass | pass | pass | pass |
+**5 of 7 non-primate, 5 of 5 primate; bar 6 and 4: not a candidate.** Precision is not lower anywhere. The two failures are
+fly and mouse simulated, where it removes five true chains per wrong one (0.67% of the correct), as expected: a simulated read
+carries no artefact intron, so the rule only meets true minor introns there. On the nine real libraries it removes 7-20 wrong
+chains per annotated one (mouse heart 9, ES 18, A119b 20) and under 0.5% of the correct. `final.gtf` moves the same way.
+
+**D2, shadow support ratio 1 (`x.gtf`):** multi-exon chains identical on all twelve. Single-exon truth found rises everywhere
+(fly 343 -> 399, mouse ES 275 -> 335, cortex 91 -> 127, A119b 234 -> 325) but model precision falls on all twelve: slightly
+on the simulated sets (0.921 -> 0.912, 0.966 -> 0.964, 0.861 -> 0.805) and by half or more on real libraries (heart 0.557 ->
+0.278, cortex 0.596 -> 0.280, OR6737 0.216 -> 0.079, A119b 0.021 -> 0.009 with 10,848 -> 35,795 models; A119b base precision
+0.245 -> 0.145). **0 of 12: FAIL.**
+
+**SIRV contigs (`final.gtf`, development data, no bar):**
+| arm | multi-exon: reported / correct / wrong | shifted site | other new intron | combination | single-exon: models / matching, of 23 |
+|---|---|---|---|---|---|
+| base | 67 / 48 / 19 | 13 | 5 | 1 | 11 / 11 |
+| S | 62 / 49 / 13 | 12 | 0 | 1 | 15 / 15 |
+| M | 67 / 48 / 19 | 13 | 5 | 1 | 19 / 17 |
+| S + M | 62 / 49 / 13 | 12 | 0 | 1 | 19 / 17 |
+S alone does both jobs on the spike-ins: it removes all five introns reported in unspliced spike-ins and one shifted site,
+gains a correct chain, and by removing the spliced artefact it lifts the shadow from four true single-exon spike-ins
+(precision of the multi-exon chains 0.716 -> 0.790). M adds two more true single-exon spike-ins and two unmatched models.
+Expectation: S as written (the single-exon gain through the shadow was not foreseen); M's doubt about the apes was right and
+understated.
+
+**Decision:** no candidate by the registered bars. S stays the opt-in it is (`RUSTLE_POLISH_SPLICED_SHARE=0.05`): harmless or
+better on every real library, a 0.67% loss of true chains on clean simulated reads. Whether that is acceptable for a default
+is the user's call. M (`RUSTLE_POLISH_MONO_SHADOW_RATIO`) should not be used as it stands.
