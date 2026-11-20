@@ -494,6 +494,14 @@ struct Args {
     #[arg(long, default_value_t = 1.0)]
     polish_ism_ratio: f64,
 
+    /// END-PEAK RULE for the sub-chain collapse of `--assembly-polish full` (register 1840, opt-in; 0 = off). A multi-exon
+    /// transcript whose chain is a contiguous part of a longer chain is kept whatever its read ratio when every INTERNAL
+    /// side of it (a side where a container has further introns) is a peak of its own reads' ends: 5', a 21 bp window with
+    /// >= N own reads and >= half of them; 3', a PAS-proven, not internally primed cluster with >= N own reads and >= half
+    /// of them. Own reads = deduplicated primary spliced records with exactly the transcript's chain.
+    #[arg(long, default_value_t = 0)]
+    polish_ism_end_peak: usize,
+
     /// §6q1 ISM ABSOLUTE ESCAPE for `--assembly-polish full`. Keep a sub-chain fragment when its own read
     /// support reaches the run's `--polish-mono-quantile` level of multi-exon support, even if its
     /// container is deeper still. The ISM collapse gets harsher as coverage grows, and the deepest
@@ -3651,7 +3659,7 @@ fn polish_drop_set(
 ) {
     polish_drop_set_with(
         lines, mode, mono_quantile, isoform_fraction, mono_shadow, ism_absolute_escape, ism_3p_anchored, ism_ratio,
-        fraction_exempt, fuzzy, fuzzy_ism, fraction_min_reads, retained_ratio, 0.0,
+        fraction_exempt, fuzzy, fuzzy_ism, fraction_min_reads, retained_ratio, 0.0, &DetHashSet::default(),
     )
 }
 
@@ -3674,6 +3682,7 @@ fn polish_drop_set_with(
     fraction_min_reads: u64,
     retained_ratio: f64,
     shadow_ratio: f64,
+    end_peak: &DetHashSet<String>,
 ) -> (
     DetHashSet<String>,
     DetHashMap<String, &'static str>,
@@ -3813,6 +3822,9 @@ fn polish_drop_set_with(
         // a fragment survives if it carries at least as much support as the chain that contains it, OR if
         // it is itself a well-supported transcript by this run's own standard
         let supported = |frag: &str, cont: &str| -> bool {
+            if end_peak.contains(frag) {
+                return true; // --polish-ism-end-peak: its own internal ends are read-end peaks
+            }
             let rf = reads.get(frag).copied().unwrap_or(0);
             if ism_absolute_escape && support_level > 0 && rf >= support_level {
                 return true;
@@ -6830,6 +6842,80 @@ fn tes_clusters(ends: &[i64], seq: &[u8], minus: bool) -> Vec<TesCluster> {
     out
 }
 
+/// `--polish-ism-end-peak`: the share of a transcript's own reads its end peak must hold (a priori, register 1840).
+const ISM_PEAK_SHARE: f64 = 0.5;
+
+/// `--polish-ism-end-peak N` (register 1840) on one contig's polish input: the contained multi-exon transcripts whose every
+/// internal side is a peak of their own reads' ends (see the flag). Returns (end-confirmed ids, contained, confirmed).
+fn ism_end_peak_set(
+    lines: &[String],
+    recs: &[rustle::denovo_assemble::TssRead],
+    seq: &[u8],
+    min_reads: usize,
+) -> (DetHashSet<String>, usize, usize) {
+    let txs = tss_parse(lines);
+    let mut own: DetHashMap<(bool, u64), (Vec<i64>, Vec<i64>)> = DetHashMap::default();
+    for r in recs {
+        if r.oin.is_empty() {
+            continue;
+        }
+        let e = own.entry((r.minus, r.chain)).or_default();
+        e.0.push(r.o5);
+        e.1.push(r.o3);
+    }
+    // (strand, oriented intron) -> every (transcript, position of that intron in its chain)
+    let mut at: DetHashMap<(bool, (i64, i64)), Vec<(&String, usize)>> = DetHashMap::default();
+    for (tid, t) in txs.iter() {
+        for (k, j) in t.ochain.iter().enumerate() {
+            at.entry((t.minus, *j)).or_default().push((tid, k));
+        }
+    }
+    let mut out: DetHashSet<String> = DetHashSet::default();
+    let (mut contained, mut confirmed) = (0usize, 0usize);
+    for (tid, y) in txs.iter() {
+        let n = y.ochain.len();
+        if n == 0 {
+            continue;
+        }
+        let (mut in5, mut in3) = (false, false);
+        for (xid, k) in at.get(&(y.minus, y.ochain[0])).into_iter().flatten() {
+            let x = &txs[*xid];
+            if x.ochain.len() > n && k + n <= x.ochain.len() && x.ochain[*k..*k + n] == y.ochain[..] {
+                in5 |= *k > 0;
+                in3 |= *k + n < x.ochain.len();
+            }
+        }
+        if !in5 && !in3 {
+            continue;
+        }
+        contained += 1;
+        let Some((s5, s3)) = own.get(&(y.minus, y.chain)) else { continue };
+        let need = |k: usize| k >= min_reads && k as f64 >= ISM_PEAK_SHARE * s5.len() as f64;
+        let ok5 = !in5 || {
+            let mut v = s5.clone();
+            v.sort_unstable();
+            let (mut best, mut i) = (0usize, 0usize);
+            for j in 0..v.len() {
+                while v[j] - v[i] >= TSS_W as i64 {
+                    i += 1;
+                }
+                best = best.max(j - i + 1);
+            }
+            need(best)
+        };
+        let ok3 = !in3 || {
+            let mut v = s3.clone();
+            v.sort_unstable();
+            tes_clusters(&v, seq, y.minus).iter().any(|c| c.proven && need(c.n))
+        };
+        if ok5 && ok3 {
+            confirmed += 1;
+            out.insert(tid.clone());
+        }
+    }
+    (out, contained, confirmed)
+}
+
 /// `--polish-tes-extend`'s reach: the farthest a 3' end may move (oriented bp), and how far upstream of a transcript's end
 /// an unspliced read may start and still be searched (no unspliced HiFi read is longer).
 const TES_EXT_MAX: i64 = 20_000;
@@ -8130,7 +8216,7 @@ fn main() -> Result<()> {
         if streaming {
             let mut acc = rustle::denovo_assemble::Pass1Acc::new(1, None);
             acc.readthrough = rt_switch.as_ref().map(|s| s.stats());
-            if args.polish_tss != "off" || args.polish_tes != "off" {
+            if args.polish_tss != "off" || args.polish_tes != "off" || args.polish_ism_end_peak > 0 {
                 let mut ev = rustle::denovo_assemble::TssEvidence::default();
                 ev.collect_unspliced = args.polish_tes_extend != "off" || args.mono_model != "off";
                 ev.collect_mono = args.polish_mono_primed; // r1566: only the streaming reader records its windows
@@ -8189,7 +8275,7 @@ fn main() -> Result<()> {
                 ev
             });
             streamed = Some(acc.finish_with(cfg.pass1_min_reads, args.read_isoform_k, None, rustle::denovo_assemble::AdmitOpts { mode: if args.direct_transfrags_union { rustle::denovo_assemble::ChainAdmission::DirectUnion } else if args.direct_transfrags { rustle::denovo_assemble::ChainAdmission::Direct } else if args.compat_support { rustle::denovo_assemble::ChainAdmission::Compat } else { rustle::denovo_assemble::ChainAdmission::Exact }, credit: match args.transfer_credit.as_str() { "full" => rustle::denovo_assemble::TransferCredit::Full, "best" => rustle::denovo_assemble::TransferCredit::Best, _ => rustle::denovo_assemble::TransferCredit::Split }, snap_w: args.read_junction_snap, spliced_min_reads: args.min_chain_reads, extend: args.extend_transfrags, transfer_ends: args.transfer_ends }));
-        } else if args.polish_tss != "off" || args.polish_tes != "off" {
+        } else if args.polish_tss != "off" || args.polish_tes != "off" || args.polish_ism_end_peak > 0 {
             let mut ev = rustle::denovo_assemble::TssEvidence::default();
             ev.collect_unspliced = args.polish_tes_extend != "off" || args.mono_model != "off";
             for (wchrom, wlo, whi) in &wins {
@@ -11119,6 +11205,7 @@ fn main() -> Result<()> {
     let mut snap_stats: Vec<SnapStats> = Vec::new();
     // --polish-junction-ratio: (introns replaced, transcripts rewritten, collapsed), summed over the contigs
     let ratio_stats: [std::sync::atomic::AtomicUsize; 3] = Default::default();
+    let peak_stats: [std::sync::atomic::AtomicUsize; 2] = Default::default();
     // --gtf-regroup: the pass's counts (params.tsv rows only when set)
     let mut regroup_stats: Option<RegroupStats> = None;
     // --bridge-regroup: the pass's counts (params.tsv rows only when set)
@@ -11310,12 +11397,29 @@ fn main() -> Result<()> {
                     retain_transcripts(&mut part, &gone);
                 }
                 // the contig's end evidence (--polish-tss / --polish-tes; empty and never read when both are off)
-                let recs = if args.polish_tss != "off" || args.polish_tes != "off" {
+                let recs = if args.polish_tss != "off" || args.polish_tes != "off" || args.polish_ism_end_peak > 0 {
                     tss_all.by_chrom.remove(c.as_str()).unwrap_or_default()
                 } else {
                     Vec::new()
                 };
                 let unsp = tss_all.unspliced.remove(c.as_str()).unwrap_or_default();
+                // --polish-ism-end-peak (register 1840; 0: empty set, never consulted)
+                let end_peak: DetHashSet<String> = if args.polish_ism_end_peak > 0 {
+                    let g = genome_for(c)?;
+                    let seq: &[u8] = g.chroms().find(|(n, _)| *n == c.as_str()).map(|(_, s)| s).unwrap_or(&[]);
+                    let (set, contained, confirmed) = ism_end_peak_set(&part, &recs, seq, args.polish_ism_end_peak);
+                    plog!(log,
+                        "[copy_assign] ISM END PEAK ({}) {}: {} contained multi-exon transcripts, {} end-confirmed (kept by the \
+                         sub-chain collapse whatever their read ratio)",
+                        args.polish_ism_end_peak, c, contained, confirmed
+                    );
+                    for (a, n) in peak_stats.iter().zip([contained, confirmed]) {
+                        a.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    set
+                } else {
+                    DetHashSet::default()
+                };
                 if args.polish_tss == "off" {
                     let (drop0, _sites, (a, b, d, floor, e)) = polish_drop_set_with(
                         &part,
@@ -11332,6 +11436,7 @@ fn main() -> Result<()> {
                         args.polish_fraction_min_reads,
                         args.polish_retained_ratio,
                         args.polish_mono_shadow_ratio,
+                        &end_peak,
                     );
                     retain_transcripts(&mut part, &drop0);
                     n_ism += a;
@@ -11357,6 +11462,7 @@ fn main() -> Result<()> {
                         args.polish_fraction_min_reads,
                         args.polish_retained_ratio,
                         args.polish_mono_shadow_ratio,
+                        &end_peak,
                     );
                     n_ism += a;
                     n_mono += b;
@@ -13217,6 +13323,12 @@ fn main() -> Result<()> {
         if args.polish_mono_shadow_ratio > 0.0 {
             row("polish_mono_shadow_ratio", format!("{}", args.polish_mono_shadow_ratio))?;
         }
+        if args.polish_ism_end_peak > 0 {
+            let n = |i: usize| format!("{}", peak_stats[i].load(std::sync::atomic::Ordering::Relaxed));
+            row("polish_ism_end_peak", format!("{}", args.polish_ism_end_peak))?;
+            row("polish_ism_end_peak_contained", n(0))?;
+            row("polish_ism_end_peak_confirmed", n(1))?;
+        }
         if args.polish_junction_ratio > 0.0 {
             let n = |i: usize| format!("{}", ratio_stats[i].load(std::sync::atomic::Ordering::Relaxed));
             row("polish_junction_ratio", format!("{}", args.polish_junction_ratio))?;
@@ -14249,7 +14361,7 @@ mod tests {
     #[test]
     fn mono_shadow_ratio_spares_a_single_exon_transcript_with_more_reads_than_its_shadow() {
         let args = |l: &[String], ratio: f64| {
-            polish_drop_set_with(l, "full", 0.0, 0.0, true, false, false, 1.0, false, 0, false, 0, 0.0, ratio)
+            polish_drop_set_with(l, "full", 0.0, 0.0, true, false, false, 1.0, false, 0, false, 0, 0.0, ratio, &DetHashSet::default())
         };
         let mut l = Vec::new();
         l.extend(share_gtf("SPL", "+", 3, &[(1, 2521), (2562, 3996)])); // a 3-read spliced artefact
@@ -14695,6 +14807,43 @@ mod tests {
             x_capped,
         );
         (l, ev)
+    }
+    /// `--polish-ism-end-peak` (register 1840): a 5'-internal contained chain is confirmed by >= N own starts in one 21 bp
+    /// window holding half of its reads, a 3'-internal one by a PAS-proven cluster of its own ends; the sub-chain collapse
+    /// then keeps it, and without the set the output is the plain polish.
+    #[test]
+    fn ism_end_peak_confirms_a_contained_chain_by_its_own_end_peak() {
+        let (l, mut ev) = tss_fixture_a(false);
+        tss_push(&mut ev, false, 501, 1300, &[(1101, 1200)], 3, false); // Y: 3 own reads, all starting at 501
+        let seq = vec![b'C'; 1400];
+        let (set, contained, confirmed) = ism_end_peak_set(&l, &tss_recs(&ev), &seq, 2);
+        assert_eq!((contained, confirmed), (1, 1));
+        assert!(set.contains("Y") && !set.contains("X"));
+        assert!(ism_end_peak_set(&l, &tss_recs(&ev), &seq, 4).0.is_empty(), "needs N reads at the peak");
+        let run = |peak: &DetHashSet<String>| {
+            polish_drop_set_with(&l, "full", 0.82, 0.02, true, false, false, 0.7, false, 0, false, 0, 10.0, 0.0, peak).0
+        };
+        assert!(run(&DetHashSet::default()).contains("Y"), "the read ratio drops Y");
+        assert!(!run(&set).contains("Y"), "the end peak keeps it");
+        // scattered starts: no window holds two of them
+        let (l, mut ev) = tss_fixture_a(false);
+        for five in [501, 600, 700] {
+            tss_push(&mut ev, false, five, 1300, &[(1101, 1200)], 1, false);
+        }
+        assert_eq!(ism_end_peak_set(&l, &tss_recs(&ev), &seq, 2).2, 0);
+        // 3'-internal: Z = X's first two exons; its three reads end at 1100; confirmed only with a PAS upstream
+        let mut l = sc_gtf("X", "G", "+", 10, &TSS_X);
+        l.extend(sc_gtf("Z", "G", "+", 3, &[(101, 200), (1001, 1100)]));
+        let mut ev = TssEvidence::default();
+        for five in [101, 102, 103] {
+            tss_push(&mut ev, false, five, 1100, &[(201, 1000)], 1, false);
+        }
+        assert_eq!(ism_end_peak_set(&l, &tss_recs(&ev), &seq, 2).2, 0, "no PAS: not confirmed");
+        let mut pas = seq.clone();
+        pas[1075..1081].copy_from_slice(b"AATAAA");
+        let (set, contained, confirmed) = ism_end_peak_set(&l, &tss_recs(&ev), &pas, 2);
+        assert_eq!((contained, confirmed), (1, 1));
+        assert!(set.contains("Z"));
     }
     /// The proof WITHOUT the no-cap gate (the mechanics tests run on uncapped fixtures; the gate has its own test).
     fn tss_run(l: &[String], ev: &TssEvidence, mode: &str, null: TssNull) -> TssOutcome {
