@@ -249,8 +249,9 @@
 #     keeps a single-exon transcript with at least R times the reads of the spliced transcript shadowing it;
 #   RUSTLE_POLISH_ISM_RATIO_3P=R adds `--polish-ism-ratio-3p R` (opt-in, row 1843; unset = off): read ratio of the sub-chain
 #     collapse for chains cut at the 3' side only (no longer chain reaches upstream of them); 0 = spared
-#   RUSTLE_POLISH_JUNCTION_RATIO=R adds `--polish-junction-ratio R` (opt-in, row 1819; unset or 0 = off): after the polish an
-#     intron is re-placed by the neighbour within 10 bp that has at least R times its support (20 in row 1819);
+#   RUSTLE_POLISH_JUNCTION_RATIO=R sets `--polish-junction-ratio R` (default unset = 20 since row 1845, 2026-11-20; 0 = off,
+#     the command before): after the polish an intron is re-placed by the neighbour within 10 bp that has at least R times
+#     its support (rows 1819, 1835);
 #   RUSTLE_GTF_REGROUP=1 adds `--gtf-regroup` to `assemble` (RG3 regroup after polish; default unset = off; needs
 #     RUSTLE_BRIDGE_REGROUP=off, whose default contains RG3's split);
 #   RUSTLE_BRIDGE_REGROUP=off|f1|f1v2|f1units sets `--bridge-regroup` on `assemble` (unset = f1v2, THE DEFAULT since
@@ -657,8 +658,9 @@ case "${RUSTLE_POLISH_MONO_SHADOW_RATIO:-}" in ""|0) ;; *[!0-9.]*) echo "[rustle
 # ratio of the sub-chain collapse for chains cut at the 3' side only (0 = spared)
 case "${RUSTLE_POLISH_ISM_RATIO_3P:-}" in "") ;; *[!0-9.]*) echo "[rustle_pipeline] RUSTLE_POLISH_ISM_RATIO_3P must be a number >= 0 (got '$RUSTLE_POLISH_ISM_RATIO_3P')" >&2; exit 2 ;;
   *) POLISH="$POLISH --polish-ism-ratio-3p $RUSTLE_POLISH_ISM_RATIO_3P" ;; esac
-# RUSTLE_POLISH_JUNCTION_RATIO=R (opt-in, row 1819; unset or 0 = off, the same command): copy_assign --polish-junction-ratio
-case "${RUSTLE_POLISH_JUNCTION_RATIO:-}" in ""|0) ;; *[!0-9.]*) echo "[rustle_pipeline] RUSTLE_POLISH_JUNCTION_RATIO must be a number >= 1 (got '$RUSTLE_POLISH_JUNCTION_RATIO')" >&2; exit 2 ;;
+# RUSTLE_POLISH_JUNCTION_RATIO=R (unset = 20, the default since row 1845, user 2026-11-20; 0 = off, the command before):
+# copy_assign --polish-junction-ratio (rows 1819, 1835); the chain score filter was fitted without it
+case "${RUSTLE_POLISH_JUNCTION_RATIO:=20}" in 0) ;; *[!0-9.]*) echo "[rustle_pipeline] RUSTLE_POLISH_JUNCTION_RATIO must be a number >= 1 (got '$RUSTLE_POLISH_JUNCTION_RATIO')" >&2; exit 2 ;;
   *) POLISH="$POLISH --polish-junction-ratio $RUSTLE_POLISH_JUNCTION_RATIO" ;; esac
 # RUSTLE_GTF_REGROUP=1 (opt-in; unset or 0 = off, the same command): copy_assign --gtf-regroup, RG3 — after every polish
 # step, split a gene_id whose surviving transcripts share no same-strand exonic base (a dropped readthrough bridge, or
