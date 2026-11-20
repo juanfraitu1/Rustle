@@ -502,6 +502,15 @@ struct Args {
     #[arg(long, default_value_t = 0)]
     polish_ism_end_peak: usize,
 
+    /// READ RATIO FOR SUB-CHAINS CUT AT THE 3' SIDE ONLY, in the sub-chain collapse of `--assembly-polish full` (register
+    /// 1843, opt-in; negative = off = the default). A multi-exon transcript is 3'-only when its chain is a contiguous part of
+    /// a longer chain of its contig and strand and NO such container has introns upstream of its first intron (5' by the
+    /// strand): it only ends early. For such a transcript the collapse uses this ratio in place of `--polish-ism-ratio`
+    /// (0 = spared outright). Chains cut at the 5' side or at both sides are judged as before. Unlike `--polish-ism-3p` it
+    /// does not spare pieces from the middle of a chain. Not applied under `--polish-fuzzy-ism`.
+    #[arg(long, default_value_t = -1.0, allow_negative_numbers = true)]
+    polish_ism_ratio_3p: f64,
+
     /// §6q1 ISM ABSOLUTE ESCAPE for `--assembly-polish full`. Keep a sub-chain fragment when its own read
     /// support reaches the run's `--polish-mono-quantile` level of multi-exon support, even if its
     /// container is deeper still. The ISM collapse gets harsher as coverage grows, and the deepest
@@ -3659,8 +3668,50 @@ fn polish_drop_set(
 ) {
     polish_drop_set_with(
         lines, mode, mono_quantile, isoform_fraction, mono_shadow, ism_absolute_escape, ism_3p_anchored, ism_ratio,
-        fraction_exempt, fuzzy, fuzzy_ism, fraction_min_reads, retained_ratio, 0.0, &DetHashSet::default(),
+        fraction_exempt, fuzzy, fuzzy_ism, fraction_min_reads, retained_ratio, 0.0, &DetHashSet::default(), -1.0,
     )
+}
+
+/// `--polish-ism-ratio-3p` (register 1843): the multi-exon transcripts whose chain is a contiguous part of a longer chain of
+/// their contig and strand ('+' or '-') while no such container has introns upstream of their first intron.
+fn ism_3p_only(
+    chain: &DetHashMap<String, Vec<(i64, i64)>>,
+    key: &DetHashMap<String, (String, String)>,
+) -> DetHashSet<String> {
+    // (contig, strand, intron) -> every (transcript, position of that intron in its chain)
+    let mut at: DetHashMap<(&str, &str, (i64, i64)), Vec<(&String, usize)>> = DetHashMap::default();
+    for (t, c) in chain.iter() {
+        let Some(k) = key.get(t) else { continue };
+        for (i, j) in c.iter().enumerate() {
+            at.entry((k.0.as_str(), k.1.as_str(), *j)).or_default().push((t, i));
+        }
+    }
+    let mut out: DetHashSet<String> = DetHashSet::default();
+    for (y, cy) in chain.iter() {
+        let Some(k) = key.get(y) else { continue };
+        let minus = match k.1.as_str() {
+            "+" => false,
+            "-" => true,
+            _ => continue,
+        };
+        let n = cy.len();
+        if n == 0 {
+            continue;
+        }
+        let (mut in5, mut in3) = (false, false);
+        for (x, i) in at.get(&(k.0.as_str(), k.1.as_str(), cy[0])).into_iter().flatten() {
+            let cx = &chain[*x];
+            if cx.len() > n && i + n <= cx.len() && cx[*i..*i + n] == cy[..] {
+                let (left, right) = (*i > 0, *i + n < cx.len());
+                in5 |= if minus { right } else { left };
+                in3 |= if minus { left } else { right };
+            }
+        }
+        if in3 && !in5 {
+            out.insert(y.clone());
+        }
+    }
+    out
 }
 
 /// [`polish_drop_set`] with `--polish-mono-shadow-ratio`: at `shadow_ratio` > 0 the shadow rule spares a single-exon
@@ -3683,6 +3734,7 @@ fn polish_drop_set_with(
     retained_ratio: f64,
     shadow_ratio: f64,
     end_peak: &DetHashSet<String>,
+    ratio_3p: f64,
 ) -> (
     DetHashSet<String>,
     DetHashMap<String, &'static str>,
@@ -3819,12 +3871,20 @@ fn polish_drop_set_with(
     mark(&drop, &mut sites, "fuzzy");
 
     if mode == "full" {
+        // --polish-ism-ratio-3p (register 1843): the transcripts contained in a longer chain of their contig and strand
+        // that no container reaches upstream of (5' by the strand)
+        let only_3p = if ratio_3p >= 0.0 && !(fuzzy_ism && fuzzy > 0) {
+            ism_3p_only(&chain, &key)
+        } else {
+            DetHashSet::default()
+        };
         // a fragment survives if it carries at least as much support as the chain that contains it, OR if
         // it is itself a well-supported transcript by this run's own standard
         let supported = |frag: &str, cont: &str| -> bool {
             if end_peak.contains(frag) {
                 return true; // --polish-ism-end-peak: its own internal ends are read-end peaks
             }
+            let ism_ratio = if only_3p.contains(frag) { ratio_3p } else { ism_ratio };
             let rf = reads.get(frag).copied().unwrap_or(0);
             if ism_absolute_escape && support_level > 0 && rf >= support_level {
                 return true;
@@ -11437,6 +11497,7 @@ fn main() -> Result<()> {
                         args.polish_retained_ratio,
                         args.polish_mono_shadow_ratio,
                         &end_peak,
+                        args.polish_ism_ratio_3p,
                     );
                     retain_transcripts(&mut part, &drop0);
                     n_ism += a;
@@ -11463,6 +11524,7 @@ fn main() -> Result<()> {
                         args.polish_retained_ratio,
                         args.polish_mono_shadow_ratio,
                         &end_peak,
+                        args.polish_ism_ratio_3p,
                     );
                     n_ism += a;
                     n_mono += b;
@@ -13323,6 +13385,9 @@ fn main() -> Result<()> {
         if args.polish_mono_shadow_ratio > 0.0 {
             row("polish_mono_shadow_ratio", format!("{}", args.polish_mono_shadow_ratio))?;
         }
+        if args.polish_ism_ratio_3p >= 0.0 {
+            row("polish_ism_ratio_3p", format!("{}", args.polish_ism_ratio_3p))?;
+        }
         if args.polish_ism_end_peak > 0 {
             let n = |i: usize| format!("{}", peak_stats[i].load(std::sync::atomic::Ordering::Relaxed));
             row("polish_ism_end_peak", format!("{}", args.polish_ism_end_peak))?;
@@ -14361,7 +14426,7 @@ mod tests {
     #[test]
     fn mono_shadow_ratio_spares_a_single_exon_transcript_with_more_reads_than_its_shadow() {
         let args = |l: &[String], ratio: f64| {
-            polish_drop_set_with(l, "full", 0.0, 0.0, true, false, false, 1.0, false, 0, false, 0, 0.0, ratio, &DetHashSet::default())
+            polish_drop_set_with(l, "full", 0.0, 0.0, true, false, false, 1.0, false, 0, false, 0, 0.0, ratio, &DetHashSet::default(), -1.0)
         };
         let mut l = Vec::new();
         l.extend(share_gtf("SPL", "+", 3, &[(1, 2521), (2562, 3996)])); // a 3-read spliced artefact
@@ -14812,6 +14877,32 @@ mod tests {
     /// window holding half of its reads, a 3'-internal one by a PAS-proven cluster of its own ends; the sub-chain collapse
     /// then keeps it, and without the set the output is the plain polish.
     #[test]
+    fn ism_ratio_3p_spares_only_the_chain_that_ends_early() {
+        let tx = |id: &str, strand: &str, reads: u64, ex: &[(i64, i64)]| -> Vec<String> {
+            let a = format!("gene_id \"g\"; transcript_id \"{id}\"; reads \"{reads}\";");
+            let mut v = vec![format!("c\tr\ttranscript\t{}\t{}\t.\t{strand}\t.\t{a}", ex[0].0, ex[ex.len() - 1].1)];
+            v.extend(ex.iter().map(|e| format!("c\tr\texon\t{}\t{}\t.\t{strand}\t.\t{a}", e.0, e.1)));
+            v
+        };
+        let e = [(100, 200), (300, 400), (500, 600), (700, 800)];
+        for (strand, early, cut5) in [("+", &e[0..3], &e[1..4]), ("-", &e[1..4], &e[0..3])] {
+            let mut l = tx("long", strand, 100, &e);
+            l.extend(tx("early", strand, 2, early)); // shares the 5' side, ends early
+            l.extend(tx("cut5", strand, 2, cut5)); // 5'-cut
+            l.extend(tx("mid", strand, 2, &e[1..3])); // a piece from the middle
+            let run = |r3: f64| {
+                polish_drop_set_with(&l, "full", 0.0, 0.0, false, false, false, 0.3, false, 0, false, 0, 0.0, 0.0, &DetHashSet::default(), r3).0
+            };
+            let off = run(-1.0);
+            assert!(off.contains("early") && off.contains("cut5") && off.contains("mid"), "{strand}: off drops all three");
+            let on = run(0.0);
+            assert!(!on.contains("early"), "{strand}: the early-ending chain is spared");
+            assert!(on.contains("cut5") && on.contains("mid"), "{strand}: 5'-cut and middle pieces are still dropped");
+            assert!(run(0.1).contains("early"), "{strand}: 2 reads < 0.1 x 100");
+        }
+    }
+
+    #[test]
     fn ism_end_peak_confirms_a_contained_chain_by_its_own_end_peak() {
         let (l, mut ev) = tss_fixture_a(false);
         tss_push(&mut ev, false, 501, 1300, &[(1101, 1200)], 3, false); // Y: 3 own reads, all starting at 501
@@ -14821,7 +14912,7 @@ mod tests {
         assert!(set.contains("Y") && !set.contains("X"));
         assert!(ism_end_peak_set(&l, &tss_recs(&ev), &seq, 4).0.is_empty(), "needs N reads at the peak");
         let run = |peak: &DetHashSet<String>| {
-            polish_drop_set_with(&l, "full", 0.82, 0.02, true, false, false, 0.7, false, 0, false, 0, 10.0, 0.0, peak).0
+            polish_drop_set_with(&l, "full", 0.82, 0.02, true, false, false, 0.7, false, 0, false, 0, 10.0, 0.0, peak, -1.0).0
         };
         assert!(run(&DetHashSet::default()).contains("Y"), "the read ratio drops Y");
         assert!(!run(&set).contains("Y"), "the end peak keeps it");

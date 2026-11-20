@@ -247,6 +247,8 @@
 #     transcript with an intron spliced by less than X of the primary reads across it (0.05 in the r1801 diagnosis);
 #   RUSTLE_POLISH_MONO_SHADOW_RATIO=R adds `--polish-mono-shadow-ratio R` (opt-in, r1801; unset or 0 = off): the shadow rule
 #     keeps a single-exon transcript with at least R times the reads of the spliced transcript shadowing it;
+#   RUSTLE_POLISH_ISM_RATIO_3P=R adds `--polish-ism-ratio-3p R` (opt-in, row 1843; unset = off): read ratio of the sub-chain
+#     collapse for chains cut at the 3' side only (no longer chain reaches upstream of them); 0 = spared
 #   RUSTLE_POLISH_ISM_END_PEAK=N adds `--polish-ism-end-peak N` (opt-in, row 1840; unset or 0 = off): the sub-chain collapse
 #     keeps a contained chain whose own internal ends are read-end peaks of >= N reads (5': a 21 bp window; 3': a PAS-proven cluster)
 #   RUSTLE_POLISH_JUNCTION_RATIO=R adds `--polish-junction-ratio R` (opt-in, row 1819; unset or 0 = off): after the polish an
@@ -655,6 +657,10 @@ case "${RUSTLE_POLISH_MONO_SHADOW_RATIO:-}" in ""|0) ;; *[!0-9.]*) echo "[rustle
   *) POLISH="$POLISH --polish-mono-shadow-ratio $RUSTLE_POLISH_MONO_SHADOW_RATIO" ;; esac
 # RUSTLE_POLISH_ISM_END_PEAK=N (opt-in, row 1840; unset or 0 = off, the same command): copy_assign --polish-ism-end-peak N, the
 # sub-chain collapse keeps a contained chain whose own internal ends are read-end peaks of >= N reads
+# RUSTLE_POLISH_ISM_RATIO_3P=R (opt-in, row 1843; unset = off, the same command): copy_assign --polish-ism-ratio-3p R, the read
+# ratio of the sub-chain collapse for chains cut at the 3' side only (0 = spared)
+case "${RUSTLE_POLISH_ISM_RATIO_3P:-}" in "") ;; *[!0-9.]*) echo "[rustle_pipeline] RUSTLE_POLISH_ISM_RATIO_3P must be a number >= 0 (got '$RUSTLE_POLISH_ISM_RATIO_3P')" >&2; exit 2 ;;
+  *) POLISH="$POLISH --polish-ism-ratio-3p $RUSTLE_POLISH_ISM_RATIO_3P" ;; esac
 case "${RUSTLE_POLISH_ISM_END_PEAK:-}" in ""|0) ;; *[!0-9]*) echo "[rustle_pipeline] RUSTLE_POLISH_ISM_END_PEAK must be a whole number (got '$RUSTLE_POLISH_ISM_END_PEAK')" >&2; exit 2 ;;
   *) POLISH="$POLISH --polish-ism-end-peak $RUSTLE_POLISH_ISM_END_PEAK" ;; esac
 # RUSTLE_POLISH_JUNCTION_RATIO=R (opt-in, row 1819; unset or 0 = off, the same command): copy_assign --polish-junction-ratio
