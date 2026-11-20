@@ -77,14 +77,14 @@ A119b, chimpanzee, bonobo, KB3781.
 - **No cell is protected across both groups.** The 3 bp acceptor cell (NAGNAG) is at least as precise as the assembly on 5 of
   5 primate datasets (0.35-0.57) and on 0 of 7 non-primate ones: 0.62-0.86 on the simulated sets (below their 0.89-0.96) and
   0.16-0.30 on the mouse libraries (about half the assembly's precision).
-- Expectation: acceptor pairs outnumber donor pairs, yes; the 3 bp acceptor cell is the most precise acceptor cell on real
-  libraries only at 6 of 9 (4-5 and 6 / 9 bp are close or above on the simulated sets); "likely protected on the simulated
+- Expectation: acceptor pairs outnumber donor pairs, yes; the 3 bp acceptor cell is the most precise acceptor cell on all nine real
+  libraries (on the simulated sets 4-5 and 6 / 9 bp are above it); "likely protected on the simulated
   sets" was wrong. The 1-2 bp cells are far under a quarter wherever they have the numbers; the 4-5 bp cells are not artifact
   cells (0.08-0.92, near the pair average).
 - The weaker chain's acceptor is an AG in 99.5-100% of the acceptor-only pairs: the assembly already holds no non-AG variant,
   so the dinucleotide cannot judge them.
 - Table E (errors against the truth): a wrong chain one near intron away from a truth chain is 26%, 30%, 16% of the wrong
-  chains on the simulated sets, 13-14% on the mouse libraries, 2-6% on the apes; the true partner is emitted in 85-97% of
+  chains on the simulated sets, 13-14% on the mouse libraries, 2-6% on the apes; the true partner is emitted in 81-94% of
   them on real libraries (the default snap could have moved them and did not: at least 2 reads prove the weaker site).
   Simulated only: the largest error cell on mouse simulated is an intron moved at BOTH sides by 4-5 bp (127 of 396, partner
   emitted in 108), 9 on fly, 35 on zebrafish, 60 on mouse ES.
