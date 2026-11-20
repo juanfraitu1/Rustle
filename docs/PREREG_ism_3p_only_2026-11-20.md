@@ -48,3 +48,43 @@ chains at 0.01-0.02; harmless on precision only where the 3'-only class is small
   collapse at 0.3.
 - Simulated reads have idealised 3' ends and no internal priming, which is the artifact this class would carry on real
   libraries; real-library truths are incomplete.
+
+## Result (2026-11-20): FAIL; pays on 3 of 7 non-primate and 0 of 5 primate, as expected beforehand
+
+Jobs 4490354-4490366, 36 arms exit 0; `r1843_ism_3p_only/sep.NAME.txt` (`sep.py`). Code `5e5b80c2`, binaries in
+`~/ws/rustle_target_b`. Parity: `base` is byte-identical to row 1840's `base` (md5 of `x.gtf` and `x.final.gtf`; fly, mouse
+ES, A119b). Full test suite 1,586 passed, 0 failed.
+
+`x.final.gtf`, arm against `base`: correct added / wrong added, precision base -> arm.
+| | `r3p0` (spared) | | `r3p01` (ratio 0.1) | |
+|---|---|---|---|---|
+| fly simulated | +14 / 0, 0.964 -> 0.964 | PAYS | +12 / 0 | PAYS |
+| mouse simulated | +545 / +6 (3 correct lost), 0.953 -> 0.954 | PAYS | +320 / +5 | PAYS |
+| zebrafish simulated | +27 / +27, 0.891 -> 0.890 | no (+0.2% correct) | +20 / +14 | no |
+| mouse ES | +290 / +1,039, 0.347 -> 0.344 | PAYS (+1.6% correct) | +161 / +499, 0.346 | no (+0.9%) |
+| mouse heart | +91 / +174, 0.577 -> 0.574 | no (+0.7%) | +63 / +101, 0.575 | no |
+| mouse adrenal | +175 / +469, 0.578 -> 0.570 | no | +110 / +264, 0.574 | no |
+| mouse cortex | +142 / +304, 0.487 -> 0.485 | no (+0.9%) | +103 / +186, 0.486 | no |
+| OR6737 | +47 / +1,741, 0.377 -> 0.369 | no | +39 / +1,000, 0.372 | no |
+| A119b | +188 / +3,946, 0.219 -> 0.215 | no | +148 / +2,878, 0.216 | no |
+| chimpanzee | +30 / +1,479, 0.416 -> 0.404 | no | +20 / +973, 0.408 | no |
+| bonobo | +40 / +1,487, 0.337 -> 0.328 | no | +29 / +894, 0.332 | no |
+| KB3781 | +48 / +2,593, 0.373 -> 0.360 | no | +34 / +1,503, 0.366 | no |
+
+- **`r3p0`: 3 of 7 non-primate, 0 of 5 primate; not harmless on four of the five apes** (precision -0.008 to -0.013; A119b
+  -0.004). **`r3p01`: 2 of 7 and 0 of 5.** Neither PASS nor NON-PRIMATE CANDIDATE.
+- The rule reaches the class row 1841 described: in `x.gtf` the chains it adds are 0.955 / 0.984 / 0.403 correct on the
+  simulated sets, 0.24 / 0.34 / 0.22 / 0.34 on the mouse libraries, 0.010-0.023 on the apes, the figures of that table, and
+  the rest of what ratio 0 adds is 0.04-0.08 on mouse and 0.004-0.006 on apes. The class separation is real; the class is
+  just not precise enough on real libraries: 2-3 wrong chains per correct one on mouse (assembly: about 1 per correct on
+  heart and adrenal), 20-55 on apes.
+- **After the final filter the exemption equals the collapse switched off.** In `final.gtf` `r3p0` adds what ratio 0 adds
+  (mouse ES +290 / +1,039 against +282 / +1,010; share of the ceiling's correct chains 0.94-1.00 on all twelve): the 5'
+  truncation rule of the filter already removes the 5'-cut chains, so what a lower ratio lets through to `final.gtf` IS the
+  3'-only class. Rows 1839 and 1843 measured the same additions.
+- Expectation: held on every dataset named (pays fly, mouse simulated, ES; not zebrafish, heart, adrenal); the final filter
+  did not remove the wrong additions.
+
+**Decision:** not a candidate for a default. The switch stays in the code as an opt-in (off by default, parity checked); it
+is the precise form of "more recall on mouse-like libraries" (mouse simulated +2.0% correct at 0.99, mouse ES +1.6% at 0.22)
+and removing it is the user's call. The shared `~/rustle_target` was not rebuilt with it.
