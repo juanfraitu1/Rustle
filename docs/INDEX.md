@@ -2,7 +2,7 @@
 
 Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or archiving a document. Archived files keep their names; only the directory changed, so grepping a filename still finds it. Verdicts of archived studies are in the register rows that cite them; pre-registrations are kept verbatim (the commit that introduced each one is the proof it preceded the result).
 
-## Living documents (17, undated, maintained in place)
+## Living documents (18, undated, maintained in place)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
@@ -14,6 +14,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`LEDGER_O2.md`](LEDGER_O2.md) | Ledger: O2 (copy assignment of tied reads) | 2026-11-18 | register ×1, memory ×1 |
 | [`LEDGER_O3.md`](LEDGER_O3.md) | Ledger: O3 (copies the reference lacks) | 2026-11-18 | — |
 | [`MODULE_STATUS.md`](MODULE_STATUS.md) | Module status — what is SHIPPED vs what was TRIED | 2026-11-19 | — |
+| [`MULTICOPY_MODE.md`](MULTICOPY_MODE.md) | Multi-copy mode: assembling the copies of known gene families | uncommitted | memory ×1 |
 | [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) | REGISTER OF NEGATIVE RESULTS (full: archive/2026-11/NEGATIVE_RESULTS_REGISTER.md:1) | 2026-11-21 | memory ×4 |
 | [`PARKED.md`](PARKED.md) | Parked items (to pick up later, on any cluster) | 2026-11-19 | memory ×2 |
 | [`PERFORMANCE.md`](PERFORMANCE.md) | Pipeline performance: where the time goes and the switches that change it | 2026-11-15 | — |
@@ -24,20 +25,22 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-18 | register ×1 |
 | [`seeded_family_definition.md`](seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-08 | — |
 
-## Open studies and current handoff (290)
+## Open studies and current handoff (292)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
 | [`PREREG_copy_evidence_2026-11-21.md`](PREREG_copy_evidence_2026-11-21.md) | PREREG: do the copies added by secondaries have reads of their own (row 1863, 2026-11-21) | uncommitted | register ×1 |
+| [`PREREG_copy_psv_2026-11-21.md`](PREREG_copy_psv_2026-11-21.md) | PREREG: which tied copies can sequence differences decide, and does StringTie read secondaries (row 1870, 2026-11-21) | uncommitted | register ×1 |
 | [`PREREG_depth_floor_2026-11-21.md`](PREREG_depth_floor_2026-11-21.md) | Row 1852: a read floor that scales with library depth (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
 | [`PREREG_dup_count_rerun_2026-11-21.md`](PREREG_dup_count_rerun_2026-11-21.md) | Row 1849: every read counted, re-run on today's defaults (pre-registered 2026-11-21) | 2026-11-21 | register ×2, memory ×1 |
 | [`PREREG_es_precision_2026-11-21.md`](PREREG_es_precision_2026-11-21.md) | Row 1851: why is precision low on the mouse ES library? (pre-registered 2026-11-21) | 2026-11-21 | register ×1, memory ×1 |
 | [`PREREG_family_by_age_2026-11-21.md`](PREREG_family_by_age_2026-11-21.md) | PREREG: family recall by age of the duplication, per tool (row 1857, 2026-11-21) | uncommitted | register ×2 |
 | [`PREREG_family_by_family_2026-11-21.md`](PREREG_family_by_family_2026-11-21.md) | PREREG: named families one by one, loci and isoforms per tool (row 1859, 2026-11-21) | uncommitted | register ×1 |
+| [`PREREG_isocon_panels_2026-11-21.md`](PREREG_isocon_panels_2026-11-21.md) | Row 1872: IsoCon gene panels for all six species (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
 | [`PREREG_isoquant_es_2026-11-21.md`](PREREG_isoquant_es_2026-11-21.md) | Row 1853: where is IsoQuant ahead on mouse ES, and is any of it a rule to port? (pre-registered 2026-11-21) | 2026-11-21 | register ×1, memory ×1 |
 | [`PREREG_lost_introns_2026-11-21.md`](PREREG_lost_introns_2026-11-21.md) | Row 1864: which step loses real introns that have reads? (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
-| [`PREREG_multicopy_mode_2026-11-21.md`](PREREG_multicopy_mode_2026-11-21.md) | PREREG: multi-copy mode, the copies with own reads and no transcript (row 1865, 2026-11-21) | uncommitted | register ×1 |
-| [`PREREG_oneread_guard_2026-11-21.md`](PREREG_oneread_guard_2026-11-21.md) | Row 1866: one-read candidates with the pooling guard bypassed, promoted by a partner library (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
+| [`PREREG_multicopy_mode_2026-11-21.md`](PREREG_multicopy_mode_2026-11-21.md) | PREREG: multi-copy mode, the copies with own reads and no transcript (row 1865, 2026-11-21) | uncommitted | register ×3 |
+| [`PREREG_oneread_guard_2026-11-21.md`](PREREG_oneread_guard_2026-11-21.md) | Row 1866: one-read candidates with the pooling guard bypassed, promoted by a partner library (pre-registered 2026-11-21) | 2026-11-21 | register ×2 |
 | [`PREREG_polya_ends_2026-11-21.md`](PREREG_polya_ends_2026-11-21.md) | Row 1860: polyA tails on a second library, and a 3' end placed at the tailed reads (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
 | [`PREREG_polya_tails_2026-11-21.md`](PREREG_polya_tails_2026-11-21.md) | Row 1856: are polyA tails in the reads evidence the assembler should use? (pre-registered 2026-11-21) | 2026-11-21 | register ×1, memory ×1 |
 | [`PREREG_single_intron_2026-11-21.md`](PREREG_single_intron_2026-11-21.md) | Row 1854: would IsoQuant's rules for 2-exon models separate Rustle's wrong single-intron chains? (pre-registered 2026-11 | 2026-11-21 | register ×1 |
