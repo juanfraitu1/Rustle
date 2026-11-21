@@ -46,3 +46,32 @@ by at most 10 bp, which this class excludes only partly).
 ## Limits
 - One switch at a time: an intron lost by two steps is recovered by neither arm.
 - N counts exact junctions in primary records; Rustle's pass 1 has its own acceptance rules.
+
+## Result of the ablation (2026-11-21)
+Jobs 4491343 / 4491344, 18 arms exit 0; `r1864_lost_introns/lost.{wtc,es}.txt`.
+Lost introns: WTC11 6,183 (in 2,084 missed true chains), mouse ES 2,334 (in 697). **99.6% / 99.7% of them have 2 or more
+primary reads carrying the exact junction** (WTC11: 2 reads 1,479, 3-5 2,858, 6-20 1,623, over 20 199), 99.1% / 97.8% are
+canonical, and under 1% have a Rustle intron within 10 bp. So the junctions are well supported; what is under the floor is
+the CHAIN: no two reads carry the same full chain.
+| arm | WTC11: lost introns recovered | `x.gtf` correct / wrong added | mouse ES: recovered | correct / wrong added |
+|---|---|---|---|---|
+| floor1 | 3,961 (64.1%) | +4,270 / +26,166 | 1,406 (60.2%) | +1,041 / +16,536 |
+| frac0 | 405 (6.6%) | +897 / +2,663 | 428 (18.3%) | +1,293 / +22,110 |
+| dc0 | 341 (5.5%) | +611 / +1,590 | 326 (14.0%) | +688 / +5,800 |
+| ss0, jr0, snapoff, ism0, ret0 | 0-20 each | | 0-31 each | |
+| no arm | 1,797 (29.1%) | | 468 (20.1%) | |
+- "The floor explains it" (70% on both): NOT met (64% and 60%), though the floor is by far the largest step.
+- "A step is the pointer" (20% of the N >= 2 introns on both): none (the isoform fraction reaches 18% on mouse ES, 7% on WTC11).
+- **Lost introns with reads that no arm recovers: 29.1% and 20.0%, at or over the 20% bar on both: pass 1 itself.**
+- Expectation: the floor part held; the fraction part was too optimistic (18% on ES, not the larger share).
+
+## Follow-up, registered now before it is computed: the introns no arm recovers, by read
+Set U = lost introns with N >= 2 that are in no arm's `x.gtf` (WTC11 1,790, mouse ES 466); control set C = lost introns that
+floor1 recovers. For every primary read carrying an intron of U or C, flags: (a) the read has another junction that is not
+GT-AG / GC-AG / AT-AC; (b) its junctions' motifs point to both strands; (c) MAPQ under 20; (d) it has a supplementary
+alignment (SA tag); (e) it has an intron shorter than 30 bp or longer than 200 kb. Per intron: ALL-FLAGGED(x) = every one of
+its reads carries flag x. Reported: the share of U and of C that is ALL-FLAGGED for each flag and for any flag; intron length
+of U against C (median, share over 100 kb).
+**Reading:** a flag EXPLAINS the class when at least 40% of U and at most a third of that share of C is ALL-FLAGGED for it, on
+both libraries. An explaining flag names the pass-1 rule to look at (a registered build row). No explaining flag: the cause
+is not in these read properties and needs a trace of pass 1 on a handful of loci.
