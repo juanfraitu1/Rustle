@@ -44,3 +44,31 @@ smaller gain (mouse ES: hidden chains 76% of visible, at 0.044).
 - WTC11 replicates share the cell line: a partner read confirms a chain more easily than a different tissue would.
 - The ranking model was fitted (row 1806) on candidate sets that lacked these chains.
 - The floor-1 run uses collapsed read counts (row 1850's note).
+
+## Result (2026-11-21): GAIN on every library, QUALITY on none: not a candidate by the bars
+
+Jobs 4491366-4491369, all steps exit 0; code `d1d6d873`; `r1866_oneread_guard/NAME/{A,B}`.
+| library | `final.gtf` | two-read chains | A (today): candidates; promoted correct / all | B (switch): candidates; promoted correct / all | GAIN | QUALITY |
+|---|---|---|---|---|---|---|
+| WTC11 r2 (development) | 20,016 / 0.639 | 0.388 | 32,744; 574 / 1,731 = 0.332 | 52,756; 865 / 2,906 = 0.298 | +50.7% | no |
+| WTC11 r3 (check) | 25,423 / 0.584 | 0.309 | 34,492; 423 / 1,393 = 0.304 | 63,941; 771 / 2,771 = 0.278 | +82.3% | no (0.278 < 0.309; 0.026 under A) |
+| mouse adrenal (check) | 14,162 / 0.615 | 0.305 | 14,910; 294 / 1,351 = 0.218 | 26,989; 484 / 2,109 = 0.229 | +64.6% | no (0.229 < 0.305) |
+| chimpanzee testis (check) | 20,309 / 0.432 | 0.251 | 53,298; 576 / 2,325 = 0.248 | 132,547; 1,145 / 4,900 = 0.234 | +98.8% | no (0.234 < 0.251) |
+Correct chains the promotion adds to `final.gtf`, A -> B: WTC11 r3 +1.66% -> +3.03%; mouse adrenal +2.08% -> +3.42%;
+chimpanzee +2.84% -> +5.64%. The chains only B promotes are 0.25-0.29 correct (493 / 1,813; 306 / 1,221; 825 / 3,412).
+
+- **GAIN: yes on all three check libraries** (65-99% more correct promoted chains). The guard was hiding about as many good
+  candidates as the stage could see.
+- **QUALITY: no on all three.** B is within 0.03 of A everywhere (-0.026, +0.011, -0.014), but below the library's two-read
+  chains on all three, and on WTC11 r3 more than 0.02 under A.
+- **Row 1808's own claim no longer holds under today's defaults:** arm A, the promotion as it ships, is also below the
+  two-read chains on all three (0.304 / 0.309, 0.218 / 0.305, 0.248 / 0.251). The comparator moved: with every read counted
+  (row 1850) and the new rules (rows 1845, 1848) the default's two-read chains are a cleaner set than in row 1808
+  (mouse adrenal then 0.258, now 0.305).
+- Expectation: GAIN as expected; the doubt about QUALITY was justified, for a reason I had not named (the comparator).
+- Cost: the switch adds 5-39% to the stage's wall time.
+
+**Decision:** not a candidate as registered. The switch stays opt-in (`RUSTLE_ONEREAD_GATE=1`, default byte-identical): it
+roughly doubles what the partner promotion finds at 0.01-0.03 lower precision. For the user: the promoted tier as a whole
+is now a recall option at about 0.22-0.30 precision, no longer "as precise as two-read chains"; its documentation should
+say so. WTC11 replicate 3 is now assembled and has been used for this check.

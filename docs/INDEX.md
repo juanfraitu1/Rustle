@@ -24,7 +24,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-18 | register ×1 |
 | [`seeded_family_definition.md`](seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-08 | — |
 
-## Open studies and current handoff (289)
+## Open studies and current handoff (290)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
@@ -36,7 +36,8 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_family_by_family_2026-11-21.md`](PREREG_family_by_family_2026-11-21.md) | PREREG: named families one by one, loci and isoforms per tool (row 1859, 2026-11-21) | uncommitted | register ×1 |
 | [`PREREG_isoquant_es_2026-11-21.md`](PREREG_isoquant_es_2026-11-21.md) | Row 1853: where is IsoQuant ahead on mouse ES, and is any of it a rule to port? (pre-registered 2026-11-21) | 2026-11-21 | register ×1, memory ×1 |
 | [`PREREG_lost_introns_2026-11-21.md`](PREREG_lost_introns_2026-11-21.md) | Row 1864: which step loses real introns that have reads? (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
-| [`PREREG_multicopy_mode_2026-11-21.md`](PREREG_multicopy_mode_2026-11-21.md) | PREREG: multi-copy mode, the copies with own reads and no transcript (row 1865, 2026-11-21) | uncommitted | — |
+| [`PREREG_multicopy_mode_2026-11-21.md`](PREREG_multicopy_mode_2026-11-21.md) | PREREG: multi-copy mode, the copies with own reads and no transcript (row 1865, 2026-11-21) | uncommitted | register ×1 |
+| [`PREREG_oneread_guard_2026-11-21.md`](PREREG_oneread_guard_2026-11-21.md) | Row 1866: one-read candidates with the pooling guard bypassed, promoted by a partner library (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
 | [`PREREG_polya_ends_2026-11-21.md`](PREREG_polya_ends_2026-11-21.md) | Row 1860: polyA tails on a second library, and a 3' end placed at the tailed reads (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
 | [`PREREG_polya_tails_2026-11-21.md`](PREREG_polya_tails_2026-11-21.md) | Row 1856: are polyA tails in the reads evidence the assembler should use? (pre-registered 2026-11-21) | 2026-11-21 | register ×1, memory ×1 |
 | [`PREREG_single_intron_2026-11-21.md`](PREREG_single_intron_2026-11-21.md) | Row 1854: would IsoQuant's rules for 2-exon models separate Rustle's wrong single-intron chains? (pre-registered 2026-11 | 2026-11-21 | register ×1 |
