@@ -25,7 +25,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-18 | register ×1 |
 | [`seeded_family_definition.md`](seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-08 | — |
 
-## Open studies and current handoff (292)
+## Open studies and current handoff (296)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
@@ -38,12 +38,16 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_family_by_family_2026-11-21.md`](PREREG_family_by_family_2026-11-21.md) | PREREG: named families one by one, loci and isoforms per tool (row 1859, 2026-11-21) | uncommitted | register ×1 |
 | [`PREREG_isocon_panels_2026-11-21.md`](PREREG_isocon_panels_2026-11-21.md) | Row 1872: IsoCon gene panels for all six species (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
 | [`PREREG_isoquant_es_2026-11-21.md`](PREREG_isoquant_es_2026-11-21.md) | Row 1853: where is IsoQuant ahead on mouse ES, and is any of it a rule to port? (pre-registered 2026-11-21) | 2026-11-21 | register ×1, memory ×1 |
+| [`PREREG_junction_edit_2026-11-21.md`](PREREG_junction_edit_2026-11-21.md) | Row 1879: near-miss junctions judged by the edit distance of the two transcripts (step 0, pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
 | [`PREREG_lost_introns_2026-11-21.md`](PREREG_lost_introns_2026-11-21.md) | Row 1864: which step loses real introns that have reads? (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
-| [`PREREG_multicopy_mode_2026-11-21.md`](PREREG_multicopy_mode_2026-11-21.md) | PREREG: multi-copy mode, the copies with own reads and no transcript (row 1865, 2026-11-21) | uncommitted | register ×3 |
+| [`PREREG_multicopy_mode_2026-11-21.md`](PREREG_multicopy_mode_2026-11-21.md) | PREREG: multi-copy mode, the copies with own reads and no transcript (row 1865, 2026-11-21) | uncommitted | register ×4 |
 | [`PREREG_oneread_guard_2026-11-21.md`](PREREG_oneread_guard_2026-11-21.md) | Row 1866: one-read candidates with the pooling guard bypassed, promoted by a partner library (pre-registered 2026-11-21) | 2026-11-21 | register ×2 |
 | [`PREREG_polya_ends_2026-11-21.md`](PREREG_polya_ends_2026-11-21.md) | Row 1860: polyA tails on a second library, and a 3' end placed at the tailed reads (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
 | [`PREREG_polya_tails_2026-11-21.md`](PREREG_polya_tails_2026-11-21.md) | Row 1856: are polyA tails in the reads evidence the assembler should use? (pre-registered 2026-11-21) | 2026-11-21 | register ×1, memory ×1 |
+| [`PREREG_shortexons_truth_2026-11-21.md`](PREREG_shortexons_truth_2026-11-21.md) | Row 1878: does the short-exon repair pay on complete truth and outside primates? (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
 | [`PREREG_single_intron_2026-11-21.md`](PREREG_single_intron_2026-11-21.md) | Row 1854: would IsoQuant's rules for 2-exon models separate Rustle's wrong single-intron chains? (pre-registered 2026-11 | 2026-11-21 | register ×1 |
+| [`PREREG_tied_truth_2026-11-21.md`](PREREG_tied_truth_2026-11-21.md) | PREREG: which rule shares tied reads correctly, tested where the origin is known (rows 1873, 1874, 2026-11-21) | uncommitted | register ×3, memory ×1 |
+| [`PREREG_whats_left_2026-11-21.md`](PREREG_whats_left_2026-11-21.md) | Row 1876: what is left on complete truth at today's defaults? (step 0, pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
 | [`PREREG_wtc11_compare_2026-11-21.md`](PREREG_wtc11_compare_2026-11-21.md) | Row 1862: a blind comparison on WTC11, then WTC11 as development data for new rules (pre-registered 2026-11-21) | 2026-11-21 | register ×1, memory ×1 |
 | [`END_LAYERS_OPTIN_2026-11-20.md`](END_LAYERS_OPTIN_2026-11-20.md) | Row 1846: the three end layers of `final.gtf` become opt-in (user decision, 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`JUNCTION_RATIO_DEFAULT_2026-11-20.md`](JUNCTION_RATIO_DEFAULT_2026-11-20.md) | Row 1845: junction replacement at 20 x support becomes the driver default (user decision, 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
