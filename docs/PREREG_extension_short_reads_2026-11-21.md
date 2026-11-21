@@ -18,3 +18,21 @@ and `PPY_mm`, and on two controls where the list is already ahead: chimpanzee te
 - Otherwise the miss stands as a property of the library and nothing is proposed.
 - A CLOSES or PARTLY is a lead only: extension stays off by default (row 1811, user), and a switch that turns it on from a
   library statistic would need its own row with more libraries.
+
+## Result (2026-11-21): PARTLY; and with extension `final.gtf` itself gains on both axes on the three testis libraries
+
+Jobs 4494676-4494679, every stage exit 0; `r1882_extension_short_reads/score.NAME.txt`.
+| dataset | `final.gtf` off | `final.gtf` with extension | StringTie at its size, off -> on | top 25% | top 50% | top 75% |
+|---|---|---|---|---|---|---|
+| Sumatran testis | 54,748 / 15,552 / 0.2841 | 56,157 / 16,327 / 0.2907 | -686 -> +450 | -673 -> -610 | -460 -> -162 | -62 -> +474 |
+| Bornean testis | 83,473 / 19,525 / 0.2339 | 85,484 / 20,478 / 0.2396 | +666 -> +2,153 | -235 -> -47 | +326 -> +854 | +842 -> +1,901 |
+| chimpanzee testis | 46,969 / 20,309 / 0.4324 | 47,756 / 21,106 / 0.4420 | +778 -> +1,865 | -99 -> +26 | +313 -> +663 | +706 -> +1,284 |
+| mouse cortex | 29,767 / 15,490 / 0.5204 | 30,023 / 15,490 / 0.5159 | +1,272 -> +1,121 | +349 -> +351 | +664 -> +655 | +882 -> +845 |
+
+- **PARTLY as registered:** on Sumatran testis the deficit at StringTie's size turns into a lead (-686 -> +450) and no rival
+  turns to BEHIND on any of the four; the list is still behind StringTie's top quarter and top half there (-610, -162), so not CLOSES.
+- **Not asked by this row, and the larger finding:** with extension `final.gtf` has more correct chains AND higher precision on
+  all three testis libraries (+775 / +953 / +797 correct chains, +0.007 / +0.006 / +0.010 precision). Row 1811 called
+  extension a recall rule that lowers precision; that was `x.gtf` under the defaults of 2026-11-19. On mouse cortex it adds 256
+  chains, none annotated (precision -0.0045).
+- Follow-up registered as row 1883: extension at today's defaults on all twenty datasets.
