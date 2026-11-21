@@ -1,4 +1,4 @@
-# docs/ index — every document, one line each (generated 2026-11-21)
+# docs/ index — every document, one line each (generated 2026-11-22)
 
 Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or archiving a document. Archived files keep their names; only the directory changed, so grepping a filename still finds it. Verdicts of archived studies are in the register rows that cite them; pre-registrations are kept verbatim (the commit that introduced each one is the proof it preceded the result).
 
@@ -25,7 +25,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-18 | register ×1 |
 | [`seeded_family_definition.md`](seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-08 | — |
 
-## Open studies and current handoff (298)
+## Open studies and current handoff (300)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
@@ -34,6 +34,8 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_depth_floor_2026-11-21.md`](PREREG_depth_floor_2026-11-21.md) | Row 1852: a read floor that scales with library depth (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
 | [`PREREG_dup_count_rerun_2026-11-21.md`](PREREG_dup_count_rerun_2026-11-21.md) | Row 1849: every read counted, re-run on today's defaults (pre-registered 2026-11-21) | 2026-11-21 | register ×2, memory ×1 |
 | [`PREREG_es_precision_2026-11-21.md`](PREREG_es_precision_2026-11-21.md) | Row 1851: why is precision low on the mouse ES library? (pre-registered 2026-11-21) | 2026-11-21 | register ×1, memory ×1 |
+| [`PREREG_extension_short_reads_2026-11-21.md`](PREREG_extension_short_reads_2026-11-21.md) | Row 1882: does transfrag extension close the short-read testis miss of row 1880? (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
+| [`PREREG_extension_today_2026-11-21.md`](PREREG_extension_today_2026-11-21.md) | Row 1883: transfrag extension at today's defaults, twenty datasets (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
 | [`PREREG_family_by_age_2026-11-21.md`](PREREG_family_by_age_2026-11-21.md) | PREREG: family recall by age of the duplication, per tool (row 1857, 2026-11-21) | uncommitted | register ×2 |
 | [`PREREG_family_by_family_2026-11-21.md`](PREREG_family_by_family_2026-11-21.md) | PREREG: named families one by one, loci and isoforms per tool (row 1859, 2026-11-21) | uncommitted | register ×1 |
 | [`PREREG_isocon_panels_2026-11-21.md`](PREREG_isocon_panels_2026-11-21.md) | Row 1872: IsoCon gene panels for all six species (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
@@ -47,7 +49,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_ranked_vs_rivals_2026-11-21.md`](PREREG_ranked_vs_rivals_2026-11-21.md) | Row 1880: one ranked Rustle list against every other assembler, primates and non-primates (pre-registered 2026-11-21) | 2026-11-21 | register ×1, memory ×1 |
 | [`PREREG_shortexons_truth_2026-11-21.md`](PREREG_shortexons_truth_2026-11-21.md) | Row 1878: does the short-exon repair pay on complete truth and outside primates? (pre-registered 2026-11-21) | 2026-11-21 | register ×1, memory ×1 |
 | [`PREREG_single_intron_2026-11-21.md`](PREREG_single_intron_2026-11-21.md) | Row 1854: would IsoQuant's rules for 2-exon models separate Rustle's wrong single-intron chains? (pre-registered 2026-11 | 2026-11-21 | register ×1 |
-| [`PREREG_tandem_joins_2026-11-21.md`](PREREG_tandem_joins_2026-11-21.md) | PREREG: do near-tied alignments join one tandem copy to the next, and is Rustle fooled (row 1881, 2026-11-21) | uncommitted | — |
+| [`PREREG_tandem_joins_2026-11-21.md`](PREREG_tandem_joins_2026-11-21.md) | PREREG: do near-tied alignments join one tandem copy to the next, and is Rustle fooled (row 1881, 2026-11-21) | uncommitted | register ×1, memory ×1 |
 | [`PREREG_tied_truth_2026-11-21.md`](PREREG_tied_truth_2026-11-21.md) | PREREG: which rule shares tied reads correctly, tested where the origin is known (rows 1873, 1874, 2026-11-21) | uncommitted | register ×3, memory ×1 |
 | [`PREREG_whats_left_2026-11-21.md`](PREREG_whats_left_2026-11-21.md) | Row 1876: what is left on complete truth at today's defaults? (step 0, pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
 | [`PREREG_wtc11_compare_2026-11-21.md`](PREREG_wtc11_compare_2026-11-21.md) | Row 1862: a blind comparison on WTC11, then WTC11 as development data for new rules (pre-registered 2026-11-21) | 2026-11-21 | register ×1, memory ×1 |
