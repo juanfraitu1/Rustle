@@ -14,7 +14,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`LEDGER_O2.md`](LEDGER_O2.md) | Ledger: O2 (copy assignment of tied reads) | 2026-11-18 | register ×1, memory ×1 |
 | [`LEDGER_O3.md`](LEDGER_O3.md) | Ledger: O3 (copies the reference lacks) | 2026-11-18 | — |
 | [`MODULE_STATUS.md`](MODULE_STATUS.md) | Module status — what is SHIPPED vs what was TRIED | 2026-11-19 | — |
-| [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) | REGISTER OF NEGATIVE RESULTS (full: archive/2026-11/NEGATIVE_RESULTS_REGISTER.md:1) | 2026-11-20 | memory ×4 |
+| [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) | REGISTER OF NEGATIVE RESULTS (full: archive/2026-11/NEGATIVE_RESULTS_REGISTER.md:1) | 2026-11-21 | memory ×4 |
 | [`PARKED.md`](PARKED.md) | Parked items (to pick up later, on any cluster) | 2026-11-19 | memory ×2 |
 | [`PERFORMANCE.md`](PERFORMANCE.md) | Pipeline performance: where the time goes and the switches that change it | 2026-11-15 | — |
 | [`README.md`](README.md) | docs/ — what is where | 2026-11-16 | memory ×3 |
@@ -24,10 +24,11 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-18 | register ×1 |
 | [`seeded_family_definition.md`](seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-08 | — |
 
-## Open studies and current handoff (276)
+## Open studies and current handoff (277)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
+| [`PREREG_dup_count_rerun_2026-11-21.md`](PREREG_dup_count_rerun_2026-11-21.md) | Row 1849: every read counted, re-run on today's defaults (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
 | [`END_LAYERS_OPTIN_2026-11-20.md`](END_LAYERS_OPTIN_2026-11-20.md) | Row 1846: the three end layers of `final.gtf` become opt-in (user decision, 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`JUNCTION_RATIO_DEFAULT_2026-11-20.md`](JUNCTION_RATIO_DEFAULT_2026-11-20.md) | Row 1845: junction replacement at 20 x support becomes the driver default (user decision, 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_acceptor_near_2026-11-20.md`](PREREG_acceptor_near_2026-11-20.md) | Row 1842: near misses at splice sites, acceptor against donor (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
@@ -42,7 +43,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_mono_end_rules_2026-11-20.md`](PREREG_mono_end_rules_2026-11-20.md) | Row 1831: are the single-exon rules and the end layers overfit to primates? (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_mono_quantile_grid_2026-11-20.md`](PREREG_mono_quantile_grid_2026-11-20.md) | Row 1832: the read floor of single-exon transcripts, a grid of its quantile (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_real_count_grid_2026-11-20.md`](PREREG_real_count_grid_2026-11-20.md) | Row 1837: isoform fraction and sub-chain ratio re-set on real read counts (pre-registered 2026-11-20) | 2026-11-20 | register ×1 |
-| [`PREREG_sirv_rules_run_2026-11-20.md`](PREREG_sirv_rules_run_2026-11-20.md) | Row 1847: the two parked SIRV rules, tested on the twelve datasets (pre-registered 2026-11-20) | 2026-11-20 | register ×1 |
+| [`PREREG_sirv_rules_run_2026-11-20.md`](PREREG_sirv_rules_run_2026-11-20.md) | Row 1847: the two parked SIRV rules, tested on the twelve datasets (pre-registered 2026-11-20) | 2026-11-21 | register ×2, memory ×1 |
 | [`PREREG_subchain_ratio_001_2026-11-20.md`](PREREG_subchain_ratio_001_2026-11-20.md) | Row 1839: sub-chain collapse ratio at 0.01 (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_support_filter_2026-11-20.md`](PREREG_support_filter_2026-11-20.md) | Row 1830: does the support profile, used as a FILTER, remove wrong transcripts? (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_tssend_cap_gate_2026-11-20.md`](PREREG_tssend_cap_gate_2026-11-20.md) | Row 1834: does the assembler's cap signal say where the median 5' end helps? (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
