@@ -75,3 +75,50 @@ of U against C (median, share over 100 kb).
 **Reading:** a flag EXPLAINS the class when at least 40% of U and at most a third of that share of C is ALL-FLAGGED for it, on
 both libraries. An explaining flag names the pass-1 rule to look at (a registered build row). No explaining flag: the cause
 is not in these read properties and needs a trace of pass 1 on a handful of loci.
+
+## Result of the follow-up by read (2026-11-21), and the trace it led to
+`byread.{wtc,es}.txt`. U = 1,790 (WTC11) / 466 (mouse ES); C = 3,944 / 1,402.
+| flag, share of introns whose reads ALL carry it | WTC11 U / C | mouse ES U / C |
+|---|---|---|
+| another junction of the read is non-canonical | 0.087 / 0.000 | 0.122 / 0.000 |
+| motifs on both strands | 0.007 / 0.000 | 0.015 / 0.000 |
+| MAPQ under 20 | 0.001 / 0.002 | 0.002 / 0.004 |
+| supplementary alignment | 0.000 / 0.001 | 0.000 / 0.000 |
+| intron under 30 bp or over 200 kb | 0.001 / 0.000 | 0.000 / 0.000 |
+| any | 0.097 / 0.004 | 0.148 / 0.014 |
+**No flag explains the class** (bar 40% of U). The strict junction gate accounts for 9-12%: a read with one non-canonical
+junction loses its other, good junctions with it. Intron length and reads per intron are alike in U and C.
+
+**Deviations, said:** two combined arms were run before the trace because "one switch at a time" could hide a pair
+(`f1frac0`: floor 1 + fraction 0; `f1all`: also sub-chain ratio 0, retained ratio 0, spliced share 0). They recover 4.9-7.7%
+of U: not a pair of polish steps. Then the registered trace, on one locus (WTC11 chr1:16.70-16.80 Mb, `trace/`):
+seven full-length reads (32-36 canonical introns, MAPQ 60, 6.1-6.9 kb) whose chains are in no output.
+- Assembled ALONE (`seven.bam`, floor 1, polish none) they are emitted (6 of 7; 7 under `--assembly-junctions majority`).
+- With the locus's other forward-strand reads present, 27 skeletons are rejected by the gate for read support and none of
+  the seven is emitted; with only the reads starting upstream of 16.764 Mb present, they are emitted.
+- **Cause, read in the code (`src/family.rs`, `locus_support`, `assemble_gate`):** the gate needs 2 reads; a single-read chain
+  passes only on the POOLED support of the chains it shares a junction with. A chain is excluded from the pool as
+  "chimeric" when two of its junction neighbours do not overlap each other (the guard that stops a read bridging two
+  paralogs, GSTM5 / GSTM1, from inheriting both genes' support). At a long gene the partial reads of the 5' half and those
+  of the 3' half do not overlap, so every full-length single read is marked chimeric and falls back on its own 1 read.
+  The guard's stated premise ("isoforms of one locus overlap each other") does not hold for truncated reads of a long gene.
+- This acts only at a 1-read floor: at the default floor every chain has 2 reads of its own and passes the gate unpooled.
+  So it does not touch today's default output. It does touch the `oneread` stage, whose candidates come from a floor-1 run.
+
+**Size, one more arm (`f1gate1`: floor 1 with `RUSTLE_GATE_MIN_READS=1`, the guard bypassed):**
+| | WTC11 | mouse ES |
+|---|---|---|
+| U recovered | 1,431 of 1,790 (79.9%) | 296 of 466 (63.5%) |
+| chains added over floor 1, correct (precision) | 18,996, 2,401 (0.126) | 18,160, 792 (0.044) |
+| floor 1 over base, for comparison | 30,436, 4,270 (0.140) | 17,577, 1,041 (0.059) |
+| true chains another tool has and `x.gtf` lacks: all / recovered by floor 1 / by `f1gate1` | 2,801 / 1,111 / 1,730 | 1,521 / 233 / 306 |
+The single-read chains the guard hides are about as precise as the ones a floor-1 run already yields (0.126 against 0.140;
+0.044 against 0.059) and add 56% (WTC11) and 76% (mouse ES) to its correct single-read chains. On WTC11 they are most
+precise at 20 or more introns (0.169), on mouse ES at few introns.
+
+**Verdict by the registered reading:** the floor does not reach 70% as measured, but with the guard bypassed a 1-read floor
+recovers 62% of the true chains the other tools have on WTC11 (20% on mouse ES): the class IS single-read chains, hidden in
+part by the pooling guard. No polish step is a pointer.
+**What follows (the user's call, each a registered row):** (1) feed the `oneread` stage's floor-1 run with the guard
+bypassed, so the one-read tiers and the partner promotion (row 1808: as precise as 2-read chains) see these candidates;
+the WTC11 replicates can serve as partners. (2) Not proposed: lowering any default floor (0.04-0.14 precision).
