@@ -1,9 +1,9 @@
-# Row 1857: polyA tails on a second library, and a 3' end placed at the tailed reads (pre-registered 2026-11-21)
+# Row 1860: polyA tails on a second library, and a 3' end placed at the tailed reads (pre-registered 2026-11-21)
 
 User (2026-11-21): get a second untrimmed library, even a small one, and try it out. Row 1856 (mouse ES, the only library
 with tails among the twelve) found no filter rule in polyA tails but good evidence for the END position (3' end annotated
-within 50 bp: 0.80 of the chains with a majority of tailed reads, 0.37 of those with none). Workspace `r1857_polya_ends`.
-Committed before the new library was downloaded or looked at, and before any end was re-placed on either library.
+within 50 bp: 0.80 of the chains with a majority of tailed reads, 0.37 of those with none). Workspace `r1860_polya_ends`.
+Committed before the new library was downloaded or looked at, and before any end was re-placed on either library. (Registered first as row 1857; renumbered at once: another session had claimed 1857-1859.)
 
 ## Second library
 ENCODE ENCSR507JOF (LRGASP, human WTC11 iPS cells, PacBio cDNA; the sister experiment of the mouse ES library ENCSR172GXL),
