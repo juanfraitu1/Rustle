@@ -155,3 +155,18 @@ coverage ranking by a few dozen chains on short-read libraries (the three top-qu
 
 **Candidate, the user's call:** write the list as a product of `all` (one ranked GTF or a `rank` attribute plus the tier of each
 transcript), with SENSITIVE as a named cut. Not proposed: STRICT at a fixed read count.
+
+## Post hoc (2026-11-22, not registered): the Sumatran testis miss depends on the annotation; row 1884 closes the FLAIR miss
+
+- Rescored against the CAT annotation of each species (`genomes/TAG/cat.gff3` converted with gffread; `rank.py` with
+  `RANK_TRUTH`, files `r1880_ranked_vs_rivals/cat.score.NAME.txt`). Difference in correct chains, Rustle minus StringTie:
+  | testis sample | at StringTie's size, RefSeq -> CAT | top 25% | top 50% | top 75% |
+  |---|---|---|---|---|
+  | Sumatran | -686 -> **+237** | -673 -> -493 | -460 -> -163 | -62 -> +267 |
+  | Bornean | +666 -> +550 | -235 -> -69 | +326 -> +288 | +842 -> +651 |
+  | chimpanzee | +778 -> +669 | -99 -> +40 | +313 -> +320 | +706 -> +573 |
+  Against CAT the list is ahead of StringTie at StringTie's size on all three; the Sumatran sample stays behind inside
+  StringTie's top half. Every other rival stays AHEAD on the three samples under CAT. One annotation against another: this
+  shows the single lost comparison is not robust to the choice of truth, not that it is won.
+- Row 1884 (`docs/PREREG_list_tail_2026-11-22.md`) appends a third tier and closes the FLAIR miss on HG002 (-6,171 -> +6,718).
+  Tally with it, against RefSeq: IsoQuant 20 of 20, bambu 12 of 12, FLAIR 15 of 15, StringTie 19 of 20.
