@@ -618,8 +618,10 @@ esac
 #   RUSTLE_READ_STRAND=0           assemble: single-exon strand back to the '+' placeholder (default 1 = read-orientation vote, r1525)
 #   RUSTLE_DUP_ADMIT=1             pass 1: coordinate-duplicate spliced records count toward the floor for a chain that would otherwise
 #                                  fall under it (r1524: rescues 2-read family chains; genome-wide too broad, 68,749 chains at 1% CAT match)
-#   RUSTLE_DUP_COUNT=1             pass 1 (opt-in, row 1836): coordinate-duplicate spliced records count in `reads` (isoform fraction,
-#                                  sub-chain ratio) but not toward the 2-read floor, which stays on distinct records
+#   RUSTLE_DUP_COUNT=0|1           pass 1 of `assemble` (default unset = 1 since row 1850, 2026-11-21; 0 = before; rows 1836, 1849):
+#                                  coordinate-duplicate spliced records count in `reads` (isoform fraction, sub-chain ratio) but
+#                                  not toward the 2-read floor, which stays on distinct records. The floor-1 run of the
+#                                  `oneread` stage keeps 0 unless the variable is set
 #   RUSTLE_CHECK_SPLICE=1          copy_assign --check-splice (FLAIR --check_splice on each spliced read)
 #   RUSTLE_TERMINAL_EXON_ANCHOR=N  copy_assign --terminal-exon-anchor N (bp; FLAIR --stringent's end rule is 25)
 #   RUSTLE_EXTEND_TRANSFRAGS=1     OPT-IN again since 2026-11-19 (user; register 1811: primate-only, +2.5% / +3.6% correct chains on
@@ -754,6 +756,11 @@ fam_gtf_guard() {
 }
 
 stage_assemble() {
+  # RUSTLE_DUP_COUNT (row 1850, user 2026-11-21 after row 1849): unset = 1 for this stage, every coordinate-duplicate spliced
+  # record counts in a chain's `reads` (the 2-read floor stays on distinct records); 0 = the collapsed counts before
+  : "${RP_DUP_COUNT_USER=${RUSTLE_DUP_COUNT:-}}"  # what the caller set, for the floor-1 run of the oneread stage (it is called inside this scope too)
+  local -x RUSTLE_DUP_COUNT="${RUSTLE_DUP_COUNT:-1}"
+  case "$RUSTLE_DUP_COUNT" in 0|1) ;; *) echo "[rustle_pipeline] RUSTLE_DUP_COUNT must be 0 or 1 (got '$RUSTLE_DUP_COUNT')" >&2; exit 2 ;; esac
   say "assemble: $BAM -> $OUT.gtf"
   # Pre-flight (warnings only, never fatal): untrimmed polyA tails or unoriented reads in the first 100,000 primary reads.
   "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/check_reads.py" "$BAM" "$FASTA" >&2 || say "assemble: read pre-flight check did not run (needs python3 + pysam); continuing"
@@ -967,7 +974,7 @@ final_chainscore() {
 stage_oneread() {
   [ -s "$OUT.gtf" ] && [ -s "$BAM" ] && [ -s "$FASTA" ] || { echo "[rustle_pipeline] oneread needs $OUT.gtf (run assemble first), --bam and --fasta" >&2; return 2; }
   mkdir -p "$OUT.oneread.d"
-  { RUSTLE_MIN_CHAIN_READS=1 RUSTLE_ASSEMBLY_LAYERS=off RUSTLE_ONEREAD=0 RUSTLE_SEED_POOL="$SEED_POOL" RUSTLE_SEED_AS_RATIO="$SEED_RATIO" bash "$0" assemble --bam "$BAM" --fasta "$FASTA" \
+  { RUSTLE_DUP_COUNT="${RP_DUP_COUNT_USER:-0}" RUSTLE_MIN_CHAIN_READS=1 RUSTLE_ASSEMBLY_LAYERS=off RUSTLE_ONEREAD=0 RUSTLE_SEED_POOL="$SEED_POOL" RUSTLE_SEED_AS_RATIO="$SEED_RATIO" bash "$0" assemble --bam "$BAM" --fasta "$FASTA" \
       --out "$OUT.oneread.d/f1" --threads "$THREADS" ${BIN:+--bin "$BIN"} ${CONTIG:+--contig "$CONTIG"} ${AS_TABLE:+--as-table "$AS_TABLE"} \
       && ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/oneread.py" "$OUT.gtf" "$OUT.oneread.d/f1.gtf" "$BAM" "$FASTA" "$OUT.oneread.gtf.tmp"; } > "$OUT.oneread.log" 2>&1 \
     || { echo "[rustle_pipeline] oneread failed (see $OUT.oneread.log); $OUT.gtf is unaffected" >&2; rm -f "$OUT.oneread.gtf.tmp"; return 1; }

@@ -73,3 +73,14 @@ Rows 1836 / 1837 had 0.877 precision here; the junction replacement and the spli
 **Decision:** no default proposed by the rule. The switch stays opt-in. For the user: `RUSTLE_DUP_COUNT=1` (fraction 0.02) is
 the setting that gives a clean spike-in set and higher precision on every library, at 1-8.5% of the correct chains (most on
 KB3781, A119b, mouse simulated) and a loss of single-exon transcripts. `dc01` is not recommended: it gives the precision back.
+
+## Row 1850 (2026-11-21, user decision): every read counted is the default of `assemble`
+User, after the result above: "I am ok sacrificing a bunch of single exon transcripts if those are likely to bring errors,
+lets make it default". Decided against the registered rule (the `dc` arm keeps under 98% of the correct chains on eight
+datasets). `tools/rustle_pipeline.sh`: in stage `assemble` `RUSTLE_DUP_COUNT` unset = 1; `RUSTLE_DUP_COUNT=0` = the collapsed
+counts before. Isoform fraction stays 0.02. The floor-1 run of the `oneread` stage keeps collapsed counts unless the variable
+is set (the one-read tiers were built and checked on them; not re-measured here). Check (workspace `r1850_dup_count_default`,
+fly): the new default's `x.gtf` and `x.final.gtf` are byte-identical to row 1849's `dc` arm, `=0` to its `base`. Test suite
+1,585 passed, 0 failed. Today's `final.gtf` per dataset = `r1849_dup_count_rerun/NAME/dc`.
+Not measured: the later stages (families, assign) on an assembly with real counts; the chain score filter remains fitted on
+collapsed counts.
