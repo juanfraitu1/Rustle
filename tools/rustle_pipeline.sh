@@ -101,6 +101,7 @@
 #                              RUSTLE_ONEREAD_TIER=0 = off): side files, never read by another stage. PREFIX.oneread.gtf = one-read chains with every
 #                              junction in another read and a clean reading frame (tools/oneread.py); PREFIX.oneread.ranked.gtf = every one-read chain
 #                              the default lacks, scored (a ranking, not a filter). `--partners A.bam,B.bam` (other libraries of the species; =
+#                              RUSTLE_ONEREAD_GATE=1 (opt-in, row 1866): candidates include single-read chains the gate's pooling guard hides.
 #                              RUSTLE_ONEREAD_PARTNERS=A.bam:B.bam): PREFIX.oneread.promoted.gtf = ranked chains in the best 20% that a partner read
 #                              carries, appended to PREFIX.final.gtf with oneread_promoted "1". RUSTLE_ONEREAD=1 also appends the strict tier,
 #                              RUSTLE_ONEREAD=0 keeps PREFIX.final.gtf free of one-read models. A multi-sample run (--bam a,b) pools the libraries
@@ -974,7 +975,11 @@ final_chainscore() {
 stage_oneread() {
   [ -s "$OUT.gtf" ] && [ -s "$BAM" ] && [ -s "$FASTA" ] || { echo "[rustle_pipeline] oneread needs $OUT.gtf (run assemble first), --bam and --fasta" >&2; return 2; }
   mkdir -p "$OUT.oneread.d"
-  { RUSTLE_DUP_COUNT="${RP_DUP_COUNT_USER:-0}" RUSTLE_MIN_CHAIN_READS=1 RUSTLE_ASSEMBLY_LAYERS=off RUSTLE_ONEREAD=0 RUSTLE_SEED_POOL="$SEED_POOL" RUSTLE_SEED_AS_RATIO="$SEED_RATIO" bash "$0" assemble --bam "$BAM" --fasta "$FASTA" \
+  # RUSTLE_ONEREAD_GATE=1 (opt-in, row 1866; unset or 0 = the same command): the floor-1 run also sets RUSTLE_GATE_MIN_READS=1, so a
+  # single-read chain the gate's pooling guard marks as bridging two loci (row 1864: full-length reads of long genes) is a candidate too
+  local gate1=(); case "${RUSTLE_ONEREAD_GATE:-0}" in 0) ;; 1) gate1=(RUSTLE_GATE_MIN_READS=1) ;;
+    *) echo "[rustle_pipeline] RUSTLE_ONEREAD_GATE must be 0 or 1 (got '$RUSTLE_ONEREAD_GATE')" >&2; return 2 ;; esac
+  { env "${gate1[@]}" RUSTLE_DUP_COUNT="${RP_DUP_COUNT_USER:-0}" RUSTLE_MIN_CHAIN_READS=1 RUSTLE_ASSEMBLY_LAYERS=off RUSTLE_ONEREAD=0 RUSTLE_SEED_POOL="$SEED_POOL" RUSTLE_SEED_AS_RATIO="$SEED_RATIO" bash "$0" assemble --bam "$BAM" --fasta "$FASTA" \
       --out "$OUT.oneread.d/f1" --threads "$THREADS" ${BIN:+--bin "$BIN"} ${CONTIG:+--contig "$CONTIG"} ${AS_TABLE:+--as-table "$AS_TABLE"} \
       && ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/oneread.py" "$OUT.gtf" "$OUT.oneread.d/f1.gtf" "$BAM" "$FASTA" "$OUT.oneread.gtf.tmp"; } > "$OUT.oneread.log" 2>&1 \
     || { echo "[rustle_pipeline] oneread failed (see $OUT.oneread.log); $OUT.gtf is unaffected" >&2; rm -f "$OUT.oneread.gtf.tmp"; return 1; }
