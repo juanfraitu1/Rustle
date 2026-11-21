@@ -97,15 +97,22 @@
 #     RUSTLE_FW_MIN_LINK (default 1) = tied molecules needed to join two transcripts; RUSTLE_EQ_RATIO is refused.
 #   tools/rustle_pipeline.sh siblings --bam B --fasta G --out PREFIX   OPT-IN (register 1628): PREFIX.sibling.gtf = PREFIX.gtf +
 #                              one-read chains a family sibling's model confirms; after assemble and families
+#   tools/rustle_pipeline.sh multicopy --bam B --fasta G --out PREFIX   OPT-IN (registers 1858-1867, user 2026-11-21), the
+#                              multi-copy mode; run after `assemble --seed-pool good` (near-tie secondaries seed the copies primaries
+#                              miss). PREFIX.multicopy.gtf = PREFIX.gtf + spliced one-read transcripts at places PREFIX.gtf leaves
+#                              empty, kept only when their locus is a copy of a gene family (tools/multicopy_rescue.py);
+#                              PREFIX.multicopy.tsv lists them. No other product changes.
 #   tools/rustle_pipeline.sh oneread --bam B --fasta G --out PREFIX [--threads N]   (registers 1766 / 1806 / 1808; also a last step of `all` since 2026-11-20,
 #                              RUSTLE_ONEREAD_TIER=0 = off): side files, never read by another stage. PREFIX.oneread.gtf = one-read chains with every
 #                              junction in another read and a clean reading frame (tools/oneread.py); PREFIX.oneread.ranked.gtf = every one-read chain
 #                              the default lacks, scored (a ranking, not a filter). `--partners A.bam,B.bam` (other libraries of the species; =
-#                              RUSTLE_ONEREAD_GATE=1 (opt-in, row 1866): candidates include single-read chains the gate's pooling guard hides.
 #                              RUSTLE_ONEREAD_PARTNERS=A.bam:B.bam): PREFIX.oneread.promoted.gtf = ranked chains in the best 20% that a partner read
 #                              carries, appended to PREFIX.final.gtf with oneread_promoted "1". RUSTLE_ONEREAD=1 also appends the strict tier,
 #                              RUSTLE_ONEREAD=0 keeps PREFIX.final.gtf free of one-read models. A multi-sample run (--bam a,b) pools the libraries
 #                              first, so a chain seen once in each already has two reads there. After assemble.
+#                              RUSTLE_ONEREAD_GATE=0|1 (default 1 since row 1868, 2026-11-21; 0 = before): the candidates include the
+#                              single-read chains the assembly gate's pooling guard hides (row 1864). The promoted tier is a RECALL tier
+#                              (0.22-0.30 precision on three libraries, row 1866), below the default's two-read chains.
 #   tools/rustle_pipeline.sh flairlike --bam B --fasta G --out PREFIX [--threads N]   OPT-IN (register 1640): PREFIX.flairlike.gtf =
 #                              FLAIR collapse's chain set (second minimap2 pass; lower precision than PREFIX.gtf)
 #   tools/rustle_pipeline.sh famreps --bam B --fasta G --out PREFIX   the second half of `families` alone (register 1662):
@@ -975,9 +982,10 @@ final_chainscore() {
 stage_oneread() {
   [ -s "$OUT.gtf" ] && [ -s "$BAM" ] && [ -s "$FASTA" ] || { echo "[rustle_pipeline] oneread needs $OUT.gtf (run assemble first), --bam and --fasta" >&2; return 2; }
   mkdir -p "$OUT.oneread.d"
-  # RUSTLE_ONEREAD_GATE=1 (opt-in, row 1866; unset or 0 = the same command): the floor-1 run also sets RUSTLE_GATE_MIN_READS=1, so a
-  # single-read chain the gate's pooling guard marks as bridging two loci (row 1864: full-length reads of long genes) is a candidate too
-  local gate1=(); case "${RUSTLE_ONEREAD_GATE:-0}" in 0) ;; 1) gate1=(RUSTLE_GATE_MIN_READS=1) ;;
+  # RUSTLE_ONEREAD_GATE (unset = 1, the default since row 1868, user 2026-11-21; 0 = the command before): the floor-1 run also sets
+  # RUSTLE_GATE_MIN_READS=1, so a single-read chain the gate's pooling guard marks as bridging two loci (row 1864: full-length reads of
+  # long genes) is a candidate too. Row 1866: 65-99% more correct promoted chains at 0.01-0.03 lower precision; the stage runs 5-39% longer
+  local gate1=(); case "${RUSTLE_ONEREAD_GATE:-1}" in 0) ;; 1) gate1=(RUSTLE_GATE_MIN_READS=1) ;;
     *) echo "[rustle_pipeline] RUSTLE_ONEREAD_GATE must be 0 or 1 (got '$RUSTLE_ONEREAD_GATE')" >&2; return 2 ;; esac
   { env "${gate1[@]}" RUSTLE_DUP_COUNT="${RP_DUP_COUNT_USER:-0}" RUSTLE_MIN_CHAIN_READS=1 RUSTLE_ASSEMBLY_LAYERS=off RUSTLE_ONEREAD=0 RUSTLE_SEED_POOL="$SEED_POOL" RUSTLE_SEED_AS_RATIO="$SEED_RATIO" bash "$0" assemble --bam "$BAM" --fasta "$FASTA" \
       --out "$OUT.oneread.d/f1" --threads "$THREADS" ${BIN:+--bin "$BIN"} ${CONTIG:+--contig "$CONTIG"} ${AS_TABLE:+--as-table "$AS_TABLE"} \
@@ -990,8 +998,9 @@ stage_oneread() {
     mv -f "$OUT.oneread.ranked.gtf.tmp" "$OUT.oneread.ranked.gtf"; say "oneread: $(tail -1 "$OUT.oneread.ranked.log") -> $OUT.oneread.ranked.gtf"
   else rm -f "$OUT.oneread.ranked.gtf.tmp"; say "oneread: WARNING the ranked tier failed (see $OUT.oneread.ranked.log); $OUT.oneread.gtf is unaffected"; fi
   # register 1808, OPT-IN: RUSTLE_ONEREAD_PARTNERS = colon-separated BAMs of OTHER libraries of the same species. Ranked chains in the
-  # best 20% that a partner read also carries -> $OUT.oneread.promoted.gtf (oneread_promoted "1"; as precise as the default's two-read
-  # chains or better on three unused libraries, below the default overall). Never the default: it needs a second library.
+  # best 20% that a partner read also carries -> $OUT.oneread.promoted.gtf (oneread_promoted "1"). A RECALL tier: 0.22-0.30 precision on
+  # WTC11, mouse adrenal and chimpanzee testis under the defaults of 2026-11-21 (row 1866), below the default's two-read chains there
+  # (0.25-0.31); row 1808's "as precise as the two-read chains" held under the defaults of 2026-11-18 only. It needs a second library.
   rm -f "$OUT.oneread.promoted.gtf"
   if [ -n "${RUSTLE_ONEREAD_PARTNERS:-}" ] && [ -s "$OUT.oneread.ranked.gtf" ]; then
     local IFS=:; local partners=($RUSTLE_ONEREAD_PARTNERS); unset IFS
@@ -1003,8 +1012,8 @@ stage_oneread() {
   say "oneread: $(tail -1 "$OUT.oneread.log") -> $OUT.oneread.gtf"
 }
 # RUSTLE_ONEREAD=1: the strict tier (and the promoted chains, if any) appended to $OUT.final.gtf. Partner libraries alone
-# (--partners / RUSTLE_ONEREAD_PARTNERS, user 2026-11-20): only the promoted chains are appended (row 1808: as precise as the
-# default's two-read chains); RUSTLE_ONEREAD=0 keeps $OUT.final.gtf free of one-read models whatever else is set.
+# (--partners / RUSTLE_ONEREAD_PARTNERS, user 2026-11-20): only the promoted chains are appended (a recall tier: 0.22-0.30 precision under
+# today's defaults, row 1866; row 1808's "as precise as the default's two-read chains" held on 2026-11-18 only); RUSTLE_ONEREAD=0 keeps $OUT.final.gtf free of one-read models whatever else is set.
 final_oneread() {
   local on=${RUSTLE_ONEREAD:-}
   [ "$on" = 1 ] || { [ "$on" != 0 ] && [ -n "${RUSTLE_ONEREAD_PARTNERS:-}" ]; } || return 0
@@ -1037,6 +1046,41 @@ layered_report() {
 # stage stay de novo; $OUT.guided.gtf = de novo models the guide does not explain away + guide transcripts with a full-chain
 # read. Its own stage (audit round 46): `all` calls it whenever the product is missing or older than its inputs, so a resumed
 # run that skips assemble still writes it.
+# multicopy: OPT-IN, named only (registers 1858-1867; never part of `all`). The multi-copy mode's second half; the first half is
+# `assemble --seed-pool good`. Copies of a family whose reads each carry a different intron chain get no transcript at the 2-read
+# floor (row 1865: PLA2G4B, 22 reads, 22 chains). This stage (1) assembles again at a 1-read floor ($OUT.multicopy.d/f1.gtf;
+# RUSTLE_MULTICOPY_F1=FILE reuses a floor-1 GTF of the SAME bam and seeding pool, e.g. PREFIX.oneread.d/f1.gtf), (2) takes its
+# spliced transcripts at places $OUT.gtf leaves empty on that strand, (3) runs the families stage on $OUT.gtf + those candidates
+# ($OUT.multicopy.d/u.*) and (4) keeps the candidates whose locus is a copy of a family of >= 2 loci. Genome-wide the candidates
+# are 3 to 7 times less often annotated than the rest (row 1867), hence the confinement. $OUT.gtf and every other product are
+# untouched; a seeding pool other than `good` is allowed and said.
+stage_multicopy() {
+  [ -s "$OUT.gtf" ] && [ -s "$BAM" ] && [ -s "$FASTA" ] || { echo "[rustle_pipeline] multicopy needs $OUT.gtf (run assemble --seed-pool good first), --bam and --fasta" >&2; exit 2; }
+  local py=${RUSTLE_PYTHON:-python3} d="$OUT.multicopy.d" f1; mkdir -p "$d"; f1="$d/f1.gtf"
+  [ "$SEED_POOL" = good ] || say "multicopy: seeding pool is $SEED_POOL, not good: the floor-1 run will not see near-tie secondaries"
+  if [ -n "${RUSTLE_MULTICOPY_F1:-}" ]; then
+    [ -s "$RUSTLE_MULTICOPY_F1" ] || { echo "[rustle_pipeline] RUSTLE_MULTICOPY_F1=$RUSTLE_MULTICOPY_F1: no such non-empty file" >&2; exit 2; }
+    f1=$RUSTLE_MULTICOPY_F1; say "multicopy: floor-1 assembly taken from $f1"
+  else
+    local gate1=(); [ "${RUSTLE_ONEREAD_GATE:-1}" = 0 ] || gate1=(RUSTLE_GATE_MIN_READS=1)   # the floor-1 run of stage oneread, same switches
+    env "${gate1[@]}" RUSTLE_DUP_COUNT="${RP_DUP_COUNT_USER:-0}" RUSTLE_MIN_CHAIN_READS=1 RUSTLE_ASSEMBLY_LAYERS=off RUSTLE_ONEREAD=0 RUSTLE_SEED_POOL="$SEED_POOL" RUSTLE_SEED_AS_RATIO="$SEED_RATIO" \
+        bash "$0" assemble --bam "$BAM" --fasta "$FASTA" --out "$d/f1" --threads "$THREADS" ${BIN:+--bin "$BIN"} ${CONTIG:+--contig "$CONTIG"} ${AS_TABLE:+--as-table "$AS_TABLE"} > "$OUT.multicopy.log" 2>&1 \
+      || { echo "[rustle_pipeline] multicopy: the floor-1 assembly failed (see $OUT.multicopy.log); $OUT.gtf is unaffected" >&2; exit 1; }
+  fi
+  $py "$RP_DRIVER_DIR/multicopy_rescue.py" candidates "$OUT.gtf" "$f1" "$d/cand.gtf" >> "$OUT.multicopy.log" 2>&1 \
+    || { echo "[rustle_pipeline] multicopy: candidates failed (see $OUT.multicopy.log)" >&2; exit 1; }
+  say "multicopy: $(tail -1 "$OUT.multicopy.log")"
+  rm -f "$d"/u.fam.* "$d/u.families.gtf"
+  cat "$OUT.gtf" "$d/cand.gtf" > "$d/u.gtf"
+  local ufam="$d/u.gtf"; if [ "$FAM_GTF" != "$OUT.gtf" ]; then cat "$FAM_GTF" "$d/cand.gtf" > "$d/u.families.gtf"; ufam="$d/u.families.gtf"; fi
+  ( RUSTLE_FAMREPS=0; RUSTLE_SDCORE=0; FAM_GTF=$ufam; OUT=$d/u; stage_families ) >> "$OUT.multicopy.log" 2>&1   # no `|| exit 1`: it switches set -e off inside
+  [ -s "$d/u.fam.copies.tsv" ] || { echo "[rustle_pipeline] multicopy: the families run on the candidates failed (see $OUT.multicopy.log); $OUT.gtf is unaffected" >&2; exit 1; }
+  $py "$RP_DRIVER_DIR/multicopy_rescue.py" select "$OUT.gtf" "$d/cand.gtf" "$d/u.fam.copies.tsv" "$OUT.multicopy.gtf.tmp" "$OUT.multicopy.tsv.tmp" >> "$OUT.multicopy.log" 2>&1 \
+    || { echo "[rustle_pipeline] multicopy: select failed (see $OUT.multicopy.log)" >&2; rm -f "$OUT.multicopy.gtf.tmp" "$OUT.multicopy.tsv.tmp"; exit 1; }
+  mv -f "$OUT.multicopy.tsv.tmp" "$OUT.multicopy.tsv"; mv -f "$OUT.multicopy.gtf.tmp" "$OUT.multicopy.gtf"
+  say "multicopy: $(tail -1 "$OUT.multicopy.log") -> $OUT.multicopy.gtf"
+}
+
 # siblings: OPT-IN, named only (register 1628; never part of `all`). $OUT.sibling.gtf = $OUT.gtf + the chains a family sibling's
 # model projects onto a member that exactly one primary alignment carries, from a read with no rival placement (AS table).
 # Quality bar passed on three samples (correct share above the 2-read chains), yield bar failed (12-20 correct chains a
@@ -2039,7 +2083,7 @@ stage_all() {
 }
 case "$STAGE" in
   merged) stage_merged;;
-  assemble) stage_assemble; if [ -n "${GUIDE:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_guided; fi; if [ -n "${NAMES:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_names; fi;; guided) stage_guided;; names) stage_names;; eqclasses) stage_eqclasses;; famwise) stage_famwise;; psi) stage_psi;; siblings) stage_siblings;; oneread) stage_oneread || exit $?;; flairlike) stage_flairlike;; altends) stage_altends;; trunc5) stage_trunc5;; chainscore) stage_chainscore;; shiftdrop) stage_shiftdrop;; shortexons) stage_shortexons;; capstarts) stage_capstarts;; earlyends) stage_earlyends;; repeatloci) stage_repeatloci;; exonmap) stage_exonmap;; relatives) stage_relatives;; sdcore) stage_sdcore;; famreps) stage_famreps;; families) stage_families;; candidates) stage_candidates;; catalog) stage_catalog;;
+  assemble) stage_assemble; if [ -n "${GUIDE:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_guided; fi; if [ -n "${NAMES:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_names; fi;; guided) stage_guided;; names) stage_names;; eqclasses) stage_eqclasses;; famwise) stage_famwise;; psi) stage_psi;; multicopy) stage_multicopy;; siblings) stage_siblings;; oneread) stage_oneread || exit $?;; flairlike) stage_flairlike;; altends) stage_altends;; trunc5) stage_trunc5;; chainscore) stage_chainscore;; shiftdrop) stage_shiftdrop;; shortexons) stage_shortexons;; capstarts) stage_capstarts;; earlyends) stage_earlyends;; repeatloci) stage_repeatloci;; exonmap) stage_exonmap;; relatives) stage_relatives;; sdcore) stage_sdcore;; famreps) stage_famreps;; families) stage_families;; candidates) stage_candidates;; catalog) stage_catalog;;
   assign) stage_assign;; flag) stage_flag;; flag_scan) stage_flag_scan;; index) stage_index;;
   # `all`'s background flag stage: the scan, then align + verdict, whose wall goes to PREFIX.flag.time
   flag_bg) stage_flag_scan; export RP_FLAG_SCAN_DONE=1; fb0=$SECONDS; stage_flag; printf 'wall_s\t%s\n' "$(( SECONDS - fb0 ))" > "$OUT.flag.time.tmp";;

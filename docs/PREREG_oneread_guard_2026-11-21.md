@@ -72,3 +72,15 @@ chimpanzee +2.84% -> +5.64%. The chains only B promotes are 0.25-0.29 correct (4
 roughly doubles what the partner promotion finds at 0.01-0.03 lower precision. For the user: the promoted tier as a whole
 is now a recall option at about 0.22-0.30 precision, no longer "as precise as two-read chains"; its documentation should
 say so. WTC11 replicate 3 is now assembled and has been used for this check.
+
+## Row 1868 (2026-11-21, user decision): the guard bypass is the default of the `oneread` stage
+User, after the result above: "yes, I think we should make it default". Decided against the registered QUALITY bar, with the
+promoted tier now treated as a recall tier. `tools/rustle_pipeline.sh`: `RUSTLE_ONEREAD_GATE` unset = 1; `=0` = the command
+before. The driver's description of the promoted tier is corrected: a recall tier at 0.22-0.30 precision under today's
+defaults, not "as precise as the default's two-read chains" (true on 2026-11-18 only).
+Check (workspace `r1868_oneread_gate_default`, mouse adrenal, job 4491380): with the new default `x.oneread.gtf`,
+`x.oneread.ranked.gtf` and `x.oneread.promoted.gtf` are byte-identical to row 1866's arm B, with `=0` to arm A. Test suite
+1,585 passed, 0 failed.
+Consequence, said to the user: `--partners` appends the promoted chains to `final.gtf` (user decision of 2026-11-20, made
+on row 1808's claim); with this default that is 3.0-5.6% more correct chains on the three check libraries at 0.23-0.28
+precision. That behaviour is unchanged here.
