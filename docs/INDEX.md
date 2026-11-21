@@ -24,14 +24,16 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-18 | register ×1 |
 | [`seeded_family_definition.md`](seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-08 | — |
 
-## Open studies and current handoff (281)
+## Open studies and current handoff (283)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
 | [`PREREG_depth_floor_2026-11-21.md`](PREREG_depth_floor_2026-11-21.md) | Row 1852: a read floor that scales with library depth (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
 | [`PREREG_dup_count_rerun_2026-11-21.md`](PREREG_dup_count_rerun_2026-11-21.md) | Row 1849: every read counted, re-run on today's defaults (pre-registered 2026-11-21) | 2026-11-21 | register ×2, memory ×1 |
 | [`PREREG_es_precision_2026-11-21.md`](PREREG_es_precision_2026-11-21.md) | Row 1851: why is precision low on the mouse ES library? (pre-registered 2026-11-21) | 2026-11-21 | register ×1, memory ×1 |
+| [`PREREG_family_by_age_2026-11-21.md`](PREREG_family_by_age_2026-11-21.md) | PREREG: family recall by age of the duplication, per tool (row 1857, 2026-11-21) | uncommitted | register ×1 |
 | [`PREREG_isoquant_es_2026-11-21.md`](PREREG_isoquant_es_2026-11-21.md) | Row 1853: where is IsoQuant ahead on mouse ES, and is any of it a rule to port? (pre-registered 2026-11-21) | 2026-11-21 | register ×1, memory ×1 |
+| [`PREREG_polya_tails_2026-11-21.md`](PREREG_polya_tails_2026-11-21.md) | Row 1856: are polyA tails in the reads evidence the assembler should use? (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
 | [`PREREG_single_intron_2026-11-21.md`](PREREG_single_intron_2026-11-21.md) | Row 1854: would IsoQuant's rules for 2-exon models separate Rustle's wrong single-intron chains? (pre-registered 2026-11 | 2026-11-21 | register ×1 |
 | [`END_LAYERS_OPTIN_2026-11-20.md`](END_LAYERS_OPTIN_2026-11-20.md) | Row 1846: the three end layers of `final.gtf` become opt-in (user decision, 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`JUNCTION_RATIO_DEFAULT_2026-11-20.md`](JUNCTION_RATIO_DEFAULT_2026-11-20.md) | Row 1845: junction replacement at 20 x support becomes the driver default (user decision, 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
@@ -42,7 +44,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_duplomap_tbc1d3_2026-11-20.md`](PREREG_duplomap_tbc1d3_2026-11-20.md) | PREREG: DuploMap on Iso-Seq reads at TBC1D3 (row 1844, 2026-11-20) | uncommitted | register ×1 |
 | [`PREREG_end_peak_2026-11-20.md`](PREREG_end_peak_2026-11-20.md) | Row 1840: keep a contained chain when its own end is a read-end peak (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_end_through_2026-11-20.md`](PREREG_end_through_2026-11-20.md) | Row 1841: does an end peak judged against the reads running through separate true contained chains? (pre-registered 2026 | 2026-11-20 | register ×1, memory ×1 |
-| [`PREREG_family_benchmark_2026-11-20.md`](PREREG_family_benchmark_2026-11-20.md) | PREREG: one family definition on every assembler's output (row 1847, 2026-11-20) | uncommitted | — |
+| [`PREREG_family_benchmark_2026-11-20.md`](PREREG_family_benchmark_2026-11-20.md) | PREREG: one family definition on every assembler's output (row 1855; filed as 1847 until that number turned out taken by | uncommitted | register ×1, memory ×1 |
 | [`PREREG_ism_3p_only_2026-11-20.md`](PREREG_ism_3p_only_2026-11-20.md) | Row 1843: the sub-chain collapse spares chains cut at the 3' side only (pre-registered 2026-11-20) | 2026-11-20 | register ×1 |
 | [`PREREG_mono_end_rules_2026-11-20.md`](PREREG_mono_end_rules_2026-11-20.md) | Row 1831: are the single-exon rules and the end layers overfit to primates? (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_mono_quantile_grid_2026-11-20.md`](PREREG_mono_quantile_grid_2026-11-20.md) | Row 1832: the read floor of single-exon transcripts, a grid of its quantile (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
