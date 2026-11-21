@@ -1,10 +1,11 @@
-# Row 1855: are polyA tails in the reads evidence the assembler should use? (pre-registered 2026-11-21)
+# Row 1856: are polyA tails in the reads evidence the assembler should use? (pre-registered 2026-11-21)
 
 User (2026-11-21): there is no rule for polyA tails yet; see whether one can be made. State before this row: the driver's
+(Registered first as row 1855; renumbered at once: another session had already claimed 1855 with its workspace.)
 read check warns when reads end in a polyA run and otherwise the tail is ignored (it is soft-clipped by the aligner).
 Of the twelve datasets only the mouse ES library carries tails (60,299 of the first 100,000 primary reads; every other
 library 0-121 of 100,000: trimmed before mapping). So a tail rule can be measured on ONE library and would act only on
-untrimmed libraries. Measurement only. Workspace `r1855_polya_tails` (`tails.py`). Committed before the script was written
+untrimmed libraries. Measurement only. Workspace `r1856_polya_tails` (`tails.py`). Committed before the script was written
 or run.
 
 ## Definitions, fixed
