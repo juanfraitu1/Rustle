@@ -24,10 +24,11 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-18 | register ×1 |
 | [`seeded_family_definition.md`](seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-08 | — |
 
-## Open studies and current handoff (285)
+## Open studies and current handoff (287)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
+| [`PREREG_copy_evidence_2026-11-21.md`](PREREG_copy_evidence_2026-11-21.md) | PREREG: do the copies added by secondaries have reads of their own (row 1863, 2026-11-21) | uncommitted | register ×1 |
 | [`PREREG_depth_floor_2026-11-21.md`](PREREG_depth_floor_2026-11-21.md) | Row 1852: a read floor that scales with library depth (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
 | [`PREREG_dup_count_rerun_2026-11-21.md`](PREREG_dup_count_rerun_2026-11-21.md) | Row 1849: every read counted, re-run on today's defaults (pre-registered 2026-11-21) | 2026-11-21 | register ×2, memory ×1 |
 | [`PREREG_es_precision_2026-11-21.md`](PREREG_es_precision_2026-11-21.md) | Row 1851: why is precision low on the mouse ES library? (pre-registered 2026-11-21) | 2026-11-21 | register ×1, memory ×1 |
@@ -37,6 +38,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_polya_ends_2026-11-21.md`](PREREG_polya_ends_2026-11-21.md) | Row 1860: polyA tails on a second library, and a 3' end placed at the tailed reads (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
 | [`PREREG_polya_tails_2026-11-21.md`](PREREG_polya_tails_2026-11-21.md) | Row 1856: are polyA tails in the reads evidence the assembler should use? (pre-registered 2026-11-21) | 2026-11-21 | register ×1, memory ×1 |
 | [`PREREG_single_intron_2026-11-21.md`](PREREG_single_intron_2026-11-21.md) | Row 1854: would IsoQuant's rules for 2-exon models separate Rustle's wrong single-intron chains? (pre-registered 2026-11 | 2026-11-21 | register ×1 |
+| [`PREREG_wtc11_compare_2026-11-21.md`](PREREG_wtc11_compare_2026-11-21.md) | Row 1862: a blind comparison on WTC11, then WTC11 as development data for new rules (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
 | [`END_LAYERS_OPTIN_2026-11-20.md`](END_LAYERS_OPTIN_2026-11-20.md) | Row 1846: the three end layers of `final.gtf` become opt-in (user decision, 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`JUNCTION_RATIO_DEFAULT_2026-11-20.md`](JUNCTION_RATIO_DEFAULT_2026-11-20.md) | Row 1845: junction replacement at 20 x support becomes the driver default (user decision, 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
 | [`PREREG_acceptor_near_2026-11-20.md`](PREREG_acceptor_near_2026-11-20.md) | Row 1842: near misses at splice sites, acceptor against donor (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
