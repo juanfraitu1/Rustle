@@ -25,10 +25,11 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-18 | register ×1 |
 | [`seeded_family_definition.md`](seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-08 | — |
 
-## Open studies and current handoff (313)
+## Open studies and current handoff (314)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
+| [`ONEREAD_MODEL_MONO_PAIRING_2026-11-22.md`](ONEREAD_MODEL_MONO_PAIRING_2026-11-22.md) | Rows 1900 and 1901 (2026-11-22, user decisions): the refitted one-read ranking is the default; two single-exon pairing o | uncommitted | register ×1 |
 | [`PREREG_extension_tier_2026-11-22.md`](PREREG_extension_tier_2026-11-22.md) | Row 1892: extension as a tier of the ranked list only, never in `final.gtf` (pre-registered 2026-11-22) | 2026-11-22 | register ×1 |
 | [`PREREG_isoquant_only_2026-11-22.md`](PREREG_isoquant_only_2026-11-22.md) | Row 1896: which annotated chains does IsoQuant report that Rustle lacks, on twenty datasets? (step 0, pre-registered 202 | 2026-11-22 | register ×1 |
 | [`PREREG_list_tail_2026-11-22.md`](PREREG_list_tail_2026-11-22.md) | Row 1884: a third tier at the end of the ranked list, against FLAIR on HG002 (pre-registered 2026-11-22) | 2026-11-22 | register ×1 |

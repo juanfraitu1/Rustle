@@ -541,6 +541,21 @@ struct Args {
     #[arg(long, default_value_t = 0.0)]
     polish_mono_shadow_ratio: f64,
 
+    /// PAIRING for `--polish-mono-shadow`, opt-in (row 1897): the shadow drops a single-exon transcript only when it
+    /// overlaps an EXON of a multi-exon transcript on ITS OWN strand, i.e. when it can be a piece of that transcript
+    /// (a 3' fragment, an exon body, unspliced precursor across an exon end). A single-exon transcript that lies wholly in
+    /// an intron of its strand's gene, or that only an opposite-strand gene covers, is kept. Row 1897: those match
+    /// annotated single-exon genes 6-43% of the time on four real libraries against 1.5-3.7% for the pieces, and still
+    /// less often than the single-exon transcripts the default keeps: a recall option, off by default, byte-identical off.
+    #[arg(long, default_value_t = false)]
+    polish_mono_shadow_spare: bool,
+
+    /// PAIRING TAG, opt-in (row 1897): every multi-exon transcript gets `frag3_models "N"; frag3_reads "R";` when N
+    /// single-exon transcripts dropped by the polish (R reads together) lie inside its last exon with their
+    /// 3' end within 50 bp of its own: the 3' fragments of that transcript. An attribute only; no transcript changes.
+    #[arg(long, default_value_t = false)]
+    polish_mono_pair: bool,
+
     /// SPLICED SHARE for `--assembly-polish`, opt-in (r1801): before every polish step, drop a multi-exon transcript
     /// when one of its introns is spliced by less than this share of the primary reads that reach across it
     /// (spliced / (spliced + through); through = a primary read aligned across the whole intron with 10 bp to
@@ -3620,6 +3635,83 @@ fn polish_gtf_lines(
 }
 
 /// Remove every line of the transcripts in `drop` (lines without a `transcript_id` stay).
+/// `--polish-mono-pair` (row 1897): the attribute strings of the multi-exon transcripts that own 3' fragments. A fragment
+/// = a single-exon transcript the polish dropped as a single-exon one (step `ism_mono`, `floor` or `shadow`: under a spliced
+/// transcript with too few reads, under the read floor, or in a shadow) with at least 90% of its length inside the
+/// LAST exon of a kept multi-exon transcript of its contig and strand and its 3' end within 50 bp of that transcript's.
+/// A fragment in the last exon of several isoforms is counted for each of them. Coordinates as in the GTF lines.
+fn mono_pair_attrs(
+    lines: &[String],
+    drop: &DetHashSet<String>,
+    sites: &DetHashMap<String, &'static str>,
+) -> std::collections::BTreeMap<String, String> {
+    let mut exons: DetHashMap<String, Vec<(i64, i64)>> = DetHashMap::default();
+    let mut key: DetHashMap<String, (String, String)> = DetHashMap::default();
+    let mut reads: DetHashMap<String, u64> = DetHashMap::default();
+    for line in lines.iter() {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 9 {
+            continue;
+        }
+        let Some(tid) = re_attr(f[8], "transcript_id") else { continue };
+        if let Some(r) = re_attr(f[8], "reads").and_then(|v| v.parse::<u64>().ok()) {
+            let e = reads.entry(tid.clone()).or_insert(0);
+            *e = (*e).max(r);
+        }
+        if f[2] != "exon" {
+            continue;
+        }
+        let (Ok(a), Ok(b)) = (f[3].parse::<i64>(), f[4].parse::<i64>()) else { continue };
+        exons.entry(tid.clone()).or_default().push((a, b));
+        key.entry(tid).or_insert_with(|| (f[0].to_string(), f[6].to_string()));
+    }
+    // last exons of the kept multi-exon transcripts, per contig and strand, sorted by start
+    let mut last: DetHashMap<(&str, &str), Vec<(i64, i64, &str)>> = DetHashMap::default();
+    for ex in exons.values_mut() {
+        ex.sort_unstable();
+    }
+    for (t, ex) in exons.iter() {
+        if ex.len() < 2 || drop.contains(t) {
+            continue;
+        }
+        let Some(k) = key.get(t) else { continue };
+        let l = if k.1 == "-" { ex[0] } else { ex[ex.len() - 1] };
+        last.entry((k.0.as_str(), k.1.as_str())).or_default().push((l.0, l.1, t.as_str()));
+    }
+    let mut longest: DetHashMap<(&str, &str), i64> = DetHashMap::default();
+    for (k, v) in last.iter_mut() {
+        v.sort_unstable();
+        longest.insert(*k, v.iter().map(|x| x.1 - x.0 + 1).max().unwrap_or(0));
+    }
+    let mut got: std::collections::BTreeMap<&str, (u64, u64)> = std::collections::BTreeMap::new();
+    let mut frags: Vec<&String> = exons
+        .iter()
+        .filter(|(t, ex)| ex.len() == 1 && drop.contains(*t) && matches!(sites.get(*t).copied(), Some("shadow" | "ism_mono" | "floor")))
+        .map(|(t, _)| t)
+        .collect();
+    frags.sort();
+    for t in frags {
+        let Some(k) = key.get(t) else { continue };
+        let (a, b) = exons[t][0];
+        let kk = (k.0.as_str(), k.1.as_str());
+        let Some(v) = last.get(&kk) else { continue };
+        let reach = longest.get(&kk).copied().unwrap_or(0);
+        let hi = v.partition_point(|x| x.0 <= b);
+        for x in v[..hi].iter().rev().take_while(|x| x.0 >= a - reach) {
+            let ov = (b.min(x.1) - a.max(x.0) + 1).max(0);
+            let end_ok = if k.1 == "-" { (a - x.0).abs() <= 50 } else { (b - x.1).abs() <= 50 };
+            if end_ok && 10 * ov >= 9 * (b - a + 1) {
+                let e = got.entry(x.2).or_insert((0, 0));
+                e.0 += 1;
+                e.1 += reads.get(t).copied().unwrap_or(0);
+            }
+        }
+    }
+    got.into_iter()
+        .map(|(t, (n, r))| (t.to_string(), format!(" frag3_models \"{n}\"; frag3_reads \"{r}\";")))
+        .collect()
+}
+
 fn retain_transcripts(lines: &mut Vec<String>, drop: &DetHashSet<String>) {
     if !drop.is_empty() {
         lines.retain(|line| {
@@ -3660,7 +3752,7 @@ fn polish_drop_set(
 ) {
     polish_drop_set_with(
         lines, mode, mono_quantile, isoform_fraction, mono_shadow, ism_absolute_escape, ism_3p_anchored, ism_ratio,
-        fraction_exempt, fuzzy, fuzzy_ism, fraction_min_reads, retained_ratio, 0.0, -1.0,
+        fraction_exempt, fuzzy, fuzzy_ism, fraction_min_reads, retained_ratio, 0.0, -1.0, false,
     )
 }
 
@@ -3726,6 +3818,7 @@ fn polish_drop_set_with(
     retained_ratio: f64,
     shadow_ratio: f64,
     ratio_3p: f64,
+    shadow_spare: bool,
 ) -> (
     DetHashSet<String>,
     DetHashMap<String, &'static str>,
@@ -4039,12 +4132,22 @@ fn polish_drop_set_with(
         // contig+strand (same strand only)
         let mut exons_any: DetHashMap<&str, Vec<(i64, i64, u64)>> = DetHashMap::default();
         let mut spans_same: DetHashMap<(&str, &str), Vec<(i64, i64, u64)>> = DetHashMap::default();
+        // --polish-mono-shadow-spare (row 1897): multi-exon EXONS of the same strand, the only shadow then
+        let mut exons_same: DetHashMap<(&str, &str), Vec<(i64, i64, u64)>> = DetHashMap::default();
         for (t, c) in chain.iter() {
             if c.is_empty() || drop.contains(t) {
                 continue;
             }
             let Some(k) = key.get(t) else { continue };
             let r = reads.get(t).copied().unwrap_or(0);
+            if shadow_spare {
+                if let Some(ex) = exons.get(t) {
+                    exons_same
+                        .entry((k.0.as_str(), k.1.as_str()))
+                        .or_default()
+                        .extend(ex.iter().map(|&(a, b)| (a, b, r)));
+                }
+            }
             spans_same
                 .entry((k.0.as_str(), k.1.as_str()))
                 .or_default()
@@ -4077,6 +4180,9 @@ fn polish_drop_set_with(
         for v in spans_same.values_mut() {
             merge(v);
         }
+        for v in exons_same.values_mut() {
+            merge(v);
+        }
         // merged and disjoint (ends ascend with starts): the intervals overlapping [s, e] are the last ones starting
         // at or before `e` that end at or after `s`; the reads of the best-supported transcript among them
         let hits = |v: &Vec<(i64, i64, u64)>, s: i64, e: i64| -> Option<u64> {
@@ -4096,7 +4202,14 @@ fn polish_drop_set_with(
             let span_hit = spans_same
                 .get(&(k.0.as_str(), k.1.as_str()))
                 .and_then(|v| hits(v, s, e));
-            if let Some(top) = exon_hit.max(span_hit) {
+            let shadow = if shadow_spare {
+                exons_same
+                    .get(&(k.0.as_str(), k.1.as_str()))
+                    .and_then(|v| hits(v, s, e))
+            } else {
+                exon_hit.max(span_hit)
+            };
+            if let Some(top) = shadow {
                 let own = reads.get(t).copied().unwrap_or(0) as f64;
                 if !(shadow_ratio > 0.0 && own >= shadow_ratio * top as f64) {
                     drop.insert(t.clone());
@@ -11378,7 +11491,7 @@ fn main() -> Result<()> {
                 let unsp = tss_all.unspliced.remove(c.as_str()).unwrap_or_default();
                 // --polish-ism-end-peak (register 1840; 0: empty set, never consulted)
                 if args.polish_tss == "off" {
-                    let (drop0, _sites, (a, b, d, floor, e)) = polish_drop_set_with(
+                    let (drop0, sites, (a, b, d, floor, e)) = polish_drop_set_with(
                         &part,
                         &args.assembly_polish,
                         args.polish_mono_quantile,
@@ -11394,7 +11507,13 @@ fn main() -> Result<()> {
                         args.polish_retained_ratio,
                         args.polish_mono_shadow_ratio,
                         args.polish_ism_ratio_3p,
+                        args.polish_mono_shadow_spare,
                     );
+                    if args.polish_mono_pair {
+                        for (tid, v) in mono_pair_attrs(&part, &drop0, &sites) {
+                            tss_attrs.entry(tid).or_default().push_str(&v);
+                        }
+                    }
                     retain_transcripts(&mut part, &drop0);
                     n_ism += a;
                     n_mono += b;
@@ -11420,6 +11539,7 @@ fn main() -> Result<()> {
                         args.polish_retained_ratio,
                         args.polish_mono_shadow_ratio,
                         args.polish_ism_ratio_3p,
+                        args.polish_mono_shadow_spare,
                     );
                     n_ism += a;
                     n_mono += b;
@@ -11427,9 +11547,13 @@ fn main() -> Result<()> {
                     n_ret += e;
                     floors.push(floor);
                     let out = tss_decide(c, &part, &drop0, &sites, &recs, &args.polish_tss);
+                    let pair = if args.polish_mono_pair { mono_pair_attrs(&part, &drop0, &sites) } else { Default::default() };
                     let (on, _off, _twins) = tss_emit(&part, &drop0, &out);
                     part = on;
                     tss_attrs.extend(tss_attr_strings(&out));
+                    for (tid, v) in pair {
+                        tss_attrs.entry(tid).or_default().push_str(&v);
+                    }
                     tss_protect.extend(out.protect.iter().cloned());
                     if args.polish_tss_end != "off" {
                         let mut skip: DetHashSet<String> = out.rescued.keys().cloned().collect();
@@ -13280,6 +13404,12 @@ fn main() -> Result<()> {
         if args.polish_mono_shadow_ratio > 0.0 {
             row("polish_mono_shadow_ratio", format!("{}", args.polish_mono_shadow_ratio))?;
         }
+        if args.polish_mono_shadow_spare {
+            row("polish_mono_shadow_spare", "on".to_string())?;
+        }
+        if args.polish_mono_pair {
+            row("polish_mono_pair", "on".to_string())?;
+        }
         if args.polish_ism_ratio_3p >= 0.0 {
             row("polish_ism_ratio_3p", format!("{}", args.polish_ism_ratio_3p))?;
         }
@@ -14313,9 +14443,53 @@ mod tests {
     }
 
     #[test]
+    fn mono_shadow_spare_keeps_the_intronic_and_the_opposite_strand_one_and_pair_tags_the_3p_fragment() {
+        // a + strand gene with exons 101-200, 1001-1100, 2001-2500 (reads 50); single-exon transcripts:
+        //   frag  2301-2490 +  inside the last exon, ends 10 bp before its end  -> dropped either way, a 3' fragment
+        //   body  1010-1090 +  inside the middle exon                           -> dropped either way, no fragment
+        //   intr   400-700  +  wholly in the first intron                       -> shadowed by default, spared
+        //   anti  2100-2400 -  only the opposite-strand gene covers it          -> shadowed by default (its exon), spared
+        let tx = |id: &str, strand: &str, reads: u64, ex: &[(i64, i64)]| -> Vec<String> {
+            let mut v = vec![format!(
+                "chr1\tx\ttranscript\t{}\t{}\t.\t{strand}\t.\tgene_id \"g_{id}\"; transcript_id \"{id}\"; reads \"{reads}\";",
+                ex[0].0,
+                ex[ex.len() - 1].1
+            )];
+            for (a, b) in ex {
+                v.push(format!("chr1\tx\texon\t{a}\t{b}\t.\t{strand}\t.\tgene_id \"g_{id}\"; transcript_id \"{id}\";"));
+            }
+            v
+        };
+        let mut l = tx("gene", "+", 50, &[(101, 200), (1001, 1100), (2001, 2500)]);
+        l.extend(tx("frag", "+", 7, &[(2301, 2490)]));
+        l.extend(tx("body", "+", 3, &[(1010, 1090)]));
+        l.extend(tx("intr", "+", 60, &[(400, 700)]));   // more reads than the gene: past the sub-chain step, into the shadow
+        l.extend(tx("anti", "-", 5, &[(2100, 2400)]));
+        let run = |spare: bool| polish_drop_set_with(&l, "full", 0.0, 0.0, true, false, false, 1.0, false, 0, false, 0, 0.0, 0.0, -1.0, spare);
+        let (d0, s0, _) = run(false);
+        let mut got: Vec<&str> = d0.iter().map(|s| s.as_str()).collect();
+        got.sort();
+        assert_eq!(got, ["anti", "body", "frag", "intr"], "the shadow as it is drops all four");
+        let (d1, _, _) = run(true);
+        let mut got: Vec<&str> = d1.iter().map(|s| s.as_str()).collect();
+        got.sort();
+        assert_eq!(got, ["body", "frag"], "with the pairing only the pieces of the gene are dropped");
+        let attrs = mono_pair_attrs(&l, &d0, &s0);
+        assert_eq!(attrs.len(), 1, "{attrs:?}");
+        assert_eq!(attrs["gene"], " frag3_models \"1\"; frag3_reads \"7\";");
+        // on the minus strand the last exon is the leftmost one and the 3' end its start
+        let mut m = tx("mg", "-", 20, &[(101, 600), (1001, 1100)]);
+        m.extend(tx("mf", "-", 2, &[(120, 400)]));
+        m.extend(tx("far", "-", 2, &[(300, 590)]));
+        let (dm, sm, _) = polish_drop_set_with(&m, "full", 0.0, 0.0, true, false, false, 1.0, false, 0, false, 0, 0.0, 0.0, -1.0, false);
+        let am = mono_pair_attrs(&m, &dm, &sm);
+        assert_eq!(am["mg"], " frag3_models \"1\"; frag3_reads \"2\";", "only the one that ends at the gene's 3' end");
+    }
+
+    #[test]
     fn mono_shadow_ratio_spares_a_single_exon_transcript_with_more_reads_than_its_shadow() {
         let args = |l: &[String], ratio: f64| {
-            polish_drop_set_with(l, "full", 0.0, 0.0, true, false, false, 1.0, false, 0, false, 0, 0.0, ratio, -1.0)
+            polish_drop_set_with(l, "full", 0.0, 0.0, true, false, false, 1.0, false, 0, false, 0, 0.0, ratio, -1.0, false)
         };
         let mut l = Vec::new();
         l.extend(share_gtf("SPL", "+", 3, &[(1, 2521), (2562, 3996)])); // a 3-read spliced artefact
@@ -14780,7 +14954,7 @@ mod tests {
             l.extend(tx("cut5", strand, 2, cut5)); // 5'-cut
             l.extend(tx("mid", strand, 2, &e[1..3])); // a piece from the middle
             let run = |r3: f64| {
-                polish_drop_set_with(&l, "full", 0.0, 0.0, false, false, false, 0.3, false, 0, false, 0, 0.0, 0.0, r3).0
+                polish_drop_set_with(&l, "full", 0.0, 0.0, false, false, false, 0.3, false, 0, false, 0, 0.0, 0.0, r3, false).0
             };
             let off = run(-1.0);
             assert!(off.contains("early") && off.contains("cut5") && off.contains("mid"), "{strand}: off drops all three");

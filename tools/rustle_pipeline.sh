@@ -678,6 +678,16 @@ case "${RUSTLE_POLISH_SPLICED_SHARE:=0.05}" in 0) ;; *[!0-9.]*) echo "[rustle_pi
   *) POLISH="$POLISH --polish-spliced-share $RUSTLE_POLISH_SPLICED_SHARE" ;; esac
 case "${RUSTLE_POLISH_MONO_SHADOW_RATIO:-}" in ""|0) ;; *[!0-9.]*) echo "[rustle_pipeline] RUSTLE_POLISH_MONO_SHADOW_RATIO must be a number >= 0 (got '$RUSTLE_POLISH_MONO_SHADOW_RATIO')" >&2; exit 2 ;;
   *) POLISH="$POLISH --polish-mono-shadow-ratio $RUSTLE_POLISH_MONO_SHADOW_RATIO" ;; esac
+# RUSTLE_POLISH_MONO_SPARE=1 / RUSTLE_POLISH_MONO_PAIR=1 (opt-in, row 1897 / 1901, user 2026-11-22; unset or 0 = off, the same command):
+# pairing of single-exon transcripts with the multi-exon ones around them. SPARE: the shadow rule drops a single-exon transcript
+# only when it overlaps an exon of a multi-exon transcript of its own strand (it can be a piece of it); one wholly in an intron,
+# or covered only by an opposite-strand gene, is kept (6-43% annotated on four real libraries against 1.5-3.7% for the pieces,
+# below the single-exon transcripts the default keeps: a recall option). PAIR: multi-exon transcripts get frag3_models /
+# frag3_reads = the dropped single-exon transcripts lying in their last exon and ending within 50 bp of their 3' end.
+case "${RUSTLE_POLISH_MONO_SPARE:-0}" in 0) ;; 1) POLISH="$POLISH --polish-mono-shadow-spare" ;;
+  *) echo "[rustle_pipeline] RUSTLE_POLISH_MONO_SPARE must be 0 or 1 (got '$RUSTLE_POLISH_MONO_SPARE')" >&2; exit 2 ;; esac
+case "${RUSTLE_POLISH_MONO_PAIR:-0}" in 0) ;; 1) POLISH="$POLISH --polish-mono-pair" ;;
+  *) echo "[rustle_pipeline] RUSTLE_POLISH_MONO_PAIR must be 0 or 1 (got '$RUSTLE_POLISH_MONO_PAIR')" >&2; exit 2 ;; esac
 # RUSTLE_POLISH_ISM_RATIO_3P=R (opt-in, row 1843; unset = off, the same command): copy_assign --polish-ism-ratio-3p R, the read
 # ratio of the sub-chain collapse for chains cut at the 3' side only (0 = spared)
 case "${RUSTLE_POLISH_ISM_RATIO_3P:-}" in "") ;; *[!0-9.]*) echo "[rustle_pipeline] RUSTLE_POLISH_ISM_RATIO_3P must be a number >= 0 (got '$RUSTLE_POLISH_ISM_RATIO_3P')" >&2; exit 2 ;;
@@ -1006,7 +1016,7 @@ final_chainscore() {
 # reads on each junction colinear, no longer read, ORF >= 900 nt with no early stop. Costs a second assemble at a 1-read floor
 # ($OUT.oneread.d/) and one BAM pass. $OUT.gtf and the families input are untouched.
 # $OUT.oneread.ranked.gtf (register 1806) = ALL one-read chains the default lacks, best oneread_score first (bench/famcmp/oneread_tier.py,
-# model tools/data/oneread_r1806.json): a separate tier to browse, not a filter; one more BAM pass.
+# model tools/data/oneread_r1899.json, RUSTLE_ONEREAD_MODEL=r1806 = the model before): a separate tier to browse, not a filter; one more BAM pass.
 stage_oneread() {
   [ -s "$OUT.gtf" ] && [ -s "$BAM" ] && [ -s "$FASTA" ] || { echo "[rustle_pipeline] oneread needs $OUT.gtf (run assemble first), --bam and --fasta" >&2; return 2; }
   mkdir -p "$OUT.oneread.d"
@@ -1021,7 +1031,13 @@ stage_oneread() {
     || { echo "[rustle_pipeline] oneread failed (see $OUT.oneread.log); $OUT.gtf is unaffected" >&2; rm -f "$OUT.oneread.gtf.tmp"; return 1; }
   mv -f "$OUT.oneread.gtf.tmp" "$OUT.oneread.gtf"
   # register 1806: every one-read chain the default lacks, ranked (a ranking, not a filter; never appended to final.gtf)
-  if ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/../bench/famcmp/oneread_tier.py" apply "$RP_DRIVER_DIR/data/oneread_r1806.json" "$OUT.gtf" "$OUT.oneread.d/f1.gtf" \
+  # RUSTLE_ONEREAD_MODEL (row 1900, user 2026-11-22): unset = r1899, the 23 features of row 1806 refitted on twenty datasets at the
+  # defaults of 2026-11-22; r1806 = the ranking before (fitted 2026-11-18 on seven datasets under collapsed read counts). Row 1899:
+  # with each species held out of its fit the refit was NOT adoptable by its bar (at least the old order on 12 of 17 datasets:
+  # primates 11 of 13, mouse 1 of 4); adopted by the user against it. It changes the ORDER of the one-read tier only.
+  local om="${RUSTLE_ONEREAD_MODEL:-r1899}"
+  case "$om" in r1899|r1806) ;; *) echo "[rustle_pipeline] RUSTLE_ONEREAD_MODEL must be r1899 or r1806 (got '$om')" >&2; return 2 ;; esac
+  if ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/../bench/famcmp/oneread_tier.py" apply "$RP_DRIVER_DIR/data/oneread_$om.json" "$OUT.gtf" "$OUT.oneread.d/f1.gtf" \
        "$BAM" "$FASTA" "$OUT.oneread.ranked.gtf.tmp" "$THREADS" > "$OUT.oneread.ranked.log" 2>&1; then
     mv -f "$OUT.oneread.ranked.gtf.tmp" "$OUT.oneread.ranked.gtf"; say "oneread: $(tail -1 "$OUT.oneread.ranked.log") -> $OUT.oneread.ranked.gtf"
   else rm -f "$OUT.oneread.ranked.gtf.tmp"; say "oneread: WARNING the ranked tier failed (see $OUT.oneread.ranked.log); $OUT.oneread.gtf is unaffected"; fi
