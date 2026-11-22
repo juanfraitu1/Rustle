@@ -19,3 +19,25 @@ Workspace `r1887_unseen_check`.
   holds at least as many correct chains as each, and its `list_sensitive` set has at least StringTie's correct chains and at
   least its precision. Confirmed overall = both replicates.
 - A miss is reported as a miss; it does not by itself undo a default (the user's call).
+
+## Result (2026-11-22): both rules CONFIRMED on both unseen replicates
+
+Jobs 4494803 (r1) and 4494804 (r3), every step exit 0; driver of the row 1886 commit, `r1887_unseen_check/check.txt` (`check.py`).
+`final.gtf` = chains / correct / precision.
+| replicate | without the repair | default (repair on) | new (correct) | lost (correct) | repair |
+|---|---|---|---|---|---|
+| WTC11 r1 | 41,830 / 25,000 / 0.5977 | 41,847 / 25,048 / 0.5986 | 140 (63) | 123 (15) | CONFIRMED |
+| WTC11 r3 | 43,556 / 25,423 / 0.5837 | 43,571 / 25,468 / 0.5845 | 128 (64) | 113 (19) | CONFIRMED |
+
+| replicate | StringTie | list at its size | IsoQuant | list at its size | sensitive cut | list |
+|---|---|---|---|---|---|---|
+| WTC11 r1 | 49,903 / 24,209 / 0.4851 | 26,607 (+2,398) | 31,406 / 18,765 / 0.5975 | 21,598 (+2,833) | 48,114 / 26,284 / 0.5463: ahead of StringTie on both axes | CONFIRMED |
+| WTC11 r3 | 50,541 / 24,648 / 0.4877 | 26,734 (+2,086) | 31,034 / 18,538 / 0.5973 | 21,391 (+2,853) | 49,968 / 26,652 / 0.5334: ahead of StringTie on both axes | CONFIRMED |
+
+- The repair's new chains are annotated 3 to 4 times as often as the ones it removes (45-50% against 12-17%), as on WTC11 r2.
+- The default `final.gtf` alone already has more correct chains and higher precision than StringTie and than IsoQuant on both
+  replicates (25,048 / 0.599 and 25,468 / 0.585 against 24,209 / 0.485, 24,648 / 0.488 and 18,765 / 0.598, 18,538 / 0.597;
+  IsoQuant is 0.001 more precise than the r3 default at 73% of its correct chains, so "both axes" holds against IsoQuant on r1
+  and misses precision by 0.0128 on r3).
+- Limits: both replicates are the library type of WTC11 r2, on which the repair and the list were already seen to work; this
+  is a check on unseen reads, not on an unseen species. WTC11 r1 and r3 are now used for both rules.
