@@ -25,11 +25,13 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-18 | register ×1 |
 | [`seeded_family_definition.md`](seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-08 | — |
 
-## Open studies and current handoff (301)
+## Open studies and current handoff (303)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
 | [`PREREG_list_tail_2026-11-22.md`](PREREG_list_tail_2026-11-22.md) | Row 1884: a third tier at the end of the ranked list, against FLAIR on HG002 (pre-registered 2026-11-22) | 2026-11-22 | register ×1 |
+| [`PREREG_minimap_p09_n1000_2026-11-22.md`](PREREG_minimap_p09_n1000_2026-11-22.md) | PREREG: minimap2 with -p 0.9 -N 1000 instead of -p 0.1 -N 50, does it recover more family members (row 1885, 2026-11-22) | uncommitted | — |
+| [`SHORTEXONS_RANKED_DEFAULT_2026-11-22.md`](SHORTEXONS_RANKED_DEFAULT_2026-11-22.md) | Row 1886 (2026-11-22, user decisions): the short-exon repair is part of `assemble`; `PREFIX.ranked.gtf` is written | uncommitted | register ×1 |
 | [`PREREG_copy_evidence_2026-11-21.md`](PREREG_copy_evidence_2026-11-21.md) | PREREG: do the copies added by secondaries have reads of their own (row 1863, 2026-11-21) | uncommitted | register ×1 |
 | [`PREREG_copy_psv_2026-11-21.md`](PREREG_copy_psv_2026-11-21.md) | PREREG: which tied copies can sequence differences decide, and does StringTie read secondaries (row 1870, 2026-11-21) | uncommitted | register ×1 |
 | [`PREREG_depth_floor_2026-11-21.md`](PREREG_depth_floor_2026-11-21.md) | Row 1852: a read floor that scales with library depth (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
@@ -47,7 +49,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_oneread_guard_2026-11-21.md`](PREREG_oneread_guard_2026-11-21.md) | Row 1866: one-read candidates with the pooling guard bypassed, promoted by a partner library (pre-registered 2026-11-21) | 2026-11-21 | register ×2 |
 | [`PREREG_polya_ends_2026-11-21.md`](PREREG_polya_ends_2026-11-21.md) | Row 1860: polyA tails on a second library, and a 3' end placed at the tailed reads (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
 | [`PREREG_polya_tails_2026-11-21.md`](PREREG_polya_tails_2026-11-21.md) | Row 1856: are polyA tails in the reads evidence the assembler should use? (pre-registered 2026-11-21) | 2026-11-21 | register ×1, memory ×1 |
-| [`PREREG_ranked_vs_rivals_2026-11-21.md`](PREREG_ranked_vs_rivals_2026-11-21.md) | Row 1880: one ranked Rustle list against every other assembler, primates and non-primates (pre-registered 2026-11-21) | 2026-11-21 | register ×1, memory ×1 |
+| [`PREREG_ranked_vs_rivals_2026-11-21.md`](PREREG_ranked_vs_rivals_2026-11-21.md) | Row 1880: one ranked Rustle list against every other assembler, primates and non-primates (pre-registered 2026-11-21) | 2026-11-22 | register ×1, memory ×1 |
 | [`PREREG_shortexons_truth_2026-11-21.md`](PREREG_shortexons_truth_2026-11-21.md) | Row 1878: does the short-exon repair pay on complete truth and outside primates? (pre-registered 2026-11-21) | 2026-11-21 | register ×1, memory ×1 |
 | [`PREREG_single_intron_2026-11-21.md`](PREREG_single_intron_2026-11-21.md) | Row 1854: would IsoQuant's rules for 2-exon models separate Rustle's wrong single-intron chains? (pre-registered 2026-11 | 2026-11-21 | register ×1 |
 | [`PREREG_tandem_joins_2026-11-21.md`](PREREG_tandem_joins_2026-11-21.md) | PREREG: do near-tied alignments join one tandem copy to the next, and is Rustle fooled (row 1881, 2026-11-21) | uncommitted | register ×1, memory ×1 |

@@ -145,6 +145,10 @@
 #   tools/rustle_pipeline.sh shiftdrop --bam B --fasta G --out PREFIX [--threads N]   OPT-IN (register 1728-1730 / 1732 / 1734 / 1738 / 1739): PREFIX.shiftdrop.gtf = PREFIX.gtf without
 #                              weaker copies of a stronger chain with one internal exon end moved whose reads carry an indel beside the moved
 #                              intron (>= half of them); 0.3-0.9% of chains, 2-4% of them annotated; no other stage reads this file
+#   RUSTLE_SHORTEXONS (row 1878, user 2026-11-22): `assemble` named on its own repairs reads that skip an exon of <= 15 bp before it
+#                              assembles (unset = 1; inside `all` unset = 0; 1 / 0 force it); needs python3 with pysam and room for a
+#                              second BAM copy while it runs. PREFIX.ranked.gtf (rows 1880 / 1884; written by the oneread step,
+#                              RUSTLE_RANKED_LIST=0 = off) = one ranked list: PREFIX.final.gtf by reads, then the one-read chains by score
 #   tools/rustle_pipeline.sh shortexons --bam B --fasta G --out PREFIX [--threads N]   OPT-IN (register 1753 / 1754 / 1757): PREFIX.shortexons.gtf = the default
 #                              assembly of the reads after those that skip an exon of <= 15 bp are rewritten through it (another read spells
 #                              the exon, or >= 2 reads carry its bases and one splice-flanked site of the intron fits); repairs a small class,
@@ -769,6 +773,26 @@ stage_assemble() {
   : "${RP_DUP_COUNT_USER=${RUSTLE_DUP_COUNT:-}}"  # what the caller set, for the floor-1 run of the oneread stage (it is called inside this scope too)
   local -x RUSTLE_DUP_COUNT="${RUSTLE_DUP_COUNT:-1}"
   case "$RUSTLE_DUP_COUNT" in 0|1) ;; *) echo "[rustle_pipeline] RUSTLE_DUP_COUNT must be 0 or 1 (got '$RUSTLE_DUP_COUNT')" >&2; exit 2 ;; esac
+  # RUSTLE_SHORTEXONS (row 1878, user 2026-11-22): the short-exon repair is part of this stage. minimap2 drops exons of <= 15 bp
+  # (row 1746); the reads that skip one are rewritten through it (bench/famcmp/short_exons.py, no annotation) and the assembly
+  # runs once, on the rewritten reads. Unset = 1 when `assemble` is named, 0 inside `all` (families / assign read the original
+  # BAM and were not measured on repaired models); 1 / 0 force it. Row 1878: correct chains and precision both up on 9 of 11
+  # datasets (3 simulated, 4 mouse, chimpanzee, human), the two gorillas within 4 chains. Needs python3 with pysam and room
+  # for a second copy of the BAM in $OUT.shortexons.d while the stage runs (RUSTLE_SHORTEXONS_KEEP=1 keeps it); side files
+  # $OUT.shortexons.units.tsv / .reads.tsv / .log. A failed repair stops the stage: RUSTLE_SHORTEXONS=0 assembles without it.
+  local se="${RUSTLE_SHORTEXONS:-}"; if [ -z "$se" ]; then if [ -n "${RP_ALL:-}" ]; then se=0; else se=1; fi; fi
+  case "$se" in 0|1) ;; *) echo "[rustle_pipeline] RUSTLE_SHORTEXONS must be 0 or 1 (got '$se')" >&2; exit 2 ;; esac
+  if [ "$se" = 1 ] && [ -z "${RP_SHORTEXONS_FROM:-}" ]; then
+    local sd="$OUT.shortexons.d" rc=0; mkdir -p "$sd"
+    say "assemble: short-exon repair of $BAM (RUSTLE_SHORTEXONS=0 = off)"
+    ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/../bench/famcmp/short_exons.py" "$BAM" "$FASTA" "$sd/reads.bam" "$OUT.shortexons" "$THREADS" > "$OUT.shortexons.log" 2>&1 \
+      || { [ -n "${RUSTLE_SHORTEXONS_KEEP:-}" ] || rm -rf "${sd:?}"; echo "[rustle_pipeline] assemble: the short-exon repair failed (see $OUT.shortexons.log); RUSTLE_SHORTEXONS=0 assembles without it" >&2; exit 1; }
+    say "assemble: $(tail -1 "$OUT.shortexons.log")"
+    ( export RP_SHORTEXONS_FROM="$BAM"; BAM="$sd/reads.bam"; stage_assemble ) || rc=$?
+    [ -n "${RUSTLE_SHORTEXONS_KEEP:-}" ] || rm -rf "${sd:?}"
+    [ "$rc" = 0 ] || exit "$rc"
+    return 0
+  fi
   say "assemble: $BAM -> $OUT.gtf"
   # Pre-flight (warnings only, never fatal): untrimmed polyA tails or unoriented reads in the first 100,000 primary reads.
   "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/check_reads.py" "$BAM" "$FASTA" >&2 || say "assemble: read pre-flight check did not run (needs python3 + pysam); continuing"
@@ -997,6 +1021,17 @@ stage_oneread() {
        "$BAM" "$FASTA" "$OUT.oneread.ranked.gtf.tmp" "$THREADS" > "$OUT.oneread.ranked.log" 2>&1; then
     mv -f "$OUT.oneread.ranked.gtf.tmp" "$OUT.oneread.ranked.gtf"; say "oneread: $(tail -1 "$OUT.oneread.ranked.log") -> $OUT.oneread.ranked.gtf"
   else rm -f "$OUT.oneread.ranked.gtf.tmp"; say "oneread: WARNING the ranked tier failed (see $OUT.oneread.ranked.log); $OUT.oneread.gtf is unaffected"; fi
+  # $OUT.ranked.gtf (rows 1880 / 1884, user 2026-11-22; RUSTLE_RANKED_LIST=0 = off): ONE ranked list of the assembly, tier 1 = the
+  # transcripts of $OUT.final.gtf by reads, tier 2 = the ranked one-read chains it lacks by oneread_score (tools/ranked_list.py:
+  # list_tier, list_rank, list_sensitive = tier 1 + the best 10% of tier 2). No transcript changes. Cut at another assembler's
+  # output size the list held at least its annotated chains on 65 of 67 comparisons (20 datasets, row 1880); tier 2 is a recall tier.
+  case "${RUSTLE_RANKED_LIST:-1}" in 0|1) ;; *) echo "[rustle_pipeline] RUSTLE_RANKED_LIST must be 0 or 1 (got '$RUSTLE_RANKED_LIST')" >&2; return 2 ;; esac
+  rm -f "$OUT.ranked.gtf"
+  if [ "${RUSTLE_RANKED_LIST:-1}" = 1 ] && [ -s "$OUT.oneread.ranked.gtf" ] && [ -s "$OUT.final.gtf" ]; then
+    if ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/ranked_list.py" "$OUT.final.gtf" "$OUT.oneread.ranked.gtf" "$OUT.ranked.gtf.tmp" > "$OUT.ranked.log" 2>&1; then
+      mv -f "$OUT.ranked.gtf.tmp" "$OUT.ranked.gtf"; say "oneread: $(tail -1 "$OUT.ranked.log") -> $OUT.ranked.gtf"
+    else rm -f "$OUT.ranked.gtf.tmp"; say "oneread: WARNING the ranked list failed (see $OUT.ranked.log); the other products are unaffected"; fi
+  fi
   # register 1808, OPT-IN: RUSTLE_ONEREAD_PARTNERS = colon-separated BAMs of OTHER libraries of the same species. Ranked chains in the
   # best 20% that a partner read also carries -> $OUT.oneread.promoted.gtf (oneread_promoted "1"). A RECALL tier: 0.22-0.30 precision on
   # WTC11, mouse adrenal and chimpanzee testis under the defaults of 2026-11-21 (row 1866), below the default's two-read chains there
@@ -1174,7 +1209,7 @@ stage_shortexons() {
   [ -s "$BAM" ] && [ -s "$FASTA" ] || { echo "[rustle_pipeline] shortexons needs --bam and --fasta" >&2; exit 2; }
   local d="$OUT.shortexons.d"; mkdir -p "$d"
   ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/../bench/famcmp/short_exons.py" "$BAM" "$FASTA" "$d/reads.bam" "$OUT.shortexons" "$THREADS" > "$OUT.shortexons.log" 2>&1 \
-    && bash "$0" assemble --bam "$d/reads.bam" --fasta "$FASTA" --out "$d/run" --threads "$THREADS" --bin "$BIN" > "$OUT.shortexons.assemble.log" 2>&1 \
+    && RUSTLE_SHORTEXONS=0 bash "$0" assemble --bam "$d/reads.bam" --fasta "$FASTA" --out "$d/run" --threads "$THREADS" --bin "$BIN" > "$OUT.shortexons.assemble.log" 2>&1 \
     && [ -s "$d/run.gtf" ] \
     || { [ -n "${RUSTLE_SHORTEXONS_KEEP:-}" ] || rm -rf "${d:?}"; echo "[rustle_pipeline] shortexons failed (see $OUT.shortexons.log, $OUT.shortexons.assemble.log); $OUT.gtf is unaffected" >&2; exit 1; }
   rm -f "$OUT.shortexons.final.gtf"; mv -f "$d/run.gtf" "$OUT.shortexons.gtf"; [ ! -s "$d/run.final.gtf" ] || mv -f "$d/run.final.gtf" "$OUT.shortexons.final.gtf"

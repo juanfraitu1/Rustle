@@ -105,7 +105,10 @@ fn assemble_with(tag: &str, flags: &[&str], env: &[(&str, &str)], fai: Option<&s
         .env("STUB_LOG", &stub_log)
         // the layered PREFIX.final.gtf run is a second, parallel copy_assign that writes the same stub log: these tests
         // read the first run's record, so it is off unless a test asks for it (pipeline_driver_dispatch covers it)
-        .env("RUSTLE_ASSEMBLY_LAYERS", "off");
+        .env("RUSTLE_ASSEMBLY_LAYERS", "off")
+        // the short-exon repair (row 1878, default of `assemble` named alone) needs python3 with pysam and a real BAM:
+        // off here unless a test asks for it
+        .env("RUSTLE_SHORTEXONS", "0");
     for (k, v) in env {
         cmd.env(k, v);
     }
@@ -129,6 +132,41 @@ fn assemble_with(tag: &str, flags: &[&str], env: &[(&str, &str)], fai: Option<&s
 const GOOD: &str = "copy_assign sec=1 ratio=0.98 table=<dir>/reads.bam.as_table.tsv";
 const PRIMARY: &str = "copy_assign sec=unset ratio=unset table=unset";
 const ALL: &str = "copy_assign sec=1 ratio=unset table=unset";
+
+// ---- the short-exon repair is part of `assemble` (row 1878, user 2026-11-22) ----
+
+/// Stands in for python3: `short_exons.py BAM FASTA OUT.bam PREFIX THREADS` writes the rewritten BAM; every other script fails.
+const PY_STUB: &str = r#"#!/bin/bash
+case "$1" in
+  *short_exons.py) [ "${STUB_REPAIR_FAILS:-}" = 1 ] && exit 3; echo rewritten > "$4"; echo "3 short-exon units, 7 reads rewritten" ;;
+  *) exit 1 ;;
+esac
+"#;
+
+#[test]
+fn assemble_repairs_short_exons_first_and_assembles_the_rewritten_reads_once() {
+    let py = format!("bash {}", case_dir("shortexons_on").join("py.sh").display());
+    let env = [("RUSTLE_SHORTEXONS", "1"), ("RUSTLE_PYTHON", py.as_str()), ("RUSTLE_PTC", "0")];
+    let r = assemble_with("shortexons_on", &[], &env, Some(FAI), &|d| write_exec(&d.join("py.sh"), PY_STUB));
+    assert_eq!(r.code, 0, "{}", r.stderr);
+    assert!(r.argv.contains("--bam <dir>/run.shortexons.d/reads.bam"), "copy_assign reads the rewritten BAM: {}", r.argv);
+    assert_eq!(r.log.iter().filter(|l| l.starts_with("argv ")).count(), 1, "one assembly, not two: {:?}", r.log);
+    assert!(!case_dir("shortexons_on").join("run.shortexons.d").exists(), "the BAM copy is removed at the end");
+    assert!(r.stderr.contains("3 short-exon units"), "{}", r.stderr);
+}
+
+#[test]
+fn a_failed_repair_stops_assemble_and_names_the_switch_and_a_bad_value_is_refused() {
+    let py = format!("bash {}", case_dir("shortexons_fail").join("py.sh").display());
+    let env = [("RUSTLE_SHORTEXONS", "1"), ("RUSTLE_PYTHON", py.as_str()), ("RUSTLE_PTC", "0"), ("STUB_REPAIR_FAILS", "1")];
+    let r = assemble_with("shortexons_fail", &[], &env, Some(FAI), &|d| write_exec(&d.join("py.sh"), PY_STUB));
+    assert_eq!(r.code, 1, "{}", r.stderr);
+    assert!(r.stderr.contains("RUSTLE_SHORTEXONS=0 assembles without it"), "{}", r.stderr);
+    assert!(r.argv.is_empty(), "nothing is assembled after a failed repair: {}", r.argv);
+    let r = assemble("shortexons_bad", &[], &[("RUSTLE_SHORTEXONS", "2")]);
+    assert_eq!(r.code, 2, "{}", r.stderr);
+    assert!(r.stderr.contains("RUSTLE_SHORTEXONS must be 0 or 1"), "{}", r.stderr);
+}
 
 // ---- the default and the legacy flags keep their meaning (these passed before the switch existed) ----
 
