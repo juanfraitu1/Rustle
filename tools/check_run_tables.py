@@ -2,6 +2,8 @@
 import csv, sys, collections
 P = sys.argv[1]
 rd = lambda f: list(csv.DictReader(open(P + f), delimiter='\t'))
+if not __import__('os').path.exists(P + '.assign.assignments.tsv'):
+    sys.exit(f"check_run_tables: {P}.assign.assignments.tsv is missing. Since register 1903 (2026-11-22) `all` runs the family report `o2` instead of the legacy `assign`; these checks need the assign tables: run the stage by name (`rustle_pipeline.sh assign ...`); `all` no longer runs it.")
 cop, clu, asg, q, fam = rd('.fam.copies.tsv'), rd('.fam.clusters.tsv'), rd('.assign.assignments.tsv'), rd('.assign.quant.tsv'), rd('.assign.families.tsv')
 skip = set(l.strip() for l in open(P + '.assign.excluded.txt')) if __import__('os').path.exists(P + '.assign.excluded.txt') else set()
 def chk(name, bad, n): print(f"{'ok  ' if not bad else 'FAIL'} {name}: {len(bad)} of {n}" + (f"  e.g. {list(bad)[:3]}" if bad else ''))

@@ -39,8 +39,8 @@
 #   flag      copies the reference does not contain, from RNA alone     missing_copy_flag --scan-only / --from-scan
 #             (+ optional DNA confirmation against --confirm genomes; with --candidates, + the `o3_candidate` column
 #             naming the flagged candidate whose nearest locus is the row's)
-#   all       assemble, families, assign, flag; with --candidates the candidates stage before assign, with
-#             --legacy-catalog the catalog there instead
+#   all       assemble, families, o2, flag (register 1903: `o2` in place of the legacy `assign`, in every plan);
+#             with --candidates the candidates stage before o2, with --legacy-catalog the catalog there
 #   sd        the genome's segmental duplications and duplicons            utilities sd-scan (vendored sedef-rs)
 #             once per genome, cached by the FASTA's md5 and sd-scan's version key in RUSTLE_SD_CACHE_DIR (default
 #             PREFIX.cache)/sd/<key>/genome.sd.*; PREFIX.sd.prefix names that prefix for `mcl_families --emit-hierarchy
@@ -55,6 +55,36 @@
 #             sets no memory cap (bench/sedef/run_genome.sh runs it under `ulimit -v`, 23 GiB).
 # (thesis record: families/catalog = O1, candidates = O3, assign = O2, flag = O3; in order O1 families -> O3 candidates ->
 #  O2 assign -> O3 flag)
+# 2026-11-22 (user, register 1903): O2 is the family benchmark across tools on planted and real reads
+# (bench/o2_families/, docs/O2_FAMILY_BENCHMARK.md). In `all` the stage `o2` REPLACES `assign`:
+#   o2        what this run reports per gene family: copies, copies with a spliced transcript, transcripts, isoforms,
+#             reads -> PREFIX.o2.families.tsv, PREFIX.o2.copies.tsv (tools/o2_family_report.py; seconds, no BAM pass);
+#             with PREFIX.eq.loci.tsv (stage eqclasses) or PREFIX.multicopy.eq.loci.tsv present, also reads placed on
+#             one copy, tie groups and the range of expressed copies. No read is assigned.
+#             First, by DEFAULT since 2026-11-22 (user; RUSTLE_O2_EXTEND=0 turns it off): the assembly is extended to the
+#             multi-copy families with the near-tied multimappers (= stage multicopy on the run's assembly, made with
+#             --seed-pool good as `all` does -> PREFIX.multicopy.gtf), then the provenance test labels every locus by
+#             the EM over the tied reads (bench/o2_families/em_filter.py; rows 1905-1908): o2_status = expressed /
+#             shared / homology_only (under RUSTLE_O2_MIN_EM = 2 reads by EM) -> PREFIX.o2.gtf, PREFIX.o2.em.tsv.
+#             Nothing is dropped: a family member that is found stays available. RUSTLE_O2_DROP=1 drops the
+#             homology_only loci instead. Costs a second assembly at a floor of one read, a families run on the
+#             candidates and one BAM pass (gorilla OR6737: about 7 min). If it fails, the report is made on PREFIX.gtf
+#             and the stage still succeeds. PREFIX.gtf itself is never changed. Needs python3 + pysam for the test.
+#   o2bench   OPT-IN, never in `all`: the VALIDATION of O2, planted reads of known origin for every assembler on PATH
+#             (bench/o2_families/plant.py + run_tools.sh) -> PREFIX.o2bench.tsv. With --gff ANNOT.gff3.gz: the named
+#             families of the annotation (famtruth environment, human CHM13). Without --gff: this run's own families
+#             (PREFIX.gtf + PREFIX.fam.copies.tsv, any genome; needs FASTA.fai). Scenarios RUSTLE_O2BENCH_SCENARIOS
+#             (default E,D,S), reads per copy RUSTLE_O2BENCH_READS (default 60 named / 30 own families).
+#   members   OPT-IN, never in `all` (register 1910): the relatives of every assembled locus through ALL of its reads'
+#             alignments, not only the near ties (tools/member_discovery.py; RUSTLE_MEMBERS_MIN_READS 5,
+#             RUSTLE_MEMBERS_MIN_RATIO 0.3) -> PREFIX.members.tsv (place, source locus, reads, score ratio, the assembled
+#             locus there or `.`) and PREFIX.members.gtf (a model per place with no assembled locus, o2_status
+#             "member_candidate"). Where relatives are, expressed or not. Needs a BAM mapped with the usual -p 0.1: the
+#             slim mapping mode removes these records (row 1909). Needs python3 + pysam.
+#   `assign` is the LEGACY O2 and is in NO plan of `all` any more (2026-11-22): not by default, not with --candidates,
+#   not with --legacy-catalog, and there is no switch. The stage itself is kept and runs when called by name
+#   (`rustle_pipeline.sh assign ...`, as tools/rustle_samples.sh does); the candidates and catalog stages still run in
+#   `all` when asked for and leave their tables for such a call.
 #
 # usage: tools/rustle_pipeline.sh STAGE --bam B --fasta G --out PREFIX [--index G.splice.mmi] [--gff ANNOT.gff]
 #        [--confirm NAME=X.mmi ...] [--foreign NAME=X.mmi ...] [--threads N] [--bin DIR]
@@ -101,7 +131,9 @@
 #                              multi-copy mode; run after `assemble --seed-pool good` (near-tie secondaries seed the copies primaries
 #                              miss). PREFIX.multicopy.gtf = PREFIX.gtf + spliced one-read transcripts at places PREFIX.gtf leaves
 #                              empty, kept only when their locus is a copy of a gene family (tools/multicopy_rescue.py);
-#                              PREFIX.multicopy.tsv lists them. No other product changes.
+#                              PREFIX.multicopy.tsv lists them. Transcripts also carry counts that do not multiply over
+#                              indistinguishable copies (reads_em, reads_tieadj, tie_group); PREFIX.multicopy.groups.tsv = the tie
+#                              groups with the range of expressed copies (row 1871). No other product changes.
 #   tools/rustle_pipeline.sh oneread --bam B --fasta G --out PREFIX [--threads N]   (registers 1766 / 1806 / 1808; also a last step of `all` since 2026-11-20,
 #                              RUSTLE_ONEREAD_TIER=0 = off): side files, never read by another stage. PREFIX.oneread.gtf = one-read chains with every
 #                              junction in another read and a clean reading frame (tools/oneread.py); PREFIX.oneread.ranked.gtf = every one-read chain
@@ -1130,7 +1162,10 @@ stage_multicopy() {
     [ -s "$RUSTLE_MULTICOPY_F1" ] || { echo "[rustle_pipeline] RUSTLE_MULTICOPY_F1=$RUSTLE_MULTICOPY_F1: no such non-empty file" >&2; exit 2; }
     f1=$RUSTLE_MULTICOPY_F1; say "multicopy: floor-1 assembly taken from $f1"
   else
-    local gate1=(); [ "${RUSTLE_ONEREAD_GATE:-1}" = 0 ] || gate1=(RUSTLE_GATE_MIN_READS=1)   # the floor-1 run of stage oneread, same switches
+    # the floor-1 run of stage oneread WITHOUT its pooling-guard bypass: rows 1865 / 1867 / 1869 judged that. RUSTLE_MULTICOPY_GATE=1
+    # (unset = 0) adds the bypass (RUSTLE_GATE_MIN_READS=1, row 1866): 2.4 x the candidates on OR6737, not judged for this mode
+    local gate1=(); case "${RUSTLE_MULTICOPY_GATE:-0}" in 0) ;; 1) gate1=(RUSTLE_GATE_MIN_READS=1) ;;
+      *) echo "[rustle_pipeline] RUSTLE_MULTICOPY_GATE must be 0 or 1 (got '$RUSTLE_MULTICOPY_GATE')" >&2; exit 2 ;; esac
     env "${gate1[@]}" RUSTLE_DUP_COUNT="${RP_DUP_COUNT_USER:-0}" RUSTLE_MIN_CHAIN_READS=1 RUSTLE_ASSEMBLY_LAYERS=off RUSTLE_ONEREAD=0 RUSTLE_SEED_POOL="$SEED_POOL" RUSTLE_SEED_AS_RATIO="$SEED_RATIO" \
         bash "$0" assemble --bam "$BAM" --fasta "$FASTA" --out "$d/f1" --threads "$THREADS" ${BIN:+--bin "$BIN"} ${CONTIG:+--contig "$CONTIG"} ${AS_TABLE:+--as-table "$AS_TABLE"} > "$OUT.multicopy.log" 2>&1 \
       || { echo "[rustle_pipeline] multicopy: the floor-1 assembly failed (see $OUT.multicopy.log); $OUT.gtf is unaffected" >&2; exit 1; }
@@ -1147,6 +1182,21 @@ stage_multicopy() {
     || { echo "[rustle_pipeline] multicopy: select failed (see $OUT.multicopy.log)" >&2; rm -f "$OUT.multicopy.gtf.tmp" "$OUT.multicopy.tsv.tmp"; exit 1; }
   mv -f "$OUT.multicopy.tsv.tmp" "$OUT.multicopy.tsv"; mv -f "$OUT.multicopy.gtf.tmp" "$OUT.multicopy.gtf"
   say "multicopy: $(tail -1 "$OUT.multicopy.log") -> $OUT.multicopy.gtf"
+  # Counts that do not multiply over indistinguishable copies (row 1871; RUSTLE_MULTICOPY_EQ=0 skips it). A secondary puts one
+  # molecule on every near-identical copy, so `reads` is the same molecules at each (three identical TSPY10 copies: 72, 72, 72).
+  # eq_classes.py on the mode's GTF (ties on minimap2's ms, exact band) -> $OUT.multicopy.eq.loci.tsv / .classes.tsv; the
+  # transcript lines of $OUT.multicopy.gtf get reads_placed / reads_em / reads_max / tie_group / reads_tieadj, and
+  # $OUT.multicopy.groups.tsv lists the tie groups with the copies the scores allow (min_expressed .. max_expressed).
+  [ "${RUSTLE_MULTICOPY_EQ:-1}" != 0 ] || return 0
+  local tab=$OUT.molecules.tsv bed=${RUSTLE_EXCLUDE_BED-$FASTA.exclude.bed}; [ -s "$tab" ] || tab=$BAM.as_table.tsv
+  [ -s "$tab" ] || { say "multicopy: no score table ($OUT.molecules.tsv or $BAM.as_table.tsv): tie-adjusted counts skipped"; return 0; }
+  local excl=(); [ ! -s "$bed" ] || excl=(--exclude "$bed")
+  { $py "$RP_DRIVER_DIR/eq_classes.py" "$OUT.multicopy.gtf" "$BAM" "$tab" "$OUT.multicopy.eq.tmp" --window "${RUSTLE_EQ_WINDOW:-10}" --threads "$JOB_THREADS" "${excl[@]}" \
+      && $py "$RP_DRIVER_DIR/multicopy_rescue.py" annotate "$OUT.multicopy.gtf" "$OUT.multicopy.eq.tmp.loci.tsv" "$OUT.multicopy.gtf.tmp" "$OUT.multicopy.groups.tsv.tmp"; } >> "$OUT.multicopy.log" 2>&1 \
+    || { echo "[rustle_pipeline] multicopy: tie-adjusted counts failed (see $OUT.multicopy.log); $OUT.multicopy.gtf is kept without them" >&2; rm -f "$OUT.multicopy.eq.tmp".* "$OUT.multicopy.gtf.tmp" "$OUT.multicopy.groups.tsv.tmp"; exit 1; }
+  mv -f "$OUT.multicopy.eq.tmp.loci.tsv" "$OUT.multicopy.eq.loci.tsv"; mv -f "$OUT.multicopy.eq.tmp.classes.tsv" "$OUT.multicopy.eq.classes.tsv"
+  mv -f "$OUT.multicopy.groups.tsv.tmp" "$OUT.multicopy.groups.tsv"; mv -f "$OUT.multicopy.gtf.tmp" "$OUT.multicopy.gtf"
+  say "multicopy: $(tail -1 "$OUT.multicopy.log") -> $OUT.multicopy.groups.tsv"
 }
 
 # siblings: OPT-IN, named only (register 1628; never part of `all`). $OUT.sibling.gtf = $OUT.gtf + the chains a family sibling's
@@ -1595,6 +1645,67 @@ stage_candidates() {
 # used (one line says so). --legacy-catalog: the legacy catalog PREFIX.cat.* over whole contigs, as the stage ran before
 # 2026-10-02. The three helpers are defined inside the stage (they are its code alone: figures/samples.py's driver_stage_code
 # then keeps them out of the other stages' code hashes).
+# o2 (register 1903): the family report of this run. Reads PREFIX.gtf (or the families' GTF) and PREFIX.fam.copies.tsv only.
+stage_o2() {
+  # RUSTLE_O2_EXTEND=1: the multi-copy extension first (near-tied multimappers seed the copies, floor-1 rescue inside families)
+  # then the provenance test (register 1905 / 1906): a locus keeps its transcripts only when the EM over the tied reads leaves
+  # it >= RUSTLE_O2_MIN_EM (2) reads -> PREFIX.o2.gtf (+ PREFIX.o2.em.tsv). The stage's own tie tables are not needed for it.
+  # Default since 2026-11-22 (user: "lets readd it by default"); RUSTLE_O2_EXTEND=0 turns it off. A failure of the extension
+  # is reported and leaves the family report on the base assembly: it never fails the stage (or `all`).
+  local ext=${RUSTLE_O2_EXTEND:-1}
+  if [ "$ext" = 1 ]; then
+    rm -f "$OUT.o2.gtf" "$OUT.o2.em.tsv"
+    local tab=$OUT.molecules.tsv; [ -s "$tab" ] || tab=$BAM.as_table.tsv
+    if ! ( RUSTLE_MULTICOPY_EQ=${RUSTLE_MULTICOPY_EQ:-0} stage_multicopy ); then
+      say "o2: the multi-copy extension FAILED (see $OUT.multicopy.log); the report is on $OUT.gtf"; ext=0
+    elif ! "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/../bench/o2_families/em_filter.py" "$OUT.multicopy.gtf" "$BAM" "$tab" "$OUT.o2.tmp" --min-em "${RUSTLE_O2_MIN_EM:-2}" $([ "${RUSTLE_O2_DROP:-0}" = 1 ] || echo --label) --threads "$JOB_THREADS" > "$OUT.o2.em.log" 2>&1; then
+      say "o2: the provenance test FAILED (see $OUT.o2.em.log); the report is on $OUT.gtf"; rm -f "$OUT.o2.tmp".*; ext=0
+    else
+      mv -f "$OUT.o2.tmp.gtf" "$OUT.o2.gtf"; mv -f "$OUT.o2.tmp.em.tsv" "$OUT.o2.em.tsv"
+      say "o2: $(tail -1 "$OUT.o2.em.log" | sed 's/ -> .*//') -> $OUT.o2.gtf"
+    fi
+  fi
+  local gtf=${FAM_GTF:-$OUT.gtf}; [ -s "$gtf" ] || gtf=$OUT.gtf
+  [ -s "$gtf" ] && [ -s "$OUT.fam.copies.tsv" ] || { echo "[rustle_pipeline] o2 needs $OUT.gtf and $OUT.fam.copies.tsv (run assemble and families first)" >&2; exit 2; }
+  local eqs=("$OUT.eq.loci.tsv" "$OUT.multicopy.eq.loci.tsv")
+  if [ "$ext" = 1 ] && [ -s "$OUT.o2.gtf" ]; then gtf=$OUT.o2.gtf; eqs=("$OUT.multicopy.eq.loci.tsv" "$OUT.eq.loci.tsv"); fi
+  local eq=(); local e; for e in "${eqs[@]}"; do
+    if [ -s "$e" ] && [ ! "$e" -ot "$OUT.fam.copies.tsv" ]; then eq=(--eq "$e"); break; fi; done
+  "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/o2_family_report.py" "$gtf" "$OUT.fam.copies.tsv" "$OUT.o2" "${eq[@]}" > "$OUT.o2.log" 2>&1 \
+    || { echo "[rustle_pipeline] o2 failed (see $OUT.o2.log)" >&2; exit 1; }
+  say "$(tail -1 "$OUT.o2.log") -> $OUT.o2.families.tsv, $OUT.o2.copies.tsv${eq:+ (with tie groups from ${eq[1]})}"
+}
+# o2bench (register 1903, opt-in): planted reads at the named families of the annotation, every assembler, scored against the truth.
+stage_o2bench() {
+  local b=$RP_DRIVER_DIR/../bench/o2_families d=$OUT.o2bench.d sc rc=0 scs=${RUSTLE_O2BENCH_SCENARIOS:-E,D,S}
+  [ -s "$FASTA" ] || { echo "[rustle_pipeline] o2bench needs --fasta" >&2; exit 2; }
+  mkdir -p "$d"
+  if [ ! -s "$d/plant/plan.tsv" ]; then
+    if [ -n "${GFF:-}" ]; then
+      "${RUSTLE_PYTHON:-python3}" "$b/plant.py" "$GFF" "$FASTA" "$d/plant" --scenarios "$scs" --reads "${RUSTLE_O2BENCH_READS:-60}" > "$d/plant.log" 2>&1
+    else
+      [ -s "$OUT.gtf" ] && [ -s "$OUT.fam.copies.tsv" ] || { echo "[rustle_pipeline] o2bench without --gff plants at this run's own families: it needs $OUT.gtf and $OUT.fam.copies.tsv" >&2; exit 2; }
+      "${RUSTLE_PYTHON:-python3}" "$b/plant.py" --from-run "$OUT.gtf" "$OUT.fam.copies.tsv" "$FASTA" "$d/plant" --scenarios "$scs" --reads "${RUSTLE_O2BENCH_READS:-30}" > "$d/plant.log" 2>&1
+    fi || { echo "[rustle_pipeline] o2bench: planting failed (see $d/plant.log)" >&2; exit 1; }
+  fi
+  for sc in ${scs//,/ }; do
+    # the child assemblies are runs of their own: none of this run's stage switches reach them
+    env -u RP_ALL -u RP_LAYERS_BG RUSTLE_BIN="$BIN" bash "$b/run_tools.sh" "$d/plant" "$sc" "$FASTA" "$d/$sc" "$JOB_THREADS" > "$d/$sc.log" 2>&1 || rc=1
+    [ -s "$d/$sc/score.tsv" ] || rc=1
+  done
+  [ "$rc" = 0 ] || { echo "[rustle_pipeline] o2bench: a scenario failed (see $d/*.log)" >&2; exit 1; }
+  { head -1 "$d/${scs%%,*}/score.tsv"; for sc in ${scs//,/ }; do grep -P '\tALL\t' "$d/$sc/score.tsv"; done; for sc in ${scs//,/ }; do grep -v '^scenario' "$d/$sc/score.tsv" | grep -vP '\tALL\t'; done; } > "$OUT.o2bench.tsv"
+  say "o2bench: $(grep -cP '\tALL\t' "$OUT.o2bench.tsv") tool x scenario rows -> $OUT.o2bench.tsv (planted truth in $d/plant)"
+  grep -P '\tALL\t' "$OUT.o2bench.tsv" | awk -F'\t' '{printf "[rustle_pipeline]   %s %-18s copies %s/%s (recall %s, precision %s) isoforms recall %s precision %s\n", $1, $2, $5, $4, $6, $9, $12, $15}' >&2
+}
+stage_members() {
+  local gtf=${FAM_GTF:-$OUT.gtf}; [ -s "$gtf" ] || gtf=$OUT.gtf
+  [ -s "$gtf" ] || { echo "[rustle_pipeline] members needs $OUT.gtf (run assemble first)" >&2; exit 2; }
+  "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/member_discovery.py" "$gtf" "$BAM" "$OUT.members.tmp" --min-reads "${RUSTLE_MEMBERS_MIN_READS:-5}" --min-ratio "${RUSTLE_MEMBERS_MIN_RATIO:-0.3}" --threads "$JOB_THREADS" > "$OUT.members.log" 2>&1 \
+    || { echo "[rustle_pipeline] members failed (see $OUT.members.log); no other product is affected" >&2; rm -f "$OUT.members.tmp".*; exit 1; }
+  mv -f "$OUT.members.tmp.members.tsv" "$OUT.members.tsv"; mv -f "$OUT.members.tmp.members.gtf" "$OUT.members.gtf"
+  say "$(tail -1 "$OUT.members.log" | sed 's/ -> .*//') -> $OUT.members.tsv, $OUT.members.gtf"
+}
 stage_assign() {
   unset RUSTLE_READTHROUGH_JUNCTIONS   # assemble-only: copy_assign refuses it on every assign call (round-23 audit)
   # fam_regions all|only|skip [LIST]: copy_assign's --regions for the families of PREFIX.fam.copies.regions (`{fid}\t{chrom}:
@@ -1949,7 +2060,9 @@ stage_all() {
   local plan=(assemble:"$OUT.gtf" families:"$OUT.fam.copies.tsv")
   if [ "$LEGACY_CATALOG" = 1 ]; then plan+=(catalog:"$OUT.cat.copies.tsv")
   elif [ "$CANDIDATES" = 1 ]; then plan+=(candidates:"$OUT.cand.candidates.tsv"); fi
-  plan+=(assign:"$OUT.assign.assignments.tsv")
+  # register 1903 (user, 2026-11-22): the O2 stage of `all` is the family report; assign only on request or where its inputs are asked for
+  # `all` never runs the legacy `assign` (no switch brings it back): after --candidates or --legacy-catalog it is called by name
+  plan+=(o2:"$OUT.o2.families.tsv")
   local env_now ran=0 st prod args=("${ORIG_ARGS[@]}")
   # audit 2026-11-19: the child stages get this run's pool explicitly; without it a child `assemble` took the assemble-alone
   # default (primary, register 1812) while PREFIX.assemble.env recorded good
@@ -2152,7 +2265,7 @@ stage_all() {
 case "$STAGE" in
   merged) stage_merged;;
   assemble) stage_assemble; if [ -n "${GUIDE:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_guided; fi; if [ -n "${NAMES:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_names; fi;; guided) stage_guided;; names) stage_names;; eqclasses) stage_eqclasses;; famwise) stage_famwise;; psi) stage_psi;; multicopy) stage_multicopy;; siblings) stage_siblings;; oneread) stage_oneread || exit $?;; flairlike) stage_flairlike;; altends) stage_altends;; trunc5) stage_trunc5;; chainscore) stage_chainscore;; shiftdrop) stage_shiftdrop;; shortexons) stage_shortexons;; capstarts) stage_capstarts;; earlyends) stage_earlyends;; repeatloci) stage_repeatloci;; exonmap) stage_exonmap;; relatives) stage_relatives;; sdcore) stage_sdcore;; famreps) stage_famreps;; families) stage_families;; candidates) stage_candidates;; catalog) stage_catalog;;
-  assign) stage_assign;; flag) stage_flag;; flag_scan) stage_flag_scan;; index) stage_index;;
+  assign) stage_assign;; o2) stage_o2;; o2bench) stage_o2bench;; members) stage_members;; flag) stage_flag;; flag_scan) stage_flag_scan;; index) stage_index;;
   # `all`'s background flag stage: the scan, then align + verdict, whose wall goes to PREFIX.flag.time
   flag_bg) stage_flag_scan; export RP_FLAG_SCAN_DONE=1; fb0=$SECONDS; stage_flag; printf 'wall_s\t%s\n' "$(( SECONDS - fb0 ))" > "$OUT.flag.time.tmp";;
   # --legacy-catalog: `assign` reads the legacy catalog, so `all` builds it; --candidates: `all` runs the (opt-in) candidates stage

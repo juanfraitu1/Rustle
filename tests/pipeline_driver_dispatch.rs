@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 const DRIVER: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tools/rustle_pipeline.sh");
-const STAGES: [&str; 7] = ["assemble", "families", "candidates", "catalog", "assign", "flag", "merged"];
+const STAGES: [&str; 8] = ["assemble", "families", "candidates", "catalog", "assign", "o2", "flag", "merged"];
 
 /// The driver's final dispatch: from the last line that starts `case "$STAGE" in` to the next line that is `esac`.
 fn dispatch_block() -> String {
@@ -117,11 +117,19 @@ fn all_refuses_at_the_start_when_a_skip_list_needs_a_python_that_is_not_there() 
 }
 
 #[test]
-fn all_runs_assemble_families_assign_flag_and_neither_catalog_nor_candidates() {
+fn all_runs_assemble_families_o2_flag_and_neither_catalog_nor_candidates() {
     let (ran, code) = dispatch("all_default", "all", false, false);
     assert_eq!(code, 0);
     // round 55: flag (scan, align, verdict) runs in the background from the end of assemble, as `flag_bg`
-    assert_eq!(ran, ["assemble", "families", "assign"]);
+    // register 1903 (2026-11-22): the O2 stage of `all` is the family report `o2`; `assign` is the legacy O2
+    assert_eq!(ran, ["assemble", "families", "o2"]);
+}
+
+/// Register 1903: the legacy `assign` is in no plan of `all`; no environment switch brings it back.
+#[test]
+fn all_never_runs_the_legacy_assign_stage() {
+    let (ran, code, _) = dispatch_env("all_o2_legacy", "all", false, false, &[("RUSTLE_O2_LEGACY", "1")]);
+    assert_eq!((ran, code), (vec!["assemble".to_string(), "families".into(), "o2".into()], 0));
 }
 
 #[test]
@@ -144,17 +152,17 @@ fn all_runs_the_flag_scan_once_in_the_background_after_assemble() {
 }
 
 #[test]
-fn all_with_candidates_runs_the_candidates_stage_between_families_and_assign() {
+fn all_with_candidates_runs_the_candidates_stage_between_families_and_o2() {
     let (ran, code) = dispatch("all_candidates", "all", false, true);
     assert_eq!(code, 0);
-    assert_eq!(ran, ["assemble", "families", "candidates", "assign", "flag"]);
+    assert_eq!(ran, ["assemble", "families", "candidates", "o2", "flag"]);
 }
 
 #[test]
-fn all_with_legacy_catalog_runs_the_catalog_stage_between_families_and_assign() {
+fn all_with_legacy_catalog_runs_the_catalog_stage_between_families_and_o2() {
     let (ran, code) = dispatch("all_legacy", "all", true, false);
     assert_eq!(code, 0);
-    assert_eq!(ran, ["assemble", "families", "catalog", "assign"]);
+    assert_eq!(ran, ["assemble", "families", "catalog", "o2"]);
 }
 
 #[test]
@@ -189,7 +197,7 @@ fn all_resumes_at_the_failed_stage_and_redoes_a_product_rewritten_outside_it() {
         &stub_driver,
         "echo \"$1\" >> \"$LOG\"\n\
          [ \"${FAIL_STAGE:-}\" = \"$1\" ] && exit 3\n\
-         case \"$1\" in assemble) p=gtf;; earlyends) p=earlyends.gtf;; capstarts) p=capstarts.gtf;; oneread) p=oneread.ranked.gtf;; families) p=fam.copies.tsv;; assign) p=assign.assignments.tsv;; flag|flag_bg) p=flag.missing_copy.tsv;; esac\n\
+         case \"$1\" in assemble) p=gtf;; earlyends) p=earlyends.gtf;; capstarts) p=capstarts.gtf;; oneread) p=oneread.ranked.gtf;; families) p=fam.copies.tsv;; assign) p=assign.assignments.tsv;; o2) p=o2.families.tsv;; flag|flag_bg) p=flag.missing_copy.tsv;; esac\n\
          echo x > \"$OUT.$p\"\n",
     )
     .unwrap();
@@ -219,20 +227,20 @@ fn all_resumes_at_the_failed_stage_and_redoes_a_product_rewritten_outside_it() {
         let ran = std::fs::read_to_string(&log).unwrap_or_default().lines().filter(|l| *l != "flag_scan" && *l != "flag_bg").map(String::from).collect();
         (ran, o.status.code().unwrap_or(-1))
     };
-    assert_eq!(run("a", ""), (vec!["assemble".into(), "families".into(), "assign".into(), "earlyends".into(), "capstarts".into(), "oneread".into()], 0), "flag ran in the background; the early-end and cap-start assemblies and the one-read tiers (default side products, rows 1717-1722, 1766 / 1806) are written last");
+    assert_eq!(run("a", ""), (vec!["assemble".into(), "families".into(), "o2".into(), "earlyends".into(), "capstarts".into(), "oneread".into()], 0), "flag ran in the background; the early-end and cap-start assemblies and the one-read tiers (default side products, rows 1717-1722, 1766 / 1806) are written last");
     assert_eq!(run("a", ""), (vec![], 0), "nothing changed: every stage is skipped");
     // a direct `families` call rewrote its product after the recorded run: its time record is older than the product
     let earlier = std::time::SystemTime::now() - std::time::Duration::from_secs(60);
     std::fs::File::options().write(true).open(format!("{}.families.time", out.display())).unwrap().set_modified(earlier).unwrap();
-    assert_eq!(run("a", ""), (vec!["families".into(), "assign".into(), "flag".into()], 0));
-    // new settings, assign fails: then the same settings again resume AT assign
-    let (ran, code) = run("b", "assign");
-    assert_eq!((ran, code), (vec!["assemble".into(), "families".into(), "assign".into()], 3));
+    assert_eq!(run("a", ""), (vec!["families".into(), "o2".into(), "flag".into()], 0));
+    // new settings, o2 fails: then the same settings again resume AT o2
+    let (ran, code) = run("b", "o2");
+    assert_eq!((ran, code), (vec!["assemble".into(), "families".into(), "o2".into()], 3));
     // the early-end assembly of the first run is older than the assembly just rewritten (set by hand: the runs here share a second)
     for side in ["earlyends", "capstarts", "oneread.ranked"] {
         std::fs::File::options().write(true).open(format!("{}.{side}.gtf", out.display())).unwrap().set_modified(earlier).unwrap();
     }
-    assert_eq!(run("b", ""), (vec!["assign".into(), "flag".into(), "earlyends".into(), "capstarts".into(), "oneread".into()], 0), "assemble and families are not redone; the side assemblies follow the new assembly");
+    assert_eq!(run("b", ""), (vec!["o2".into(), "flag".into(), "earlyends".into(), "capstarts".into(), "oneread".into()], 0), "assemble and families are not redone; the side assemblies follow the new assembly");
 }
 
 /// Round-41 audit: when a stage fails, `all` stops its background flag scan (the scan writes PREFIX.flag_scan.* in place, and a
@@ -248,7 +256,7 @@ fn a_failed_stage_stops_the_background_flag_scan() {
         &stub_driver,
         "echo \"$1\" >> \"$LOG\"\n\
          [ \"$1\" = flag_bg ] && { ( ( sleep 3; echo grand_end >> \"$LOG\" ) & wait ); sleep 3; echo scan_end >> \"$LOG\"; }\n\
-         [ \"$1\" = assign ] && exit 3\n\
+         [ \"$1\" = o2 ] && exit 3\n\
          exit 0\n",
     )
     .unwrap();
@@ -265,7 +273,7 @@ fn a_failed_stage_stops_the_background_flag_scan() {
         out = dir.join("run").display()
     );
     let o = Command::new("bash").arg("-c").arg(&script).arg(&stub_driver).arg(&log).output().expect("bash failed to spawn");
-    assert_eq!(o.status.code(), Some(3), "assign's exit status");
+    assert_eq!(o.status.code(), Some(3), "o2's exit status");
     std::thread::sleep(std::time::Duration::from_secs(5));
     let ran = std::fs::read_to_string(&log).unwrap();
     assert!(ran.lines().any(|l| l == "flag_bg"), "the scan started: {ran}");
@@ -286,7 +294,7 @@ fn all_with_a_guide_writes_the_guided_assembly_even_when_assemble_is_skipped() {
     std::fs::write(
         &stub_driver,
         "echo \"$1\" >> \"$LOG\"\n\
-         case \"$1\" in assemble) p=gtf;; earlyends) p=earlyends.gtf;; capstarts) p=capstarts.gtf;; oneread) p=oneread.ranked.gtf;; guided) p=guided.gtf;; families) p=fam.copies.tsv;; assign) p=assign.assignments.tsv;; flag|flag_bg) p=flag.missing_copy.tsv;; esac\n\
+         case \"$1\" in assemble) p=gtf;; earlyends) p=earlyends.gtf;; capstarts) p=capstarts.gtf;; oneread) p=oneread.ranked.gtf;; guided) p=guided.gtf;; families) p=fam.copies.tsv;; assign) p=assign.assignments.tsv;; o2) p=o2.families.tsv;; flag|flag_bg) p=flag.missing_copy.tsv;; esac\n\
          echo x > \"$OUT.$p\"\n",
     )
     .unwrap();
@@ -309,7 +317,7 @@ fn all_with_a_guide_writes_the_guided_assembly_even_when_assemble_is_skipped() {
         let ran = std::fs::read_to_string(&log).unwrap_or_default().lines().filter(|l| *l != "flag_scan" && *l != "flag_bg").map(String::from).collect();
         (ran, o.status.code().unwrap_or(-1))
     };
-    let all: Vec<String> = ["assemble", "guided", "families", "assign", "earlyends", "capstarts", "oneread"].iter().map(|s| s.to_string()).collect();
+    let all: Vec<String> = ["assemble", "guided", "families", "o2", "earlyends", "capstarts", "oneread"].iter().map(|s| s.to_string()).collect();
     assert_eq!(run(), (all, 0));
     assert_eq!(run(), (vec![], 0), "nothing changed: the guided assembly is not rewritten");
     std::fs::remove_file(format!("{}.guided.gtf", out.display())).unwrap();
