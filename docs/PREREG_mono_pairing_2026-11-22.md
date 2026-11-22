@@ -43,3 +43,34 @@ measure); truth single-exon transcripts found. Beside it the single-exon models 
 - Annotated single-exon genes are few and incomplete on real libraries; simulated reads have no precursor or antisense
   signal, so classes 3-5 will be nearly empty there and the simulated sets can only show classes 1, 2 and 6.
 - The pairing is against Rustle's own multi-exon models, not the truth.
+
+## Result (2026-11-22): no LEAD by the bar; the pairing does separate, by a factor of 2.5 to 17
+
+Jobs 4494884-4494890, both arms exit 0 on seven datasets; `r1897_mono_pairing/pair.NAME.txt` (`pair.py`).
+Shadowed single-exon models, matching a truth single-exon transcript / all (share):
+| dataset | kept by `base` | 1 3' fragment | 2 inside an exon | 3 exon + intron | 4 intronic | 5 opposite strand only | classes 1-3 | classes 4 + 5 | truth found by 4 + 5, new |
+|---|---|---|---|---|---|---|---|---|---|
+| fly simulated | 94 / 114 (0.825) | 2 / 2 | 0 | 3 / 5 | 8 / 8 | 3 / 3 | 5 / 7 | 11 / 11 | 12 |
+| mouse simulated | 30 / 32 (0.938) | 0 | 0 | 2 / 3 | 3 / 3 | 1 / 1 | 2 / 3 | 4 / 4 | 4 |
+| zebrafish simulated | 51 / 72 (0.708) | 0 / 4 | 0 | 0 / 1 | 0 | 0 | 0 / 5 | 0 | 0 |
+| mouse ES | 266 / 1,937 (0.137) | 6 / 478 (0.013) | 4 / 77 | 29 / 959 (0.030) | 11 / 304 (0.036) | 19 / 163 (0.117) | 39 / 1,514 (0.026) | 30 / 467 (0.064) | 31 |
+| mouse heart | 50 / 87 (0.575) | 0 / 94 | 0 / 11 | 6 / 58 (0.103) | 1 / 6 | 7 / 53 (0.132) | 6 / 163 (0.037) | 8 / 59 (0.136) | 8 |
+| OR6737 | 76 / 311 (0.244) | 8 / 711 (0.011) | 3 / 93 | 20 / 1,217 (0.016) | 4 / 30 (0.133) | 20 / 95 (0.211) | 31 / 2,021 (0.015) | 24 / 125 (0.192) | 24 |
+| WTC11 r2 | 113 / 183 (0.617) | 2 / 278 (0.007) | 1 / 36 | 12 / 272 (0.044) | 5 / 11 | 14 / 33 (0.424) | 15 / 586 (0.026) | 19 / 44 (0.432) | 19 |
+
+- **No class is WORTH SPARING on any dataset** (bar: at least the share of the models `base` keeps): classes 4 + 5 reach 0.47,
+  0.24, 0.79, 0.70 of that share on the four real libraries. Registered verdict: the shadow rule stays as it is.
+- **The pairing separates all the same.** Single-exon models that are a piece of a spliced transcript (classes 1-3: 3' fragment,
+  inside an exon, exon + intron) match the truth 1.5-3.7% of the time on all four real libraries; the ones with no spliced
+  transcript they could be a piece of (intronic, or only an opposite-strand gene) match 6.4%, 13.6%, 19.2%, 43.2%: 2.5, 3.7,
+  13 and 17 times as often. Opposite-strand-only is the best single class (0.12-0.42).
+- Sparing classes 4 + 5 would find 31 / 8 / 24 / 19 more true single-exon transcripts (+11%, +16%, +32%, +17% of what `base`
+  finds) for 437 / 51 / 101 / 25 unannotated models. That is a recall trade at a known price, not a rule that pays.
+- **The 3' fragments are a countable thing:** 478 / 94 / 711 / 278 shadowed models sit inside the last exon of a spliced model
+  and end where it ends, and 0.7-1.3% of them are annotated single-exon genes. They are what the user's "pair them" asks for:
+  evidence for the 3' end of their multi-exon partner, not transcripts.
+- The simulated sets hold 4-18 shadowed models: no unspliced precursor or antisense reads are simulated, as stated above.
+
+**Candidates, the user's call (none proposed as a default):** (a) spare classes 4 + 5 from the shadow (recall of single-exon
+genes, price above); (b) report class-1 fragments as an attribute of their multi-exon partner instead of dropping them
+silently. Either needs the pairing inside the Rust polish (the shadow is applied there).

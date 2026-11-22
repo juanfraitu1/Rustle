@@ -25,7 +25,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-18 | register ×1 |
 | [`seeded_family_definition.md`](seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-08 | — |
 
-## Open studies and current handoff (310)
+## Open studies and current handoff (312)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
@@ -34,7 +34,9 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_list_tail_2026-11-22.md`](PREREG_list_tail_2026-11-22.md) | Row 1884: a third tier at the end of the ranked list, against FLAIR on HG002 (pre-registered 2026-11-22) | 2026-11-22 | register ×1 |
 | [`PREREG_locus_share_order_2026-11-22.md`](PREREG_locus_share_order_2026-11-22.md) | Row 1895: StringTie's selection as an order of the one-read tier (locus share), twenty datasets (pre-registered 2026-11- | 2026-11-22 | register ×1 |
 | [`PREREG_minimap_p09_n1000_2026-11-22.md`](PREREG_minimap_p09_n1000_2026-11-22.md) | PREREG: minimap2 with -p 0.9 -N 1000 instead of -p 0.1 -N 50, does it recover more family members (row 1885, 2026-11-22) | uncommitted | register ×2 |
+| [`PREREG_mono_pairing_2026-11-22.md`](PREREG_mono_pairing_2026-11-22.md) | Row 1897: pairing single-exon models with the multi-exon transcripts around them (step 0, pre-registered 2026-11-22) | 2026-11-22 | register ×1 |
 | [`PREREG_pab_good_pool_2026-11-22.md`](PREREG_pab_good_pool_2026-11-22.md) | Row 1889: the Sumatran testis comparison with the seeding pool of `all` (pre-registered 2026-11-22) | 2026-11-22 | register ×1 |
+| [`PREREG_replication_score_2026-11-22.md`](PREREG_replication_score_2026-11-22.md) | Row 1898: a one-read ranking fitted to replication instead of to the annotation (pre-registered 2026-11-22) | 2026-11-22 | — |
 | [`PREREG_stringtie_strategies_2026-11-22.md`](PREREG_stringtie_strategies_2026-11-22.md) | Row 1893: what StringTie's coverage trimming and its coverage-driven assembly contribute, by its own switches (pre-regis | 2026-11-22 | register ×1 |
 | [`PREREG_tier2_order_2026-11-22.md`](PREREG_tier2_order_2026-11-22.md) | Row 1890: is there a better order for the one-read tier, judged on all twenty datasets? (pre-registered 2026-11-22) | 2026-11-22 | register ×1 |
 | [`PREREG_unseen_check_2026-11-22.md`](PREREG_unseen_check_2026-11-22.md) | Row 1887: the two defaults of row 1886 on libraries neither rule has seen (pre-registered 2026-11-22) | 2026-11-22 | register ×1 |
