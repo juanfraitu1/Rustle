@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""ranked_list.py FINAL.gtf ONEREAD_RANKED.gtf OUT.gtf [--sensitive-share 0.1]
+"""ranked_list.py FINAL.gtf ONEREAD_RANKED.gtf OUT.gtf [--sensitive-share 0.1] [--tail RELAXED.gtf]
 
 One ranked list of an assembly (register rows 1880 / 1884; user decision 2026-11-22):
   tier 1  every transcript of FINAL.gtf, most `reads` first (ties keep the file's order);
   tier 2  every one-read chain of ONEREAD_RANKED.gtf whose intron chain FINAL.gtf lacks, best `oneread_score` first.
-Each transcript line gets  list_tier "1|2"; list_rank "N";  and  list_sensitive "1";  when it belongs to the named cut
+  tier 3  only with --tail (opt-in, RUSTLE_RANKED_TAIL=1; row 1884): the multi-exon chains of RELAXED.gtf (an assembly with a
+          one-read floor and the dropping rules off) that neither earlier tier holds, most `reads` first. A recall tail:
+          1.4-1.8% annotated on the two deep human libraries of row 1884, about a million chains there.
+Each transcript line gets  list_tier "1|2|3"; list_rank "N";  and  list_sensitive "1";  when it belongs to the named cut
 "sensitive" = tier 1 plus the best 10% of tier 2 (--sensitive-share). No transcript is changed, added or removed; the list is
 a reading order. Cut at another assembler's output size it held at least that assembler's number of annotated intron chains
 on 65 of 67 comparisons over twenty datasets (row 1880). Tier 2 is a recall tier: one read each.
@@ -61,13 +64,22 @@ def tag(line, tier, rank, sensitive):
 
 
 def main(argv):
-    args = [a for a in argv if not a.startswith('--')]
+    tail = None
+    if '--tail' in argv:
+        i = argv.index('--tail')
+        if i + 1 >= len(argv):
+            sys.stderr.write(__doc__)
+            return 2
+        tail = argv[i + 1]
+        argv = argv[:i] + argv[i + 2:]
     share = 0.1
     if '--sensitive-share' in argv:
         try:
             share = float(argv[argv.index('--sensitive-share') + 1])
         except (IndexError, ValueError):
             share = -1.0
+        argv = [a for k, a in enumerate(argv) if k not in (argv.index('--sensitive-share'), argv.index('--sensitive-share') + 1)]
+    args = [a for a in argv if not a.startswith('--')]
     if len(args) != 3 or not 0.0 <= share <= 1.0:
         sys.stderr.write(__doc__)
         return 2
@@ -84,6 +96,20 @@ def main(argv):
     extra = [(k, b) for k, b in t2 if chain(k, b) not in have]
     second = sorted(range(len(extra)), key=lambda i: (-number(extra[i][1][0], 'oneread_score'), i))
     n_sens = int(share * len(second))
+    third = []
+    if tail:
+        _, t3 = blocks(tail)
+        have2 = have | {chain(k, b) for k, b in extra}
+        seen3 = set()
+        for k, b in t3:
+            if b[0] is None:
+                continue
+            c = chain(k, b)
+            if not c[2] or c in have2 or c in seen3:
+                continue
+            seen3.add(c)
+            third.append((k, b))
+        third.sort(key=lambda kb: -number(kb[1][0], 'reads'))
     with open(out, 'w') as f:
         f.write(f'# ranked list (tools/ranked_list.py): tier 1 = {len(first)} transcripts of the default output by reads; '
                 f'tier 2 = {len(second)} one-read chains by oneread_score; list_sensitive = tier 1 + the best {n_sens} of tier 2\n')
@@ -96,8 +122,14 @@ def main(argv):
             rank += 1
             f.write(tag(extra[i][1][0], 2, rank, j < n_sens))
             f.writelines(extra[i][1][1])
+        for k, b in third:   # a second assembly reuses transcript ids of the first: tier 3 gets its own (".tail")
+            rank += 1
+            rename = lambda l: TID.sub(lambda m: f'transcript_id "{m.group(1)}.tail"', l, count=1)
+            f.write(tag(rename(b[0]), 3, rank, False))
+            f.writelines(rename(l) for l in b[1])
     print(f'{len(first)} transcripts in tier 1, {len(second)} one-read chains in tier 2 '
-          f'({len(t2) - len(extra)} already in tier 1), sensitive cut = tier 1 + {n_sens}')
+          f'({len(t2) - len(extra)} already in tier 1), sensitive cut = tier 1 + {n_sens}'
+          + (f', {len(third)} rule-dropped chains in tier 3' if tail else ''))
     return 0
 
 

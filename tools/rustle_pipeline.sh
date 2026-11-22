@@ -148,7 +148,8 @@
 #   RUSTLE_SHORTEXONS (row 1878, user 2026-11-22): `assemble` named on its own repairs reads that skip an exon of <= 15 bp before it
 #                              assembles (unset = 1; inside `all` unset = 0; 1 / 0 force it); needs python3 with pysam and room for a
 #                              second BAM copy while it runs. PREFIX.ranked.gtf (rows 1880 / 1884; written by the oneread step,
-#                              RUSTLE_RANKED_LIST=0 = off) = one ranked list: PREFIX.final.gtf by reads, then the one-read chains by score
+#                              RUSTLE_RANKED_LIST=0 = off) = one ranked list: PREFIX.final.gtf by reads, then the one-read chains by score;
+#                              RUSTLE_RANKED_TAIL=1 (opt-in) appends the chains the dropping rules remove (one more assembly)
 #   tools/rustle_pipeline.sh shortexons --bam B --fasta G --out PREFIX [--threads N]   OPT-IN (register 1753 / 1754 / 1757): PREFIX.shortexons.gtf = the default
 #                              assembly of the reads after those that skip an exon of <= 15 bp are rewritten through it (another read spells
 #                              the exon, or >= 2 reads carry its bases and one splice-flanked site of the intron fits); repairs a small class,
@@ -535,7 +536,10 @@ if [ "$INSPECT" = 1 ]; then
   INSPECT_CAT=("RUSTLE_ER_EDGE_DUMP=$OUT.cache/inspect/catalog" RUSTLE_COLLAPSE_STATS=1)
   INSPECT_ASSIGN=(--dump-psv --posterior)
 fi
-POLISH="--assembly-polish full --polish-isoform-fraction 0.02 --polish-mono-shadow --polish-mono-quantile 0.82 --polish-ism-ratio ${RUSTLE_POLISH_ISM_RATIO:-0.3} --polish-retained-ratio ${RUSTLE_POLISH_RETAINED_RATIO:-10}"
+# RUSTLE_POLISH_ISOFORM_FRACTION (unset = 0.02, the value this command always had): the isoform fraction of the polish. A switch only so
+# that the relaxed assembly of RUSTLE_RANKED_TAIL=1 can turn the rule off (0); no other value has been judged as a default (rows 1837, 1876).
+case "${RUSTLE_POLISH_ISOFORM_FRACTION:-0.02}" in ""|*[!0-9.]*|*.*.*) echo "[rustle_pipeline] RUSTLE_POLISH_ISOFORM_FRACTION must be a number >= 0 (got '${RUSTLE_POLISH_ISOFORM_FRACTION:-}')" >&2; exit 2 ;; esac
+POLISH="--assembly-polish full --polish-isoform-fraction ${RUSTLE_POLISH_ISOFORM_FRACTION:-0.02} --polish-mono-shadow --polish-mono-quantile 0.82 --polish-ism-ratio ${RUSTLE_POLISH_ISM_RATIO:-0.3} --polish-retained-ratio ${RUSTLE_POLISH_RETAINED_RATIO:-10}"
 # RUSTLE_POLISH_ISM_RATIO=R (register 1810; unset = 0.3 since 2026-11-18, 0.7 = the command before): a transcript whose intron chain is a
 # contiguous part of a longer assembled chain is kept when it has at least R times that chain's reads. 0.7 was overfit to the primate
 # samples (register 1793: it cost 9-10% of the correct chains on mouse); 0.1 is the non-primate choice of register 1800.
@@ -1028,9 +1032,22 @@ stage_oneread() {
   case "${RUSTLE_RANKED_LIST:-1}" in 0|1) ;; *) echo "[rustle_pipeline] RUSTLE_RANKED_LIST must be 0 or 1 (got '$RUSTLE_RANKED_LIST')" >&2; return 2 ;; esac
   rm -f "$OUT.ranked.gtf"
   if [ "${RUSTLE_RANKED_LIST:-1}" = 1 ] && [ -s "$OUT.oneread.ranked.gtf" ] && [ -s "$OUT.final.gtf" ]; then
-    if ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/ranked_list.py" "$OUT.final.gtf" "$OUT.oneread.ranked.gtf" "$OUT.ranked.gtf.tmp" > "$OUT.ranked.log" 2>&1; then
+    # RUSTLE_RANKED_TAIL=1 (OPT-IN, row 1884, user 2026-11-22; unset = 0): a third tier at the end of the list = the multi-exon chains
+    # of one more assembly with a one-read floor and the dropping rules off (isoform fraction, sub-chain collapse, retained-intron,
+    # spliced share) that neither earlier tier holds, by reads. It costs that assembly; on HG002 / A119b it is about a million
+    # chains at 1.4-1.8% annotated, and it is what puts the list ahead of FLAIR on HG002. Never part of any other product.
+    local tail=()
+    case "${RUSTLE_RANKED_TAIL:-0}" in 0) ;;
+      1) if env RUSTLE_MIN_CHAIN_READS=1 RUSTLE_GATE_MIN_READS=1 RUSTLE_POLISH_ISOFORM_FRACTION=0 RUSTLE_POLISH_ISM_RATIO=0 RUSTLE_POLISH_RETAINED_RATIO=0 RUSTLE_POLISH_SPLICED_SHARE=0 \
+              RUSTLE_ASSEMBLY_LAYERS=off RUSTLE_ONEREAD=0 RUSTLE_SEED_POOL="$SEED_POOL" RUSTLE_SEED_AS_RATIO="$SEED_RATIO" bash "$0" assemble --bam "$BAM" --fasta "$FASTA" \
+              --out "$OUT.oneread.d/tail" --threads "$THREADS" ${BIN:+--bin "$BIN"} ${CONTIG:+--contig "$CONTIG"} ${AS_TABLE:+--as-table "$AS_TABLE"} > "$OUT.ranked.tail.log" 2>&1 \
+            && [ -s "$OUT.oneread.d/tail.gtf" ]; then tail=(--tail "$OUT.oneread.d/tail.gtf")
+         else say "oneread: WARNING the relaxed assembly for the third tier failed (see $OUT.ranked.tail.log); the list has two tiers"; fi ;;
+      *) echo "[rustle_pipeline] RUSTLE_RANKED_TAIL must be 0 or 1 (got '$RUSTLE_RANKED_TAIL')" >&2; return 2 ;; esac
+    if ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/ranked_list.py" "$OUT.final.gtf" "$OUT.oneread.ranked.gtf" "$OUT.ranked.gtf.tmp" "${tail[@]}" > "$OUT.ranked.log" 2>&1; then
       mv -f "$OUT.ranked.gtf.tmp" "$OUT.ranked.gtf"; say "oneread: $(tail -1 "$OUT.ranked.log") -> $OUT.ranked.gtf"
     else rm -f "$OUT.ranked.gtf.tmp"; say "oneread: WARNING the ranked list failed (see $OUT.ranked.log); the other products are unaffected"; fi
+    rm -f "$OUT.oneread.d"/tail.*   # the relaxed assembly is read once
   fi
   # register 1808, OPT-IN: RUSTLE_ONEREAD_PARTNERS = colon-separated BAMs of OTHER libraries of the same species. Ranked chains in the
   # best 20% that a partner read also carries -> $OUT.oneread.promoted.gtf (oneread_promoted "1"). A RECALL tier: 0.22-0.30 precision on

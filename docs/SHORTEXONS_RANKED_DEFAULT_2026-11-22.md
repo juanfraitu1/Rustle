@@ -56,3 +56,17 @@ User: "Write two tiers" (the third tier of row 1884 is not written).
 - `all` with the repair on: families / assign on repaired models.
 - The public comparison page and the transfer-test page show the numbers from before this default.
 - Speed of the rewrite on genomes with thousands of contigs.
+
+## 3. Third tier of the list, opt-in (row 1891, user 2026-11-22: "Add third tier, opt-in")
+- `RUSTLE_RANKED_TAIL=1` (unset = 0): the `oneread` step runs one more assembly with a one-read floor and the dropping rules off
+  (isoform fraction 0, sub-chain ratio 0, retained-intron ratio 0, spliced share 0, the gate bypass; row 1884's command) and
+  `tools/ranked_list.py --tail` appends its multi-exon chains that neither earlier tier holds, by reads, as `list_tier "3"`.
+  Their transcript ids get the suffix `.tail` (a second assembly reuses ids). The relaxed run's files are removed after use.
+- New switch `RUSTLE_POLISH_ISOFORM_FRACTION` (unset = 0.02, the value the command always had): exists so the relaxed run can
+  turn the rule off; no other value is a judged default (rows 1837, 1876). A malformed value stops the run.
+- Checks. Tool: on HG002 with row 1884's files the written list holds 1,365,473 multi-exon chains and, cut at FLAIR's 728,951,
+  45,217 annotated in file order and 45,207 as the expected value over the tie group the cut splits: row 1884's figure exactly.
+  Driver (`r1891_ranked_tail`, job 4494855, mouse heart): tiers 1 and 2 are line-identical with and without the switch
+  (21,335 + 24,400), tier 3 adds 42,847 chains, the `oneread` step takes 489 s against 278 s. Driver tests 66 of 66.
+- With the third tier the list is ahead of FLAIR on 15 of 15 datasets (row 1884). It stays off by default: about a million
+  chains at under 2% annotated on deep libraries.
