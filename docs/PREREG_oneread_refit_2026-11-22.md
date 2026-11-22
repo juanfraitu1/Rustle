@@ -82,3 +82,28 @@ the frozen model's.
 simulated sets; whether it is better on a species it has not seen depends on the species. The honest state: no adoptable
 replacement by the bar set in advance. Candidate, the user's call and against that bar: replace `oneread_r1806.json` by the
 all-data model. It would close the last StringTie comparison and it is not validated on unseen species.
+
+## Descriptive addendum (2026-11-22, not registered): one-read chains by the read support of their weakest junction
+
+The user's third question ("junctions shared by 1 read"), shown directly; the quantity is already the feature `min_isup` of the
+ranking. `r1899_oneread_refit/junc1.NAME.txt` (job `junc1`), one-read chains the default lacks, annotated / all (share):
+| dataset | this read only | 2 reads | 3-5 reads | 6+ reads | 6+ reads and no other read on the chain | whole tier |
+|---|---|---|---|---|---|---|
+| mouse simulated | 3,446 / 4,117 (0.837) | 309 / 462 (0.669) | 175 / 338 (0.518) | 88 / 173 (0.509) | 53 / 111 (0.477) | 4,018 / 5,090 (0.789) |
+| zebrafish simulated | 2,545 / 3,427 (0.743) | 216 / 390 (0.554) | 107 / 296 (0.361) | 25 / 93 (0.269) | 14 / 69 (0.203) | 2,893 / 4,206 (0.688) |
+| mouse heart | 2,087 / 16,404 (0.127) | 353 / 2,783 (0.127) | 324 / 2,907 (0.111) | 133 / 2,295 (0.058) | 54 / 703 (0.077) | 2,897 / 24,389 (0.119) |
+| mouse cortex | 1,837 / 22,763 (0.081) | 425 / 4,512 (0.094) | 390 / 4,821 (0.081) | 256 / 4,464 (0.057) | 75 / 1,016 (0.074) | 2,908 / 36,560 (0.080) |
+| WTC11 r2 | 3,797 / 32,830 (0.116) | 1,208 / 7,112 (0.170) | 1,228 / 7,430 (0.165) | 545 / 5,384 (0.101) | 62 / 1,329 (0.047) | 6,778 / 52,756 (0.128) |
+| chimpanzee testis | 4,376 / 73,043 (0.060) | 1,888 / 17,598 (0.107) | 2,076 / 19,962 (0.104) | 1,676 / 21,944 (0.076) | 84 / 4,115 (0.020) | 10,016 / 132,547 (0.076) |
+| Sumatran testis | 3,275 / 98,751 (0.033) | 1,400 / 22,756 (0.062) | 1,442 / 25,030 (0.058) | 895 / 24,976 (0.036) | 49 / 4,966 (0.010) | 7,012 / 171,513 (0.041) |
+
+- **A junction carried by one read is not a mark of error.** On complete truth (mouse, zebrafish simulated) the one-read
+  chains whose weakest junction only that read carries are the MOST often true (0.84 on mouse simulated against 0.51-0.67
+  for chains whose junctions other reads carry): they are whole transcripts seen once. A rule that drops single-read
+  junctions would remove the best class there.
+- On real libraries the relation is not monotone: support of 2-5 reads is best (1.3-1.9 times the single-read class on the
+  three primate libraries, no difference on mouse heart), and 6 or more is the WORST (a one-read chain made of heavily used
+  junctions in a busy locus is a rare recombination or an error); with no other read on the chain that cell is 1-8%
+  annotated. No cell exceeds 0.19 on a real library.
+- So no cut on junction support is a rule; what there is to gain from it the ranking takes, and the refit of this row is
+  the better use of the same information.
