@@ -53,3 +53,15 @@ User: "Both, opt-in" (row 1897: pairing single-exon transcripts with the multi-e
 ## Not done
 - The public pages; the twelve default numbers under `r1899` (only the order of side files changes, no default count does).
 - `families` / `assign` with the spared single-exon transcripts (they enter `PREFIX.gtf` when the switch is on).
+
+## Tally of the ranked list against every other assembler under the shipped defaults (2026-11-22, `r1899_oneread_refit/current.py`)
+The comparison of row 1880 (list cut at each rival's own output size, correct chains at least the rival's), recomputed with
+the shipped ranking `r1899`. Every one of the twenty datasets is in that model's fit, so this is a description of the shipped
+state, not a test; the test is row 1899.
+| rival | AHEAD | BEHIND | note |
+|---|---|---|---|
+| StringTie | 20 of 20 | none | Sumatran testis +749 (was -686); the three simulated sets are inside tier 1 and unchanged |
+| IsoQuant | 20 of 20 | none | all inside tier 1, unchanged from row 1880 |
+| bambu (NDR 1) | 12 of 12 | none | all inside tier 1, unchanged |
+| FLAIR | 14 of 15 | HG002, -6,171 | FLAIR is longer than the whole two-tier list there; `RUSTLE_RANKED_TAIL=1` (row 1891, opt-in) makes it +6,718 |
+66 of 67 with the default two tiers, 67 of 67 with the opt-in third tier.
