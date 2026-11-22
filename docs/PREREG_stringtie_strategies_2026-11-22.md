@@ -70,7 +70,7 @@ from coverage trimming. (Ends within 50 bp, 5' / 3', StringTie against Rustle: s
   the APE-ANNOTATION EFFECT as defined (BUILT is below StringTie's precision on the apes too). Registered verdict: "anything
   else", no port.
 - **What StringTie does in long-read mode is select.** Its output is its collapsed read chains minus the ones its coverage
-  and fraction floors drop: 97-99.9% of its chains are read chains. On Sumatran testis the collapsed reads hold 18,760
+  and fraction floors drop: 95.5-99.97% of its chains are read chains. On Sumatran testis the collapsed reads hold 18,760
   annotated chains in 193,721; StringTie keeps 16,593 of them in 69,251. The BUILT chains are 388 of its 16,981 correct ones
   there (373 not in Rustle), about half of the 686-chain gap of row 1880; the other half is which one-read chains it keeps.
 - So the premise in rows 1883 / 1889 that StringTie's lead on short-read testis libraries comes from chains longer than its
