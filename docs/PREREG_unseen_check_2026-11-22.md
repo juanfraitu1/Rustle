@@ -35,9 +35,9 @@ Jobs 4494803 (r1) and 4494804 (r3), every step exit 0; driver of the row 1886 co
 | WTC11 r3 | 50,541 / 24,648 / 0.4877 | 26,734 (+2,086) | 31,034 / 18,538 / 0.5973 | 21,391 (+2,853) | 49,968 / 26,652 / 0.5334: ahead of StringTie on both axes | CONFIRMED |
 
 - The repair's new chains are annotated 3 to 4 times as often as the ones it removes (45-50% against 12-17%), as on WTC11 r2.
-- The default `final.gtf` alone already has more correct chains and higher precision than StringTie and than IsoQuant on both
-  replicates (25,048 / 0.599 and 25,468 / 0.585 against 24,209 / 0.485, 24,648 / 0.488 and 18,765 / 0.598, 18,538 / 0.597;
-  IsoQuant is 0.001 more precise than the r3 default at 73% of its correct chains, so "both axes" holds against IsoQuant on r1
-  and misses precision by 0.0128 on r3).
+- The default `final.gtf` alone has more correct chains and higher precision than StringTie on both replicates (25,048 / 0.599
+  and 25,468 / 0.585 against 24,209 / 0.485 and 24,648 / 0.488). Against IsoQuant (18,765 / 0.598 and 18,538 / 0.597) it has
+  a third more correct chains on both; it is also more precise on r1 (0.5986 against 0.5975) and 0.013 less precise on r3
+  (0.5845 against 0.5973). The registered comparison is the list at IsoQuant's size, which is ahead on both.
 - Limits: both replicates are the library type of WTC11 r2, on which the repair and the list were already seen to work; this
   is a check on unseen reads, not on an unseen species. WTC11 r1 and r3 are now used for both rules.
