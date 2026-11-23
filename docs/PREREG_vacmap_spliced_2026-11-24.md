@@ -96,3 +96,10 @@ the filled-in introns come from the copy minimap2 chose and pull the read back t
 - Both predictions held (>= 95% and >= 80%). Reading: the reference introns decide where a padded read goes; on a near
   tie the read's own bases overrule them for 9 reads (P1) to 75 reads (P2) of 600. The padding cannot add information
   about the read's origin. `-mode R` on padded reads not run.
+
+## Addendum 2, registered before running (2026-11-24): padded reads in the gene-conversion mode
+User: "lets try the padded reads in vacmaps gene conversion mode". Arms P1R, P2R = the padded reads of P1, P2
+(`P1.fa`, `P2.fa`, unchanged) with `vacmap -mode R`. Pick, bars and the padding-source reading as in the addendum.
+Predictions (mine): P1R picks the primary's locus on >= 90% of near ties and is NO GAIN (wrong >= 47); P2R picks the
+runner-up's locus on >= 70%. This mode cut pieces out of unpadded reads (554 of 600 on two or more loci), so I expect
+more records per read than in mode L and somewhat less obedience to the padding, not better placement.
