@@ -260,3 +260,16 @@ Adding to the mode the single-exon models a primaries-only assembly passes close
 mode's 98 and the primaries' 120; silent called 5 against FLAIR's 10) but on real libraries there is almost nothing to
 restore: one model on OR6737, 224 on A119b of which 6 are annotated (0.027, bar 0.058: the registered claim fails).
 The single-exon gap to FLAIR on planted reads is a benchmark figure, not lost genes. `PREREG_mono_family_rescue_2026-11-23.md`.
+
+### Alignment scores inside the EM (row 1921, 2026-11-23): confirmed, small, opt-in
+The default EM of the labels is counts-only: the `ms` scores decide which loci a read is exactly tied between, and a read
+with a unique best is placed outright. `em_filter.py --weighted 1` makes every alignment within 10 `ms` a candidate with
+weight exp(-gap) and lets abundance x weight share the read. On planted human families it removes one silent unit wrongly
+labelled `expressed` per run on average (five seeds 23 -> 21 mislabelled silent units, three unseen seeds 12 -> 9) and
+changes no expressed unit, the 10-fold unequal-expression scenario included; gorilla unchanged. A softer weight (T = 5)
+demotes real expressed units and is rejected. What it does not touch: silent units labelled `shared`, which are exact
+ties over the whole read. DEFAULT of stage `o2` since 2026-11-23 (user); `RUSTLE_O2_EM_WEIGHT=0` = the counts-only EM
+(benchmark runner: `O2_EM_WEIGHT`). Planted results quoted before this date used the counts-only EM.
+On real gorilla OR6737 (no truth) it changes 18 of 18,868 `expressed` loci to `homology_only`, all with 1-4 reads; a
+locus with exactly two reads and a similar relative one substitution away is where it is brittle.
+`PREREG_weighted_em_2026-11-23.md`.

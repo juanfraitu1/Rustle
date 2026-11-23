@@ -24,13 +24,14 @@ ARMS=" ${O2_RUSTLE_ARMS:-primary good mode} "
 [[ $ARMS != *" good "* ]] || run rustle_good bash "$DR" assemble --seed-pool good --bam "$O/x.bam" --fasta "$FA" --out "$O/rg" --bin "$BIN" --threads "$T"
 [[ $ARMS != *" mode "* ]] || RUSTLE_MULTICOPY_EQ=0 run rustle_mode bash "$DR" multicopy --seed-pool good --bam "$O/x.bam" --fasta "$FA" --out "$O/rg" --bin "$BIN" --threads "$T"
 # the O2 extension: the mode's assembly, a locus kept only when the EM leaves it >= 2 reads (register 1905 / 1906)
-if [[ $ARMS == *" mode "* ]] && [ -s "$O/rg.multicopy.gtf" ]; then run rustle_mode_em python3 "$H/em_filter.py" "$O/rg.multicopy.gtf" "$O/x.bam" "$O/x.bam.as_table.tsv" "$O/rg.o2" --threads 8; fi
-if [[ $ARMS == *" primary "* ]] && [ -s "$O/rp.gtf" ]; then run rustle_primary_em python3 "$H/em_filter.py" "$O/rp.gtf" "$O/x.bam" "$O/x.bam.as_table.tsv" "$O/rp.o2" --threads 8; fi
+EMW=; [ "${O2_EM_WEIGHT:-1}" = 0 ] || EMW="--weighted ${O2_EM_WEIGHT:-1}"   # scores inside the EM, as stage o2 since 2026-11-23 (register 1921); O2_EM_WEIGHT=0 = counts-only
+if [[ $ARMS == *" mode "* ]] && [ -s "$O/rg.multicopy.gtf" ]; then run rustle_mode_em python3 "$H/em_filter.py" "$O/rg.multicopy.gtf" "$O/x.bam" "$O/x.bam.as_table.tsv" "$O/rg.o2" --threads 8 $EMW; fi
+if [[ $ARMS == *" primary "* ]] && [ -s "$O/rp.gtf" ]; then run rustle_primary_em python3 "$H/em_filter.py" "$O/rp.gtf" "$O/x.bam" "$O/x.bam.as_table.tsv" "$O/rp.o2" --threads 8 $EMW; fi
 # opt-in arm `mono` (row 1919): the mode with single-exon models rescued on family evidence, in a copy of the secondaries run
 if [[ $ARMS == *" mono "* ]] && [ -s "$O/rg.gtf" ]; then
   for x in gtf families.gtf molecules.tsv molecules.tsv.asbin; do [ ! -e "$O/rg.$x" ] || cp -p "$O/rg.$x" "$O/rgm.$x"; done
   RUSTLE_MULTICOPY_MONO=1 RUSTLE_MULTICOPY_EQ=0 run rustle_mode_mono bash "$DR" multicopy --seed-pool good --bam "$O/x.bam" --fasta "$FA" --out "$O/rgm" --bin "$BIN" --threads "$T"
-  [ ! -s "$O/rgm.multicopy.gtf" ] || run rustle_mode_mono_em python3 "$H/em_filter.py" "$O/rgm.multicopy.gtf" "$O/x.bam" "$O/x.bam.as_table.tsv" "$O/rgm.o2" --threads 8
+  [ ! -s "$O/rgm.multicopy.gtf" ] || run rustle_mode_mono_em python3 "$H/em_filter.py" "$O/rgm.multicopy.gtf" "$O/x.bam" "$O/x.bam.as_table.tsv" "$O/rgm.o2" --threads 8 $EMW
 fi
 if command -v stringtie > /dev/null; then run stringtie stringtie -L -p 8 -o "$O/stringtie.gtf" "$O/x.bam"; else say "stringtie not on PATH: arm skipped"; fi
 if [ -n "${O2_ISOQUANT_MANIFEST:-}" ]; then run isoquant pixi run --manifest-path "$O2_ISOQUANT_MANIFEST" isoquant -d pacbio_ccs --bam "$O/x.bam" --reference "$FA" -o "$O/iq" -p x -t 16; fi

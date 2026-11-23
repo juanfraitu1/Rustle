@@ -66,6 +66,9 @@
 #             --seed-pool good as `all` does -> PREFIX.multicopy.gtf), then the provenance test labels every locus by
 #             the EM over the tied reads (bench/o2_families/em_filter.py; rows 1905-1908): o2_status = expressed /
 #             shared / homology_only (under RUSTLE_O2_MIN_EM = 2 reads by EM) -> PREFIX.o2.gtf, PREFIX.o2.em.tsv.
+#             Since 2026-11-23 (user, register 1921) the alignment scores are inside that EM: every alignment
+#             within 10 ms of a read's best is a candidate with weight exp(-gap / RUSTLE_O2_EM_WEIGHT), default 1;
+#             RUSTLE_O2_EM_WEIGHT=0 = the counts-only EM of before (scores decide exact ties only).
 #             Nothing is dropped: a family member that is found stays available. RUSTLE_O2_DROP=1 drops the
 #             homology_only loci instead. Costs a second assembly at a floor of one read, a families run on the
 #             candidates and one BAM pass (gorilla OR6737: about 7 min). If it fails, the report is made on PREFIX.gtf
@@ -1656,7 +1659,8 @@ stage_o2() {
   # RUSTLE_O2_EXTEND=1: the multi-copy extension first (near-tied multimappers seed the copies, floor-1 rescue inside families)
   # then the provenance test (register 1905 / 1906): a locus keeps its transcripts only when the EM over the tied reads leaves
   # it >= RUSTLE_O2_MIN_EM (2) reads -> PREFIX.o2.gtf (+ PREFIX.o2.em.tsv). The stage's own tie tables are not needed for it.
-  # Default since 2026-11-22 (user: "lets readd it by default"); RUSTLE_O2_EXTEND=0 turns it off. A failure of the extension
+  # Default since 2026-11-22 (user: "lets readd it by default"); RUSTLE_O2_EXTEND=0 turns it off.
+  # RUSTLE_O2_EM_WEIGHT (default 1, user 2026-11-23, register 1921): alignment scores inside the EM; 0 = counts-only. A failure of the extension
   # is reported and leaves the family report on the base assembly: it never fails the stage (or `all`).
   local ext=${RUSTLE_O2_EXTEND:-1}
   if [ "$ext" = 1 ]; then
@@ -1664,7 +1668,7 @@ stage_o2() {
     local tab=$OUT.molecules.tsv; [ -s "$tab" ] || tab=$BAM.as_table.tsv
     if ! ( RUSTLE_MULTICOPY_EQ=${RUSTLE_MULTICOPY_EQ:-0} stage_multicopy ); then
       say "o2: the multi-copy extension FAILED (see $OUT.multicopy.log); the report is on $OUT.gtf"; ext=0
-    elif ! "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/../bench/o2_families/em_filter.py" "$OUT.multicopy.gtf" "$BAM" "$tab" "$OUT.o2.tmp" --min-em "${RUSTLE_O2_MIN_EM:-2}" $([ "${RUSTLE_O2_DROP:-0}" = 1 ] || echo --label) --threads "$JOB_THREADS" > "$OUT.o2.em.log" 2>&1; then
+    elif ! "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/../bench/o2_families/em_filter.py" "$OUT.multicopy.gtf" "$BAM" "$tab" "$OUT.o2.tmp" --min-em "${RUSTLE_O2_MIN_EM:-2}" $([ "${RUSTLE_O2_DROP:-0}" = 1 ] || echo --label) $([ "${RUSTLE_O2_EM_WEIGHT:-1}" = 0 ] || echo --weighted "${RUSTLE_O2_EM_WEIGHT:-1}") --threads "$JOB_THREADS" > "$OUT.o2.em.log" 2>&1; then
       say "o2: the provenance test FAILED (see $OUT.o2.em.log); the report is on $OUT.gtf"; rm -f "$OUT.o2.tmp".*; ext=0
     else
       mv -f "$OUT.o2.tmp.gtf" "$OUT.o2.gtf"; mv -f "$OUT.o2.tmp.em.tsv" "$OUT.o2.em.tsv"
