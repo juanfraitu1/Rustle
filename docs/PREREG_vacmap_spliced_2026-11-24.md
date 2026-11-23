@@ -103,3 +103,18 @@ User: "lets try the padded reads in vacmaps gene conversion mode". Arms P1R, P2R
 Predictions (mine): P1R picks the primary's locus on >= 90% of near ties and is NO GAIN (wrong >= 47); P2R picks the
 runner-up's locus on >= 70%. This mode cut pieces out of unpadded reads (554 of 600 on two or more loci), so I expect
 more records per read than in mode L and somewhat less obedience to the padding, not better placement.
+
+## Addendum 3, registered before running (2026-11-24): tuning VACmap's variation penalties
+User: "lets also try tuning the vacmap penalties". Source read first: `-globalpenalty` and `-localpenalty` are the cost
+of one jump of the chain (a "variation": an intron, or a move to another copy); mode L defaults 40 and 59.
+- Reads: the 18,297 decidable reads, unpadded, against the genome, `-mode L` (arm G is the default cell).
+- Grid: global in 20, 40, 80, 160, 320 x local in 30, 59, 120, 240 (20 cells).
+- Split by read name: sha256 of the name even = TUNING half, odd = JUDGING half (near ties and clear-lead reads alike).
+- Choice, on the tuning half only: the cell with the fewest wrong decidable near ties; ties by fewer wrong clear-lead
+  reads, then the cell nearest the defaults.
+- Verdict, on the judging half only, for the chosen cell: GAIN = near ties wrong <= two thirds of the primary's wrong
+  there (rounded down) AND clear-lead wrong <= primary + 3; NO GAIN = near ties wrong >= the primary's; else PARTIAL.
+- Reported: the whole grid on both halves.
+- Predictions (mine): fewer wrong with higher penalties (fewer jumps between copies), the chosen cell at or near the
+  top of the grid; NO GAIN on the judging half, still well above the primary's wrong count, because a high jump cost
+  also makes introns expensive.
