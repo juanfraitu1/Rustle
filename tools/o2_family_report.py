@@ -8,6 +8,9 @@ transcripts, distinct intron chains (isoforms) and reads. With --eq (stage `eqcl
 PREFIX.multicopy.eq.loci.tsv) also the reads placed on one copy alone, the tie groups and the range of copies the reads
 can show expressed (copies with >= 2 placed reads .. copies with any read). No read is assigned to a copy.
 Writes OUT_PREFIX.families.tsv (one row per family) and OUT_PREFIX.copies.tsv (one row per copy).
+--sequences PREFIX.o2.sequences.tsv (register 1926, bench/o2_families/recurrence_test.py): adds the column tied_sequences =
+the distinct sequences (per isoform) the reads show among copies they are exactly tied between, counted at the copy the
+tied reads were read at; in the family row their sum. A count of sequences, not of copies: two alleles of one copy are two.
 The same question for several tools, with planted truth: bench/o2_families/ (docs/O2_FAMILY_BENCHMARK.md).
 --selftest runs the pure parts."""
 import sys, re, csv, collections
@@ -33,7 +36,7 @@ def load_gtf(path):
         if len(e) > 1: d['spliced'] += 1; d['chains'].add(tuple((a[1], b[0]) for a, b in zip(e, e[1:])))
     return out
 
-def report(genes, copies, eq=None):
+def report(genes, copies, eq=None, sq=None):
     """copies: rows of fam.copies.tsv (dicts). -> family rows, copy rows"""
     fam = collections.defaultdict(list); seen = set()
     for r in copies:
@@ -41,7 +44,7 @@ def report(genes, copies, eq=None):
         if k not in seen: seen.add(k); fam[r['family_id']].append(r)
     F, C = [], []
     for f in sorted(fam, key=lambda f: (-len(fam[f]), f)):
-        tx = sp = iso = 0; reads = 0.0; chroms = set(); names = set(); placed = mx = 0; groups = set(); lo = hi = 0
+        nsq = 0; tx = sp = iso = 0; reads = 0.0; chroms = set(); names = set(); placed = mx = 0; groups = set(); lo = hi = 0
         for r in fam[f]:
             g = genes.get(r['gene_id'], {'tx': 0, 'spliced': 0, 'chains': set(), 'reads': 0.0, 'name': '.'})
             e = (eq or {}).get(r['gene_id'])
@@ -53,9 +56,11 @@ def report(genes, copies, eq=None):
                 placed += p; mx += m; lo += p >= 2; hi += m > 0
                 if e and e['group'] != '.': groups.add(e['group'])
                 row += [p, m, e['em'] if e else '0.0', e['group'] if e else '.']
+            if sq is not None: row.append(sq.get(r['gene_id'], 0)); nsq += sq.get(r['gene_id'], 0)
             C.append(row)
         row = [f, len(fam[f]), sp, tx, iso, f'{reads:g}', len(chroms), ','.join(sorted(names)) or '.']
         if eq is not None: row += [placed, len(groups), max(1, lo) if hi else 0, hi]
+        if sq is not None: row.append(nsq)
         F.append(row)
     return F, C
 
@@ -76,6 +81,8 @@ def selftest():
     eq = {'A': dict(placed='5', max='9', em='6.5', group='G1'), 'B': dict(placed='0', max='4', em='2.5', group='G1')}
     F, C = report(g, cp, eq)
     assert F[0][8:] == [5, 1, 1, 2] and C[0][10:] == [5, 9, '6.5', 'G1'] and C[2][10:] == [0, 0, '0.0', '.'], (F, C)
+    F, C = report(g, cp, None, {'A': 3})
+    assert F[0][-1] == 3 and C[0][-1] == 3 and C[1][-1] == 0, (F, C)
     print('o2_family_report selftest ok')
 
 def main():
@@ -83,11 +90,14 @@ def main():
     if '--selftest' in a: return selftest()
     eqp = None
     if '--eq' in a: i = a.index('--eq'); eqp = a[i + 1]; del a[i:i + 2]
+    sqp = None
+    if '--sequences' in a: i = a.index('--sequences'); sqp = a[i + 1]; del a[i:i + 2]
     gtf, cop, out = a
+    sq = collections.Counter(r['read_at'] for r in csv.DictReader(open(sqp), delimiter='\t')) if sqp else None
     eq = {r['locus']: r for r in csv.DictReader(open(eqp), delimiter='\t')} if eqp else None
-    F, C = report(load_gtf(gtf), list(csv.DictReader(open(cop), delimiter='\t')), eq)
-    fh = 'family_id\tcopies\tcopies_spliced\ttranscripts\tisoforms\treads\tchroms\tnames' + ('\treads_placed\ttie_groups\tmin_expressed\tmax_expressed' if eq is not None else '')
-    ch = 'family_id\tgene_id\tchrom\tstart\tend\tstrand\tname\ttranscripts\tisoforms\treads' + ('\treads_placed\treads_max\treads_em\ttie_group' if eq is not None else '')
+    F, C = report(load_gtf(gtf), list(csv.DictReader(open(cop), delimiter='\t')), eq, sq)
+    fh = 'family_id\tcopies\tcopies_spliced\ttranscripts\tisoforms\treads\tchroms\tnames' + ('\treads_placed\ttie_groups\tmin_expressed\tmax_expressed' if eq is not None else '') + ('\ttied_sequences' if sq is not None else '')
+    ch = 'family_id\tgene_id\tchrom\tstart\tend\tstrand\tname\ttranscripts\tisoforms\treads' + ('\treads_placed\treads_max\treads_em\ttie_group' if eq is not None else '') + ('\ttied_sequences' if sq is not None else '')
     for p, h, rows in ((out + '.families.tsv', fh, F), (out + '.copies.tsv', ch, C)):
         with open(p + '.tmp', 'w') as w: w.write(h + '\n'); w.writelines('\t'.join(map(str, r)) + '\n' for r in rows)
         __import__('os').replace(p + '.tmp', p)

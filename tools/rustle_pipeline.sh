@@ -69,6 +69,9 @@
 #             Since 2026-11-23 (user, register 1921) the alignment scores are inside that EM: every alignment
 #             within 10 ms of a read's best is a candidate with weight exp(-gap / RUSTLE_O2_EM_WEIGHT), default 1;
 #             RUSTLE_O2_EM_WEIGHT=0 = the counts-only EM of before (scores decide exact ties only).
+#             RUSTLE_O2_SEQUENCES=1 (opt-in, register 1926; needs --fasta): how many distinct sequences the tied reads
+#             show among copies the reference cannot separate (IsoCon's test on genome alignments) ->
+#             PREFIX.o2.sequences.tsv and the report column tied_sequences. Sequences, not copies: alleles count.
 #             Nothing is dropped: a family member that is found stays available. RUSTLE_O2_DROP=1 drops the
 #             homology_only loci instead. Costs a second assembly at a floor of one read, a families run on the
 #             candidates and one BAM pass (gorilla OR6737: about 7 min). If it fails, the report is made on PREFIX.gtf
@@ -1673,15 +1676,25 @@ stage_o2() {
     else
       mv -f "$OUT.o2.tmp.gtf" "$OUT.o2.gtf"; mv -f "$OUT.o2.tmp.em.tsv" "$OUT.o2.em.tsv"
       say "o2: $(tail -1 "$OUT.o2.em.log" | sed 's/ -> .*//') -> $OUT.o2.gtf"
+      # RUSTLE_O2_SEQUENCES=1 (opt-in, register 1926): IsoCon's test on the tied reads of each group of copies the reference
+      # cannot separate -> PREFIX.o2.sequences.tsv and the column tied_sequences of the report. Never fails the stage.
+      rm -f "$OUT.o2.sequences.tsv"
+      if [ "${RUSTLE_O2_SEQUENCES:-0}" = 1 ]; then
+        if [ ! -s "${FASTA:-}" ]; then say "o2: RUSTLE_O2_SEQUENCES needs --fasta; skipped"
+        elif ! "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/../bench/o2_families/recurrence_test.py" "$OUT.multicopy.gtf" "$BAM" "$tab" "$FASTA" "$OUT.o2.sequences.tsv" --threads "$JOB_THREADS" > "$OUT.o2.sequences.log" 2>&1; then
+          say "o2: the sequence test FAILED (see $OUT.o2.sequences.log); the report has no tied_sequences column"; rm -f "$OUT.o2.sequences.tsv" "$OUT.o2.sequences.tsv.tmp"
+        else say "o2: $(tail -1 "$OUT.o2.sequences.log" | sed 's/ -> .*//') -> $OUT.o2.sequences.tsv"; fi
+      fi
     fi
   fi
   local gtf=${FAM_GTF:-$OUT.gtf}; [ -s "$gtf" ] || gtf=$OUT.gtf
   [ -s "$gtf" ] && [ -s "$OUT.fam.copies.tsv" ] || { echo "[rustle_pipeline] o2 needs $OUT.gtf and $OUT.fam.copies.tsv (run assemble and families first)" >&2; exit 2; }
   local eqs=("$OUT.eq.loci.tsv" "$OUT.multicopy.eq.loci.tsv")
   if [ "$ext" = 1 ] && [ -s "$OUT.o2.gtf" ]; then gtf=$OUT.o2.gtf; eqs=("$OUT.multicopy.eq.loci.tsv" "$OUT.eq.loci.tsv"); fi
+  local sqa=(); if [ "$ext" = 1 ] && [ -s "$OUT.o2.sequences.tsv" ]; then sqa=(--sequences "$OUT.o2.sequences.tsv"); fi
   local eq=(); local e; for e in "${eqs[@]}"; do
     if [ -s "$e" ] && [ ! "$e" -ot "$OUT.fam.copies.tsv" ]; then eq=(--eq "$e"); break; fi; done
-  "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/o2_family_report.py" "$gtf" "$OUT.fam.copies.tsv" "$OUT.o2" "${eq[@]}" > "$OUT.o2.log" 2>&1 \
+  "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/o2_family_report.py" "$gtf" "$OUT.fam.copies.tsv" "$OUT.o2" "${eq[@]}" "${sqa[@]}" > "$OUT.o2.log" 2>&1 \
     || { echo "[rustle_pipeline] o2 failed (see $OUT.o2.log)" >&2; exit 1; }
   say "$(tail -1 "$OUT.o2.log") -> $OUT.o2.families.tsv, $OUT.o2.copies.tsv${eq:+ (with tie groups from ${eq[1]})}"
 }

@@ -1,7 +1,8 @@
 # Multi-copy mode: assembling the copies of known gene families
 
 ## Current state
-(2026-11-23) The mode is the O2 stage of the default pipeline (user, 2026-11-22; committed 074557f7):
+(2026-11-23, evening) The mode is the O2 stage of the default pipeline (user, 2026-11-22; committed 074557f7; the
+labels' EM carries the alignment scores since e09fbf02; the sequence count of row 1926 is an opt-in):
 
 ```
 tools/rustle_pipeline.sh all --bam B --fasta G --out PREFIX          # assemble (--seed-pool good), families, o2, flag
@@ -12,6 +13,8 @@ Stage `o2` runs stage `multicopy` (near-tie secondaries seed the family copies, 
 `PREFIX.multicopy.gtf`, rescued transcripts tagged `multicopy_rescue "1"`, `PREFIX.multicopy.tsv`), then the provenance
 labels (`o2_status` expressed / shared / homology_only from the EM over the tied reads; nothing dropped) ->
 `PREFIX.o2.gtf`, `PREFIX.o2.em.tsv`, then the family report `PREFIX.o2.families.tsv`, `PREFIX.o2.copies.tsv`.
+`RUSTLE_O2_SEQUENCES=1` (opt-in, register 1926) adds `PREFIX.o2.sequences.tsv` and the report column `tied_sequences`
+(IsoCon's test ported to the genome alignments of the tied reads; sequences, not copies: alleles count).
 `RUSTLE_O2_EXTEND=0` turns the extension off; `RUSTLE_O2_DROP=1` drops the homology_only loci; `RUSTLE_O2_EM_WEIGHT=0`
 puts the labels back on the counts-only EM (default since 2026-11-23, register 1921: scores inside the EM); `PREFIX.gtf` is never
 changed. `multicopy` can still be called alone; with `RUSTLE_MULTICOPY_EQ=1` it also writes tie-adjusted counts and
@@ -218,14 +221,45 @@ Not supported:
   annotated exon 13% of the time against 56% for the default's single-exon models. Family membership does not pick out
   real single-exon genes. `PREREG_mono_family_rescue_2026-11-23.md`.
 - Pairwise decisive-read verdicts (`tools/copy_verdicts.py`, row 1904): 42 -> 40 false copies; the joint EM test is used.
+- Restoring the single-exon models a primaries-only assembly passes (row 1920, `multicopy_rescue.py mono_primary`):
+  closes the planted gap (119 of 147 against 98), but real libraries have almost nothing to restore (OR6737 one model;
+  A119b 224, 6 annotated). Not built. The single-exon gap to FLAIR on planted reads is a benchmark figure.
+- Overruling minimap2's choice from the read itself (rows 1922, 1923): its wrong calls are exact ties identical in
+  every tag; error-aware re-scoring moves nothing on KB3781 and harms HG002. Closed.
+- A variant counter of my own (`sample_psv.py`, row 1924) and running IsoCon on the tied groups (`isocon_groups.sh`,
+  row 1925): superseded by the ported test of row 1926.
 
 ## Open
-- Isoform precision with near-tie secondaries; single-exon copies inside families; the EM test's one to two units.
-- A PSV catalogue from an alignment of the copies (with indels); the base-level verdicts as an output of the stage.
-- A planted set whose sample differs from the reference; one unused real testis sample for the final code.
-- The 47 minutes of the tie-count step on a human sample (off inside `o2`); the extension's own run time on human.
+- The sequence count (`RUSTLE_O2_SEQUENCES=1`) on real reads: HiFi errors, no truth; alleles against copies (row 1927);
+  a sample that lacks or gains a copy.
+- Isoform precision with near-tie secondaries; strongly supported non-canonical junctions; the EM test's one to two
+  units and its brittleness at two-read loci on real data.
+- One unused real testis sample for the final code; the extension's run time on human (A119b three pools: 2.4 h).
 - Known error: `DN_chr5_17456902_1`, a 113 kb single-exon model over the TAF11L array made by near-tie secondaries (row 1881).
-- Uncommitted since 074557f7: ragged ends in `plant.py`, `member_discovery.py` rebuilt, `related_gtf.py`, rows 1913-1918.
+
+## Alignment scores inside the EM (row 1921, 2026-11-23): confirmed, small, the default
+The default EM of the labels is counts-only: the `ms` scores decide which loci a read is exactly tied between, and a read
+with a unique best is placed outright. `em_filter.py --weighted 1` makes every alignment within 10 `ms` a candidate with
+weight exp(-gap) and lets abundance x weight share the read. On planted human families it removes one silent unit wrongly
+labelled `expressed` per run on average (five seeds 23 -> 21 mislabelled silent units, three unseen seeds 12 -> 9) and
+changes no expressed unit, the 10-fold unequal-expression scenario included; gorilla unchanged. A softer weight (T = 5)
+demotes real expressed units and is rejected. What it does not touch: silent units labelled `shared`, which are exact
+ties over the whole read. DEFAULT of stage `o2` since 2026-11-23 (user); `RUSTLE_O2_EM_WEIGHT=0` = the counts-only EM
+(benchmark runner: `O2_EM_WEIGHT`). Planted results quoted before this date used the counts-only EM.
+On real gorilla OR6737 (no truth) it changes 18 of 18,868 `expressed` loci to `homology_only`, all with 1-4 reads; a
+locus with exactly two reads and a similar relative one substitution away is where it is brittle.
+`PREREG_weighted_em_2026-11-23.md`.
+
+## Sequences among copies the reference cannot separate (row 1926, opt-in)
+`RUSTLE_O2_SEQUENCES=1` runs `bench/o2_families/recurrence_test.py` on the stage's assembly, BAM and score table:
+loci joined by exactly tied reads form a group; its tied reads are read at loci of the group, split by intron chain;
+differences from the reference that recur are candidate sequences; IsoCon's statistical test (reads carrying every
+separating variant, per-read error probabilities, Raghavan's bound, iterative merge at 0.01) decides which are real.
+-> `PREFIX.o2.sequences.tsv` and the column `tied_sequences` of the report. On planted samples with per-copy variants
+the count is exact in 0.80 of (unit, isoform) cells on unseen seeds, against 0.57 for IsoCon on the same groups and
+0.50 for the best constant; with no variants it never over-counts. It counts sequences: two alleles of one copy are two
+(row 1927), and it never says which copy. Real OR6737: 392 sequences at 194 loci, 116 of 379 families.
+`PREREG_isocon_port_2026-11-23.md`.
 
 ## Where things are (Fritz workspace `/anvme/workspace/v138da13-rustle`)
 | row | directory | what |
@@ -255,22 +289,3 @@ Not supported:
 | 1909, 1910, 1913-1915 | `r1909_silent_members`, `r1910_member_discovery`, `r1913_members_real`, `r1914_read_relatedness`, `r1915_members_blocks` | silent relatives, the member layer |
 | 1916-1918 | `r1916_isoform_loss`, `r1917_ragged_reads`, `r1918_rerun_ragged` | the read-end artefact and the corrected reruns |
 | - | `annot_related` | relatedness annotation of CHM13, NCBI gene_group |
-
-### Restoring the primaries' single-exon models (row 1920, 2026-11-23): not built
-Adding to the mode the single-exon models a primaries-only assembly passes closes the planted gap (119 of 147 against the
-mode's 98 and the primaries' 120; silent called 5 against FLAIR's 10) but on real libraries there is almost nothing to
-restore: one model on OR6737, 224 on A119b of which 6 are annotated (0.027, bar 0.058: the registered claim fails).
-The single-exon gap to FLAIR on planted reads is a benchmark figure, not lost genes. `PREREG_mono_family_rescue_2026-11-23.md`.
-
-### Alignment scores inside the EM (row 1921, 2026-11-23): confirmed, small, opt-in
-The default EM of the labels is counts-only: the `ms` scores decide which loci a read is exactly tied between, and a read
-with a unique best is placed outright. `em_filter.py --weighted 1` makes every alignment within 10 `ms` a candidate with
-weight exp(-gap) and lets abundance x weight share the read. On planted human families it removes one silent unit wrongly
-labelled `expressed` per run on average (five seeds 23 -> 21 mislabelled silent units, three unseen seeds 12 -> 9) and
-changes no expressed unit, the 10-fold unequal-expression scenario included; gorilla unchanged. A softer weight (T = 5)
-demotes real expressed units and is rejected. What it does not touch: silent units labelled `shared`, which are exact
-ties over the whole read. DEFAULT of stage `o2` since 2026-11-23 (user); `RUSTLE_O2_EM_WEIGHT=0` = the counts-only EM
-(benchmark runner: `O2_EM_WEIGHT`). Planted results quoted before this date used the counts-only EM.
-On real gorilla OR6737 (no truth) it changes 18 of 18,868 `expressed` loci to `homology_only`, all with 1-4 reads; a
-locus with exactly two reads and a similar relative one substitution away is where it is brittle.
-`PREREG_weighted_em_2026-11-23.md`.

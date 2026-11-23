@@ -13,6 +13,9 @@ reads go 2 : 1 to its first and second isoform.
 --private RATE (register 1924; default 0 = the sample is the reference): every copy gets its own variants at RATE per
 exonic base (80% substitutions, 10% one-base deletions, 10% one-base insertions), by genome position so its isoforms
 share them; the reads come from that sequence. Writes sample.fa (the sample's transcripts) and private.tsv.
+--het RATE (register 1927; needs --private > 0): every copy gets a second allele = its private variants plus heterozygous
+ones at RATE; each read is drawn from one of the two alleles at random (read index ends in .h2 for the second).
+Writes sample.h2.fa and het.tsv.
 Scenarios (per family, drawn with --seed):
   E  every copy --reads reads
   D  one copy 10 x --reads, the others --reads / 3
@@ -131,7 +134,7 @@ def main():
     ap.add_argument('--scenarios', default='E,D,S'); ap.add_argument('--reads', type=int, default=60); ap.add_argument('--isoforms', type=int, default=2)
     ap.add_argument('--seed', type=int, default=1903); ap.add_argument('--sub', type=float, default=0.001); ap.add_argument('--ins', type=float, default=0.002)
     ap.add_argument('--dele', type=float, default=0.002); ap.add_argument('--full', type=float, default=0.7); ap.add_argument('--ragged', type=int, default=20)
-    ap.add_argument('--private', type=float, default=0.0, metavar='RATE')
+    ap.add_argument('--private', type=float, default=0.0, metavar='RATE'); ap.add_argument('--het', type=float, default=0.0, metavar='RATE')
     a = ap.parse_args()
     if a.from_run:
         if len(a.pos) != 2: ap.error('--from-run GTF COPIES GENOME.fa OUTDIR')
@@ -155,6 +158,7 @@ def main():
             elif f[2] == 'exon' and at['Parent'] in t2g: tx[t2g[at['Parent']]][at['Parent']].append((int(f[3]), int(f[4])))
         FA = pysam.FastaFile(a.genome)
     rng = random.Random(a.seed); os.makedirs(a.out, exist_ok=True)
+    seqs2 = {}; het = {}; hrng = random.Random(a.seed * 104729 + 3)     # --het: streams of their own
     iso, seqs = {}, {}; priv = {}; prng = random.Random(a.seed * 7919 + 1)      # --private: a stream of its own, the read draws are unchanged
     with open(f'{a.out}/loci.gtf', 'w') as w:
         for g in sorted(tx):
@@ -172,6 +176,16 @@ def main():
                                 pv[pos] = None if u >= a.private else ('S' + prng.choice([z for z in 'ACGT' if z != b0])) if u < a.private * 0.8 else 'D' if u < a.private * 0.9 else 'I' + prng.choice('ACGT')
                             v = pv[pos]
                             o.append(s[i] if v is None else v[1] if v[0] == 'S' else '' if v == 'D' else s[i] + v[1]); i += 1
+                    if a.het > 0:          # the copy's second allele: its private variants plus heterozygous ones of its own
+                        hv = het.setdefault(g, {}); o2 = []; i = 0
+                        for x, y in ex:
+                            for pos in range(x, y + 1):
+                                if pos not in hv:
+                                    u = hrng.random(); b0 = s[i]
+                                    hv[pos] = None if (u >= a.het or pv[pos] is not None) else ('S' + hrng.choice([z for z in 'ACGT' if z != b0])) if u < a.het * 0.8 else 'D' if u < a.het * 0.9 else 'I' + hrng.choice('ACGT')
+                                v = hv[pos]
+                                o2.append(o[i] if v is None else v[1] if v[0] == 'S' else '' if v == 'D' else s[i] + v[1]); i += 1
+                        s2 = ''.join(o2); seqs2[t] = s2[::-1].translate(COMP) if st == '-' else s2
                     s = ''.join(o)
                 seqs[t] = s[::-1].translate(COMP) if st == '-' else s
                 at = f'gene_id "{g}"; transcript_id "{t}"; family "{members[g]}"; ref_gene_name "{G[g]["name"]}";'
@@ -180,6 +194,14 @@ def main():
     if a.private > 0:
         with open(f'{a.out}/sample.fa', 'w') as w:
             for t in sorted(seqs): w.write(f'>{t}\n{seqs[t]}\n')
+        if a.het > 0:
+            with open(f'{a.out}/sample.h2.fa', 'w') as w:
+                for t in sorted(seqs2): w.write(f'>{t}\n{seqs2[t]}\n')
+            with open(f'{a.out}/het.tsv', 'w') as w:
+                w.write('copy\tposition\tvariant\n')
+                for g in sorted(het):
+                    for pos in sorted(het[g]):
+                        if het[g][pos] is not None: w.write(f'{g}\t{pos}\t{het[g][pos]}\n')
         with open(f'{a.out}/private.tsv', 'w') as w:
             w.write('copy\tposition\tvariant\n')
             for g in sorted(priv):
@@ -200,7 +222,8 @@ def main():
             for g in sorted(per[sc]):
                 for t, k in per[sc][g].items():
                     for i in range(k):
-                        s = mutate(seqs[t], rng, a.sub, a.ins, a.dele, a.full, a.ragged); nm = f'{sc}|{g}|{t}|{i}'; n += 1
+                        h2 = t in seqs2 and hrng.random() < 0.5
+                        s = mutate(seqs2[t] if h2 else seqs[t], rng, a.sub, a.ins, a.dele, a.full, a.ragged); nm = f'{sc}|{g}|{t}|{i}' + ('.h2' if h2 else ''); n += 1
                         q.write(f'@{nm}\n{s}\n+\n{"I" * len(s)}\n'); tr.write(f'{nm}\t{g}\t{t}\n')
         print(sc, 'copies', len(per[sc]), 'silent', sum(1 for g in plan[sc] if plan[sc][g] == 0), 'reads', n)
 

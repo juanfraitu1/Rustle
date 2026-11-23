@@ -5,8 +5,11 @@ The three lines of the goal are now outputs of the default pipeline (`all` -> st
 `MULTICOPY_MODE.md`): copies the reads separate are labelled `expressed`; copies they cannot separate are labelled
 `shared` and scored as one unit; copies reached only by reads better explained elsewhere are labelled `homology_only`
 instead of being given expression. Measured on planted reads of known origin (the simulation this goal asked for): fewest
-false units of any tool (3 against 9-16), most isoforms reproduced, most members available. Not yet done: the same
-measure on own-haplotype truth (HG002, KB3781), and a planted sample that differs from the reference.
+false units of any tool (3 against 9-16), most isoforms reproduced, most members available. Since 2026-11-23 a planted
+sample that differs from the reference exists (`plant.py --private`, `--het`), and for the goal's second line ("one
+transcript per copy set where the reads cannot separate the copies") there is a count of the distinct sequences such a
+set expresses (IsoCon's test ported, register 1926, opt-in). Not yet done: the same measures on own-haplotype truth
+(HG002, KB3781) at the transcript level, and telling alleles from copies (register 1927).
 
 ## The goal
 For every multi-copy family, decide from the reads alone whether its copies can be separated, and assemble at that

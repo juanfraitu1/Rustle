@@ -50,6 +50,30 @@ def haplotypes(reads, min_reads, min_share):
         else: haps.append([dict(vec[q]), [q]])
     return sites, [h[1] for h in haps]
 
+def tie_groups(gtf, bam, tab, threads=8):
+    """-> meta, {read: loci it is exactly tied between}, {group: loci}, {group: tied reads}; a group = loci joined by tied reads"""
+    import pysam
+    meta, E.G_GEX = E.load_loci(gtf)
+    E.G_FLOOR = E.floor_fn(10); E.G_BAM, E.G_TAG, E.G_TIES = bam, 'ms', E.load_ties(tab, E.G_FLOOR, 'ms')
+    with multiprocessing.get_context('fork').Pool(threads) as pool:
+        res = pool.map(E.scan, list(pysam.AlignmentFile(bam).references), chunksize=1)
+    sets = collections.defaultdict(set)
+    for _, pairs, _ in res:
+        for q, g, exact, *x in pairs:
+            if exact and g != E.OUTSIDE: sets[q].add(g)
+    parent = {}
+    def find(x):
+        while parent.setdefault(x, x) != x: parent[x] = parent[parent[x]]; x = parent[x]
+        return x
+    for s in sets.values():
+        if len(s) > 1:
+            s = sorted(s)
+            for y in s[1:]: parent[find(y)] = find(s[0])
+    groups = collections.defaultdict(set); gr = collections.defaultdict(set)
+    for q, s in sets.items():
+        if len(s) > 1: k = find(next(iter(s))); groups[k] |= s; gr[k].add(q)
+    return meta, sets, groups, gr
+
 def selftest():
     bl = [(0, 100)]; R = {}
     for i in range(10): R[f'a{i}'] = ({(10, 'S', 'T')}, bl)
@@ -70,25 +94,7 @@ def main():
     ap.add_argument('--min-reads', type=int, default=3); ap.add_argument('--min-share', type=float, default=0.1); ap.add_argument('--threads', type=int, default=8)
     a = ap.parse_args()
     import pysam
-    meta, E.G_GEX = E.load_loci(a.gtf)
-    E.G_FLOOR = E.floor_fn(10); E.G_BAM, E.G_TAG, E.G_TIES = a.bam, 'ms', E.load_ties(a.tab, E.G_FLOOR, 'ms')
-    with multiprocessing.get_context('fork').Pool(a.threads) as pool:
-        res = pool.map(E.scan, list(pysam.AlignmentFile(a.bam).references), chunksize=1)
-    sets = collections.defaultdict(set)
-    for _, pairs, _ in res:
-        for q, g, exact, *x in pairs:
-            if exact and g != E.OUTSIDE: sets[q].add(g)
-    parent = {}
-    def find(x):
-        while parent.setdefault(x, x) != x: parent[x] = parent[parent[x]]; x = parent[x]
-        return x
-    for s in sets.values():
-        if len(s) > 1:
-            s = sorted(s)
-            for y in s[1:]: parent[find(y)] = find(s[0])
-    groups = collections.defaultdict(set); gr = collections.defaultdict(set)
-    for q, s in sets.items():
-        if len(s) > 1: k = find(next(iter(s))); groups[k] |= s; gr[k].add(q)
+    meta, sets, groups, gr = tie_groups(a.gtf, a.bam, a.tab, a.threads)
     B = pysam.AlignmentFile(a.bam)
     with open(a.out + '.tmp', 'w') as w:
         w.write('group\tloci\tread_at\ttied_reads\tread_there\tsites\thaplotypes\tsizes\treads\n')
