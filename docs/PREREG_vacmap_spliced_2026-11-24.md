@@ -1,7 +1,7 @@
 # PREREG: VACmap on Iso-Seq reads, against the genome and against isoform sequences (row 1936, 2026-11-24)
 
 ## Current state
-Run 2026-11-24 (job 4499072, 13 min): NO GAIN on every arm. Outcome at the end.
+Run 2026-11-24 (job 4499072, 13 min): NO GAIN on every arm, the padded-read addendum included (job 4499085). Outcomes at the end.
 
 User (2026-11-24): the advisor asked for VACmap as well; "we both know it does not work with spliced alignment but what if
 we can force it, maybe an option in vacmap or what if we extracted the loci with all isoforms". Written before any VACmap
@@ -87,3 +87,12 @@ the filled-in introns come from the copy minimap2 chose and pull the read back t
   placement is decided by the padding, not by the read.
 - Predictions (mine): P1 repeats the primary on >= 95% of near ties (about 553 / 47, NO GAIN); P2 picks the runner-up's
   locus on >= 80% of them, so its right count collapses except where the runner-up is the origin.
+
+### Outcome of the addendum (job 4499085, 8 min; `r1936_vacmap_tbc1d3/{P1,P2}.score.txt`, `pad.py`)
+- P1 (padded along the primary, 18,297 reads): near ties 546 right / 54 wrong (fixes 1, breaks 8), the primary's locus on
+  591 of 600; clear-lead reads 26 wrong (primary 18). NO GAIN. TBC1D3 36 reads: 16 / 20, all 36 at the primary's locus.
+- P2 (padded along the best record at another locus, 15,129 reads): near ties 84 / 516; it picks the runner-up's locus
+  on 522 of 597 (87%) and the primary's on 45. Clear-lead reads: runner-up 8,179 of 14,428 (57%), primary 5,408.
+- Both predictions held (>= 95% and >= 80%). Reading: the reference introns decide where a padded read goes; on a near
+  tie the read's own bases overrule them for 9 reads (P1) to 75 reads (P2) of 600. The padding cannot add information
+  about the read's origin. `-mode R` on padded reads not run.
