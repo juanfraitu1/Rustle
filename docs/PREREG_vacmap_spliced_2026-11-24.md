@@ -71,3 +71,19 @@ not place these reads better; it says nothing about its use on DNA.
   alignment with minimap2 itself (TM), so the reference costs more than it gives; VACmap adds its own loss by spreading
   a read over copies. Closes VACmap as released for these reads. Not tried: tuned penalties (`-globalpenalty`,
   `-localpenalty`); a pick rule other than "most aligned bases".
+
+## Addendum, registered before running (2026-11-24): reads padded with introns
+User, after the outcome above: "my idea was to extract the full locus that spans all isoforms and extract that including
+introns, then align that to genome"; asked where the locus sequence comes from, chose: each read turned into a DNA-like
+sequence, its exons with the reference intron sequence filled in between, aligned to the genome by VACmap. Told beforehand:
+the filled-in introns come from the copy minimap2 chose and pull the read back to it.
+- Arm P1: every decidable read of the table rebuilt along its minimap2 primary record (read bases at match, insertion and
+  clip columns; CHM13 sequence at every `N`), `vacmap -mode L` against the genome. Reads whose padded length exceeds
+  500 kb are left out and count as unaligned.
+- Arm P2 (the control for the caveat): the same read rebuilt along its best-AS record at ANOTHER locus (not overlapping
+  the primary's), for the reads that have one.
+- Pick and bars as above (GAIN = wrong <= 31 of the 600 decidable near ties, with the guard). Read beside the bar: the
+  share of near ties where P1 picks the primary's locus and where P2 picks the runner-up's locus. If both are high, the
+  placement is decided by the padding, not by the read.
+- Predictions (mine): P1 repeats the primary on >= 95% of near ties (about 553 / 47, NO GAIN); P2 picks the runner-up's
+  locus on >= 80% of them, so its right count collapses except where the runner-up is the origin.
