@@ -254,3 +254,9 @@ Not supported:
 | 1909, 1910, 1913-1915 | `r1909_silent_members`, `r1910_member_discovery`, `r1913_members_real`, `r1914_read_relatedness`, `r1915_members_blocks` | silent relatives, the member layer |
 | 1916-1918 | `r1916_isoform_loss`, `r1917_ragged_reads`, `r1918_rerun_ragged` | the read-end artefact and the corrected reruns |
 | - | `annot_related` | relatedness annotation of CHM13, NCBI gene_group |
+
+### Restoring the primaries' single-exon models (row 1920, 2026-11-23): not built
+Adding to the mode the single-exon models a primaries-only assembly passes closes the planted gap (119 of 147 against the
+mode's 98 and the primaries' 120; silent called 5 against FLAIR's 10) but on real libraries there is almost nothing to
+restore: one model on OR6737, 224 on A119b of which 6 are annotated (0.027, bar 0.058: the registered claim fails).
+The single-exon gap to FLAIR on planted reads is a benchmark figure, not lost genes. `PREREG_mono_family_rescue_2026-11-23.md`.

@@ -66,6 +66,25 @@ def candidates(base, floor1, out, mono=False):
             for l in L: w.write(l.replace('gene_id "', 'gene_id "MC_', 1).replace('transcript_id "', 'transcript_id "MC_', 1))
     return n
 
+def mono_primary(base, primary, out):
+    """BASE + the single-exon transcripts of PRIMARY (the primaries-only assembly of the same reads) at places BASE has no
+    transcript on that strand, tagged mono_primary "1" (row 1920). Near-tie secondaries inflate the read counts the
+    single-exon floor is taken from; these are the single-exon models that floor passes when it is not inflated."""
+    sp = spans(base); n = 0
+    with open(out, 'w') as w:
+        w.write(open(base).read())
+        for t, L in by_transcript(primary).items():
+            ex = [l.split('\t') for l in L if l.split('\t')[2] == 'exon']
+            if len(ex) != 1: continue
+            a, b = int(ex[0][3]), int(ex[0][4]); st = ex[0][6]
+            if occupied(sp, ex[0][0], st, a, b) or (st not in '+-' and (occupied(sp, ex[0][0], '+', a, b) or occupied(sp, ex[0][0], '-', a, b))): continue
+            n += 1
+            for l in L:
+                l = l.replace('gene_id "', 'gene_id "MP_', 1).replace('transcript_id "', 'transcript_id "MP_', 1)
+                if l.split('\t')[2] == 'transcript': l = l.rstrip('\n').rstrip().rstrip(';') + '; mono_primary "1";\n'
+                w.write(l)
+    return n
+
 def select(base, cand, copies, out, table):
     L = [l.rstrip('\n').split('\t') for l in open(copies)]; h = {c: i for i, c in enumerate(L[0])}
     fam = collections.defaultdict(set); of = {}
@@ -132,6 +151,8 @@ def selftest():
         assert candidates(p('b.gtf'), p('f.gtf'), p('cm.gtf'), mono=True) == 4 and 'MC_G4.1' in open(p('cm.gtf')).read()
         open(p('km.tsv'), 'w').write('family_id\tcopy_idx\tgene_id\nF0\t0\tG1\nF0\t1\tMC_G4\n'); assert select(p('b.gtf'), p('cm.gtf'), p('km.tsv'), p('om.gtf'), p('om.tsv')) == (1, 1) and 'multicopy_rescue "mono"' in open(p('om.gtf')).read()
         ids = set(TID.findall(open(p('c.gtf')).read())); assert ids == {'MC_G2.1', 'MC_G3.1', 'MC_G5.1'}, ids
+        open(p('pr.gtf'), 'w').write(tx('c1', '+', 'P1', 'P1.1', [(120, 180)]) + tx('c1', '+', 'P2', 'P2.1', [(7000, 7300)]) + tx('c1', '+', 'P3', 'P3.1', [(8000, 8100), (8200, 8300)]))
+        assert mono_primary(p('b.gtf'), p('pr.gtf'), p('mp.gtf')) == 1 and 'MP_P2.1' in open(p('mp.gtf')).read() and 'MP_P1' not in open(p('mp.gtf')).read() and 'MP_P3' not in open(p('mp.gtf')).read()
         open(p('k.tsv'), 'w').write('family_id\tcopy_idx\tgene_id\nF0\t0\tG1\nF0\t1\tMC_G3\nF1\t0\tMC_G5\nF2\t0\tMC_G2\nF2\t1\tMC_G9\n')
         assert select(p('b.gtf'), p('c.gtf'), p('k.tsv'), p('o.gtf'), p('o.tsv')) == (2, 2)   # G3 (with a base copy), G2 (family of two candidates); G5 alone in its family
         o = open(p('o.gtf')).read(); assert o.count('multicopy_rescue "1"') == 2 and 'MC_G5' not in o and 'G1.1' in o
@@ -148,6 +169,7 @@ if __name__ == '__main__':
     a = sys.argv[1:]
     if a == ['--selftest']: selftest()
     elif len(a) in (4, 5) and a[0] == 'candidates' and a[4:] in ([], ['--mono']): print(f"{candidates(*a[1:4], mono=len(a) == 5)} {'spliced or single-exon' if len(a) == 5 else 'spliced'} floor-1 transcripts where the assembly has none on that strand")
+    elif len(a) == 4 and a[0] == 'mono_primary': print(f"{mono_primary(*a[1:])} single-exon transcripts of the primaries-only assembly added where the assembly has none on that strand")
     elif len(a) == 6 and a[0] == 'select':
         g, n = select(*a[1:]); print(f"{g} rescued loci ({n} transcripts) are copies of a family of >= 2 loci")
     elif len(a) == 5 and a[0] == 'annotate':

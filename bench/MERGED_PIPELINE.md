@@ -1,5 +1,9 @@
 # Merged genome-wide pipeline (`rustle_pipeline.sh merged`)
 
+Note 2026-11-23: `merged` still runs assemble + families + assign as described here, but `assign` is the LEGACY O2
+(register 1903). The default `all` runs `o2` in its place (`docs/O2_FAMILY_BENCHMARK.md`); use `merged` only when the
+per-read assignment tables are wanted.
+
 2026-10-04. The genome-wide entry point: `assemble -> families -> assign on the FAMILIES copy table`
 in one driver command, byte-identical products, with the genome-wide levers ON by default and
 per-phase resume. Motivation and stage dataflow: `bench/PERFORMANCE_AND_IO.md`; the extraction of the

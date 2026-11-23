@@ -1,5 +1,13 @@
 # Goal: resolution-aware assembly of multi-copy gene families (set by the user 2026-11-19)
 
+## Where it stands (2026-11-23)
+The three lines of the goal are now outputs of the default pipeline (`all` -> stage `o2`, `O2_FAMILY_BENCHMARK.md`,
+`MULTICOPY_MODE.md`): copies the reads separate are labelled `expressed`; copies they cannot separate are labelled
+`shared` and scored as one unit; copies reached only by reads better explained elsewhere are labelled `homology_only`
+instead of being given expression. Measured on planted reads of known origin (the simulation this goal asked for): fewest
+false units of any tool (3 against 9-16), most isoforms reproduced, most members available. Not yet done: the same
+measure on own-haplotype truth (HG002, KB3781), and a planted sample that differs from the reference.
+
 ## The goal
 For every multi-copy family, decide from the reads alone whether its copies can be separated, and assemble at that
 resolution:

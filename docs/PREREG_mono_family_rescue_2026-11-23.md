@@ -77,3 +77,77 @@ Reading: membership in a de novo family is not evidence that a single-exon model
 loci are largely repeats and processed fragments. FLAIR's planted lead comes with 22% (gorilla) and 5% (human)
 annotated single-exon models on real data, 15 k and 469 k of them: it is not a standard to match. On real gorilla
 Rustle's default single-exon models are the most often annotated of the three tools.
+
+# PREREG: the single-exon models primaries alone would pass, restored in the mode (row 1920, 2026-11-23)
+
+Seen: row 1919 (planted gorilla, seed 1925: expressed single-exon copies found Rustle primaries 124, the mode 101;
+real OR6737: the mode's default single-exon models 534 at 56.4% on an annotated exon). Idea told to the user before any
+run: the single-exon floor is a quantile of the multi-exon read counts, near-tie secondaries inflate those counts, so
+the mode drops single-exon models the same reads pass when only primaries are counted. Restoring them admits nothing a
+default Rustle run would not write.
+First as an emulation, no assembler change: `multicopy_rescue.py mono_primary MODE.gtf PRIMARY.gtf OUT.gtf` adds the
+single-exon transcripts of the primaries-only assembly at places the mode's assembly has no transcript on that strand.
+Not seen: any output of it.
+
+## Runs (workspace `r1920_mono_from_primaries`)
+- Planted gorilla OR6737's own families, fresh seed 1926 (E, S), all tools; arms mode, mode + primaries' single-exon
+  models, each with the EM test.
+- Real OR6737 and A119b: both pools assembled today, stage `multicopy`, then the addition. The added models: how many,
+  share with >= 50% of bases on an annotated exon of their strand, against the mode's own single-exon models.
+
+## Claims
+- Q1: planted, E and S: mode + primaries' single-exon models + EM finds at least (the primaries arm's count - 2)
+  expressed single-exon copies.
+- Q2: S: silent single-exon copies called (with EM) <= FLAIR's.
+- Q3: real, both samples: the added models' annotated share >= the mode's default single-exon models' share - 0.05.
+- Q4: multi-exon copies found and isoform recall unchanged (within 0.005; isoform recall may only rise).
+All four = worth building properly (the floor taken from primaries inside the assembler, or the extra assembly inside
+the stage) and proposing; the default stays the user's call.
+
+## Predictions (mine)
+All four hold. The risk is Q3 on A119b, where the default's single-exon models are annotated only 10.8% of the time
+and small shares move easily.
+
+## Result (row 1920, 2026-11-23; jobs 4496575 planted, 4496576 OR6737, 4496577 A119b)
+Planted gorilla, seed 1926 (expressed single-exon copies found / silent called):
+
+| arm | E (147 expressed) | S (75 expressed, 72 silent) | isoform recall E / S |
+|---|---|---|---|
+| Rustle primaries | 120 / 0 | 59 / 1 | 0.983 / 0.977 |
+| mode + EM | 98 / 0 | 51 / 5 | 0.962 / 0.970 |
+| mode + primaries' single-exon + EM | 119 / 0 | 58 / 5 | 0.973 / 0.977 |
+| FLAIR | 147 / 0 | 75 / 10 | 0.943 / 0.938 |
+| StringTie, IsoQuant, bambu | 0 | 0 | |
+
+Real samples, models added and their share with >= 50% on an annotated exon:
+
+| sample | added | annotated | the mode's own single-exon models | primaries assembly's |
+|---|---|---|---|---|
+| OR6737 | 1 | 1 (1.000) | 534 at 0.564 | 311 at 0.598 |
+| A119b | 224 | 6 (0.027) | 10,844 at 0.108 | 9,369 at 0.044 |
+
+- Q1 HOLDS (119 against 120 - 2; 58 against 59 - 2). Q2 HOLDS (5 against FLAIR's 10). Q4 HOLDS (multi-exon found 1,173 = 1,173
+  and 637 = 637; isoform recall rises 0.962 -> 0.973, 0.970 -> 0.977).
+- Q3 FAILS on A119b (0.027 against the bar 0.108 - 0.05 = 0.058); on OR6737 it holds on ONE model.
+- **Verdict: three of four, not built, nothing proposed.** My prediction (all four) was wrong at the place I named as the risk.
+- What it shows beyond the rule: the loss the planted benchmark measures (98 against 120) hardly exists in the real
+  samples. On OR6737 the mode drops one single-exon model the primaries would pass; on A119b 224, of which 6 are
+  annotated. The planted families are dense in single-exon copies with near-tied relatives, real libraries are not.
+  The single-exon gap to FLAIR on planted reads should be quoted as a benchmark figure, not as lost genes.
+- Side fact: on A119b the mode's single-exon models are MORE often annotated (0.108) than the primaries assembly's
+  (0.044), so seeding near ties does not degrade that class there.
+- The emulation `multicopy_rescue.py mono_primary` stays in the tool (self-test covered), called by no stage.
+
+### A119b run in full (row 1920, job 4496577: every step exit 0, 8,597 s; primaries assembly 2,368 s, with near-tie secondaries 2,594 s, families + multi-copy stage 3,530 s)
+
+| set | single-exon models | >= 50% on an annotated exon | share | distinct annotated genes |
+|---|---|---|---|---|
+| primaries-only assembly | 9,369 | 412 | 0.044 | 408 |
+| multi-copy mode | 10,844 | 1,176 | 0.108 | 522 |
+| added back from primaries | 224 | 6 | 0.027 | 6 |
+| StringTie | 38,635 | 1,473 | 0.038 | 1,375 |
+| FLAIR | 468,993 | 24,897 | 0.053 | 10,697 |
+
+The mode's single-exon models have the highest annotated share of any set on this sample; StringTie and FLAIR reach
+more annotated genes in absolute numbers by reporting 3.6 x and 43 x as many models. OR6737 (job 4496576, 2,316 s):
+primaries 311 at 0.598, mode 534 at 0.564, StringTie 758 at 0.508, FLAIR 14,850 at 0.220.

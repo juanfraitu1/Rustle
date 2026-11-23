@@ -11,7 +11,7 @@ Each round lists its findings and what was done. "Applied" means changed and ver
 
 ## Round 1: `tools/rustle_pipeline.sh` and the binaries of the default path
 
-Default path: `all` = assemble -> families -> assign -> index -> flag.
+Default path when these rounds were run: `all` = assemble -> families -> assign -> index -> flag. (Since 2026-11-22 `all` runs `o2` where it ran `assign`, register 1903; the audit below is of the path as it was.)
 
 1. **flag scans contigs one after another** (`src/missing_copy_flag.rs` `scan`). Each contig is an independent BAM
    sweep with its own piles and rows. The scan was ~90% of the post-assemble wall (OR6737 654 s after the index-once

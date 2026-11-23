@@ -230,3 +230,9 @@ Pre-registrations: `PREREG_o2_family_benchmark_2026-11-22.md` (1903), `PREREG_co
 `PREREG_tandem_joins_2026-11-21.md` (1881), `PREREG_minimap_p09_n1000_2026-11-22.md` (1885, 1888, 1894),
 `MULTICOPY_MODE.md` (the mode itself). Workspace `/anvme/workspace/v138da13-rustle/r19NN_*`, one directory per row;
 `annot_related/` for the relatedness annotation.
+
+### Restoring the primaries' single-exon models (row 1920, 2026-11-23): not built
+Adding to the mode the single-exon models a primaries-only assembly passes closes the planted gap (119 of 147 against the
+mode's 98 and the primaries' 120; silent called 5 against FLAIR's 10) but on real libraries there is almost nothing to
+restore: one model on OR6737, 224 on A119b of which 6 are annotated (0.027, bar 0.058: the registered claim fails).
+The single-exon gap to FLAIR on planted reads is a benchmark figure, not lost genes. `PREREG_mono_family_rescue_2026-11-23.md`.
