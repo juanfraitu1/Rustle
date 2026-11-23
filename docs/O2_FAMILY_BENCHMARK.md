@@ -10,7 +10,9 @@ isoforms of known multi-copy families does it report, and are they the expressed
   to the multi-copy families with the near-tied multimappers (stage `multicopy`), labels every locus by a provenance
   test (`o2_status` expressed / shared / homology_only; nothing is dropped) -> `PREFIX.o2.gtf`, `PREFIX.o2.em.tsv`, and
   writes the per-family report `PREFIX.o2.families.tsv`, `PREFIX.o2.copies.tsv`. `RUSTLE_O2_EXTEND=0` = report only;
-  `RUSTLE_O2_DROP=1` drops the homology_only loci; a failure of the extension leaves the report on `PREFIX.gtf` and the
+  `RUSTLE_O2_DROP=1` drops the homology_only loci; since 2026-11-23 (register 1921) the test is an EM with the alignment
+  scores inside (candidates within 10 `ms`, weight exp(-gap)), `RUSTLE_O2_EM_WEIGHT=0` = the counts-only EM of before;
+  a failure of the extension leaves the report on `PREFIX.gtf` and the
   stage still succeeds. `PREFIX.gtf` is never changed. `assign` is in no plan of `all`.
 - **Validation.** Planted reads of known origin, opt-in stage `o2bench` and `bench/o2_families/` (planting is the
   validation, not a per-run step: user).

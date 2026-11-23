@@ -12,7 +12,8 @@ Stage `o2` runs stage `multicopy` (near-tie secondaries seed the family copies, 
 `PREFIX.multicopy.gtf`, rescued transcripts tagged `multicopy_rescue "1"`, `PREFIX.multicopy.tsv`), then the provenance
 labels (`o2_status` expressed / shared / homology_only from the EM over the tied reads; nothing dropped) ->
 `PREFIX.o2.gtf`, `PREFIX.o2.em.tsv`, then the family report `PREFIX.o2.families.tsv`, `PREFIX.o2.copies.tsv`.
-`RUSTLE_O2_EXTEND=0` turns the extension off; `RUSTLE_O2_DROP=1` drops the homology_only loci; `PREFIX.gtf` is never
+`RUSTLE_O2_EXTEND=0` turns the extension off; `RUSTLE_O2_DROP=1` drops the homology_only loci; `RUSTLE_O2_EM_WEIGHT=0`
+puts the labels back on the counts-only EM (default since 2026-11-23, register 1921: scores inside the EM); `PREFIX.gtf` is never
 changed. `multicopy` can still be called alone; with `RUSTLE_MULTICOPY_EQ=1` it also writes tie-adjusted counts and
 `PREFIX.multicopy.groups.tsv` (see "Counts and tie groups"; inside `o2` that step is off, the labels replace it).
 Validation and every planted number: `O2_FAMILY_BENCHMARK.md`.
