@@ -64,6 +64,14 @@ def report(genes, copies, eq=None, sq=None):
         F.append(row)
     return F, C
 
+def read_sequences(path):
+    """sequences per locus read (column read_at). Read by hand: the read-name column of a deep sample exceeds csv's field limit."""
+    sq = collections.Counter()
+    with open(path) as f:
+        i = f.readline().rstrip('\n').split('\t').index('read_at')
+        for l in f: sq[l.split('\t', i + 1)[i]] += 1
+    return sq
+
 def selftest():
     import tempfile, os
     d = tempfile.mkdtemp(); p = os.path.join(d, 'x.gtf')
@@ -83,6 +91,8 @@ def selftest():
     assert F[0][8:] == [5, 1, 1, 2] and C[0][10:] == [5, 9, '6.5', 'G1'] and C[2][10:] == [0, 0, '0.0', '.'], (F, C)
     F, C = report(g, cp, None, {'A': 3})
     assert F[0][-1] == 3 and C[0][-1] == 3 and C[1][-1] == 0, (F, C)
+    sp = os.path.join(d, 's.tsv'); open(sp, 'w').write('group\tloci\tread_at\tcandidate\treads\talleles\tp\tambiguous_reads\tread_names\tisoform\n' + 'G\tA,B\tA\t1\t9\treference\tNA\t0\t' + 'r' * 300000 + '\t1\nG\tA,B\tA\t2\t3\t5SA\t0.001\t0\tx,y,z\t1\n')
+    assert read_sequences(sp) == {'A': 2}
     print('o2_family_report selftest ok')
 
 def main():
@@ -93,7 +103,7 @@ def main():
     sqp = None
     if '--sequences' in a: i = a.index('--sequences'); sqp = a[i + 1]; del a[i:i + 2]
     gtf, cop, out = a
-    sq = collections.Counter(r['read_at'] for r in csv.DictReader(open(sqp), delimiter='\t')) if sqp else None
+    sq = read_sequences(sqp) if sqp else None
     eq = {r['locus']: r for r in csv.DictReader(open(eqp), delimiter='\t')} if eqp else None
     F, C = report(load_gtf(gtf), list(csv.DictReader(open(cop), delimiter='\t')), eq, sq)
     fh = 'family_id\tcopies\tcopies_spliced\ttranscripts\tisoforms\treads\tchroms\tnames' + ('\treads_placed\ttie_groups\tmin_expressed\tmax_expressed' if eq is not None else '') + ('\ttied_sequences' if sq is not None else '')

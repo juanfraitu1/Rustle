@@ -34,7 +34,7 @@ What holds, on planted reads with ragged ends (rows 1917, 1918) unless said:
 | Low-scoring secondaries reveal silent relatives | holds on planted reads (70-81%); as a member list on real data not usable yet |
 | Alignment scores inside the EM help | small, confirmed: mislabelled silent units 35 -> 30 over eight seeds, no expressed unit lost (row 1921, default) |
 | minimap2's wrong calls can be overruled from the read | does NOT hold: 12.6% of reads are on the wrong unit, 96.5% of those are exact ties identical in every tag; error-aware re-scoring moves nothing (rows 1922, 1923) |
-| Recurrence across reads counts the expressed copies the reference cannot separate | on PLANTED reads only (on real KB3781 reads 49 of 54 splits are unconfirmed by the haplotypes, row 1928); holds when the sample carries its own variants: IsoCon's test ported to Rustle's tied groups is exact in 0.80 of cells (IsoCon itself 0.48-0.57, best constant 0.50), control never over-counts (row 1926, opt-in `RUSTLE_O2_SEQUENCES=1`) |
+| Recurrence across reads counts the expressed copies the reference cannot separate | planted: yes; real reads: the non-reference sequences are in the individual's DNA for 0.75 on HG002 and 0.49 on KB3781 (rows 1929-1931); holds when the sample carries its own variants: IsoCon's test ported to Rustle's tied groups is exact in 0.80 of cells (IsoCon itself 0.48-0.57, best constant 0.50), control never over-counts (row 1926, opt-in `RUSTLE_O2_SEQUENCES=1`) |
 | That count is a count of copies | does NOT hold: with two alleles per copy it over-counts copies in 140 of 199 cells and is exact on haplotypes in only 0.53 (row 1927) |
 
 The first eight rows are on planted reads where the sample equals the reference; the last four use `plant.py --private`
@@ -271,6 +271,17 @@ locus with exactly two reads and a similar relative one substitution away is whe
   because most loci show one sequence: of 54 pairs of sequences at one locus the haplotypes confirm 5. The unconfirmed
   patterns are recurrent substitutions with a DNA-like spectrum in neither haplotype; what they are is open. On real
   data a `tied_sequences` of 2 or more is unverified.
+- **What the unconfirmed sequences are (row 1929, `PREREG_mosaic_check_2026-11-23.md`):** not mosaics of two tied copies
+  (their mismatches are mismatches at every tied locus) and not amplified duplicates (independent ends). Looked up
+  site by site on the read's best haplotype hit, 47 of 108 non-reference sequences on KB3781 are in the animal's DNA
+  and 47 are not. The unconfirmed half is open; the animal's genomic reads would decide.
+- **A lower-scoring origin does not explain them (row 1930):** with the haplotype candidate list opened wide, 5 of the 60
+  unconfirmed sequences are explained by one lower-ranked place; 47 are in neither assembly anywhere the read aligns.
+  Final count on KB3781: 52 of 107 non-reference sequences in the animal's assembled DNA, 8 partly, 47 not.
+- **HG002 (row 1931, the second sample with both haplotypes):** 517 of 689 non-reference sequences are in the
+  individual's assembled DNA (459 at the best hit, 58 at one lower place), 74 partly, 98 nowhere (0.14). The gorilla's
+  0.44 unexplained was specific to that sample. The pair measure of row 1928 is too coarse and is withdrawn; quote the
+  site-by-site lookup. On HG002 a recurrent non-reference sequence among tied copies is real three times out of four.
 Pre-registrations: `PREREG_minimap_wrong_calls_2026-11-23.md` (1922), `PREREG_error_context_2026-11-23.md` (1923),
 `PREREG_sample_psv_2026-11-23.md` (1924), `PREREG_isocon_groups_2026-11-23.md` (1925), `PREREG_isocon_port_2026-11-23.md`
 (1926), `PREREG_het_alleles_2026-11-23.md` (1927).

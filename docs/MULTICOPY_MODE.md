@@ -260,8 +260,10 @@ the count is exact in 0.80 of (unit, isoform) cells on unseen seeds, against 0.5
 0.50 for the best constant; with no variants it never over-counts. It counts sequences: two alleles of one copy are two,
 and on a planted heterozygous sample the count is exact on haplotypes in 0.53 of cells and over-counts copies in 140 of
 199 (row 1927); it never says which copy. Real OR6737: 392 sequences at 194 loci, 116 of 379 families.
-Real KB3781 against its own haplotypes (row 1928): single sequences agree, but 49 of 54 pairs of sequences at one locus
-are not confirmed; a count of 2 or more on real data is unverified.
+Real samples with both haplotypes (rows 1928-1931): the non-reference sequences are in the individual's own DNA for
+517 of 689 on HG002 (0.75; 0.14 nowhere) and 52 of 107 on KB3781 (0.49; 0.44 nowhere, unexplained and specific to
+that sample). Read the column as recurrent sequences with that confirmation rate, not as copies. On a deep human
+library the test adds about an hour.
 `PREREG_isocon_port_2026-11-23.md`.
 
 ## Where things are (Fritz workspace `/anvme/workspace/v138da13-rustle`)

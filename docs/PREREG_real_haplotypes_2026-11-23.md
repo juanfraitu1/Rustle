@@ -75,3 +75,8 @@ Step 0: 322 sequences at 272 loci x isoforms; 30 of them with >= 2 sequences (th
 - **For the opt-in column:** on real data a locus with `tied_sequences` of 2 or more is unverified; do not present such
   splits as expressed copies or alleles. The next step is to find out what these sequences are (compare their variant
   alleles with the other members of the family at the homologous positions: a mosaic would match them site by site).
+
+**Correction 2026-11-23 (row 1931):** the pair measure R3 (copies by overlapping hit regions, allele by cost) is too
+coarse: on HG002 one locus with 42 sequences gives 861 of its 1,318 pairs, and a site-by-site lookup of the variants in
+the haplotypes (rows 1929-1931) contradicts it. Do not quote "49 of 54 pairs unconfirmed"; quote 52 of 107 sequences
+in the DNA (KB3781) and 517 of 689 (HG002).
