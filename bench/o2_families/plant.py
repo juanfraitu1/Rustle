@@ -2,7 +2,7 @@
 """Plant reads at the copies of known gene families, with the copy of origin of every read recorded (O2 family benchmark).
 
     plant.py ANNOT.gff3.gz GENOME.fa OUTDIR [--scenarios E,D,S] [--reads 60] [--isoforms 2] [--seed 1903]
-             [--sub 0.001 --ins 0.002 --dele 0.002] [--full 0.7] [--ragged 20]
+             [--sub 0.001 --ins 0.002 --dele 0.002] [--full 0.7] [--ragged 20] [--private RATE]
     plant.py --from-run PREFIX.gtf PREFIX.fam.copies.tsv GENOME.fa OUTDIR [same options]
 
 Copies: the protein-coding members of famtruth's MAINSTAYS + YAGS on the annotation (CHM13 CAT/Liftoff; env as famtruth).
@@ -10,6 +10,9 @@ With --from-run (driver stage `o2`, any genome, no annotation): the copies of ev
 copy table, and as their isoforms the run's own transcripts at those loci; needs GENOME.fa.fai (samtools faidx), no pysam.
 Per copy up to --isoforms annotated transcripts with distinct intron chains (most exons first, then longest); a copy's
 reads go 2 : 1 to its first and second isoform.
+--private RATE (register 1924; default 0 = the sample is the reference): every copy gets its own variants at RATE per
+exonic base (80% substitutions, 10% one-base deletions, 10% one-base insertions), by genome position so its isoforms
+share them; the reads come from that sequence. Writes sample.fa (the sample's transcripts) and private.tsv.
 Scenarios (per family, drawn with --seed):
   E  every copy --reads reads
   D  one copy 10 x --reads, the others --reads / 3
@@ -128,6 +131,7 @@ def main():
     ap.add_argument('--scenarios', default='E,D,S'); ap.add_argument('--reads', type=int, default=60); ap.add_argument('--isoforms', type=int, default=2)
     ap.add_argument('--seed', type=int, default=1903); ap.add_argument('--sub', type=float, default=0.001); ap.add_argument('--ins', type=float, default=0.002)
     ap.add_argument('--dele', type=float, default=0.002); ap.add_argument('--full', type=float, default=0.7); ap.add_argument('--ragged', type=int, default=20)
+    ap.add_argument('--private', type=float, default=0.0, metavar='RATE')
     a = ap.parse_args()
     if a.from_run:
         if len(a.pos) != 2: ap.error('--from-run GTF COPIES GENOME.fa OUTDIR')
@@ -151,17 +155,36 @@ def main():
             elif f[2] == 'exon' and at['Parent'] in t2g: tx[t2g[at['Parent']]][at['Parent']].append((int(f[3]), int(f[4])))
         FA = pysam.FastaFile(a.genome)
     rng = random.Random(a.seed); os.makedirs(a.out, exist_ok=True)
-    iso, seqs = {}, {}
+    iso, seqs = {}, {}; priv = {}; prng = random.Random(a.seed * 7919 + 1)      # --private: a stream of its own, the read draws are unchanged
     with open(f'{a.out}/loci.gtf', 'w') as w:
         for g in sorted(tx):
             for t in tx[g]: tx[g][t].sort()
             iso[g] = pick_isoforms(tx[g], a.isoforms)
             for t in iso[g]:
                 ex = tx[g][t]; c, st = loc[t]
-                s = ''.join(FA.fetch(c, x - 1, y) for x, y in ex).upper(); seqs[t] = s[::-1].translate(COMP) if st == '-' else s
+                s = ''.join(FA.fetch(c, x - 1, y) for x, y in ex).upper()
+                if a.private > 0:          # the sample's own variants at this copy, by genome position (shared by its isoforms)
+                    pv = priv.setdefault(g, {}); o = []; i = 0
+                    for x, y in ex:
+                        for pos in range(x, y + 1):
+                            if pos not in pv:
+                                u = prng.random(); b0 = s[i]
+                                pv[pos] = None if u >= a.private else ('S' + prng.choice([z for z in 'ACGT' if z != b0])) if u < a.private * 0.8 else 'D' if u < a.private * 0.9 else 'I' + prng.choice('ACGT')
+                            v = pv[pos]
+                            o.append(s[i] if v is None else v[1] if v[0] == 'S' else '' if v == 'D' else s[i] + v[1]); i += 1
+                    s = ''.join(o)
+                seqs[t] = s[::-1].translate(COMP) if st == '-' else s
                 at = f'gene_id "{g}"; transcript_id "{t}"; family "{members[g]}"; ref_gene_name "{G[g]["name"]}";'
                 w.write(f'{c}\tplant\ttranscript\t{ex[0][0]}\t{ex[-1][1]}\t.\t{st}\t.\t{at}\n')
                 for x, y in ex: w.write(f'{c}\tplant\texon\t{x}\t{y}\t.\t{st}\t.\t{at}\n')
+    if a.private > 0:
+        with open(f'{a.out}/sample.fa', 'w') as w:
+            for t in sorted(seqs): w.write(f'>{t}\n{seqs[t]}\n')
+        with open(f'{a.out}/private.tsv', 'w') as w:
+            w.write('copy\tposition\tvariant\n')
+            for g in sorted(priv):
+                for pos in sorted(priv[g]):
+                    if priv[g][pos] is not None: w.write(f'{g}\t{pos}\t{priv[g][pos]}\n')
     fam = collections.defaultdict(list)
     for g in sorted(iso): fam[members[g]].append(g)
     plan = plan_counts(fam, a.reads, rng); scs = a.scenarios.split(',')
