@@ -26,6 +26,12 @@ ARMS=" ${O2_RUSTLE_ARMS:-primary good mode} "
 # the O2 extension: the mode's assembly, a locus kept only when the EM leaves it >= 2 reads (register 1905 / 1906)
 if [[ $ARMS == *" mode "* ]] && [ -s "$O/rg.multicopy.gtf" ]; then run rustle_mode_em python3 "$H/em_filter.py" "$O/rg.multicopy.gtf" "$O/x.bam" "$O/x.bam.as_table.tsv" "$O/rg.o2" --threads 8; fi
 if [[ $ARMS == *" primary "* ]] && [ -s "$O/rp.gtf" ]; then run rustle_primary_em python3 "$H/em_filter.py" "$O/rp.gtf" "$O/x.bam" "$O/x.bam.as_table.tsv" "$O/rp.o2" --threads 8; fi
+# opt-in arm `mono` (row 1919): the mode with single-exon models rescued on family evidence, in a copy of the secondaries run
+if [[ $ARMS == *" mono "* ]] && [ -s "$O/rg.gtf" ]; then
+  for x in gtf families.gtf molecules.tsv molecules.tsv.asbin; do [ ! -e "$O/rg.$x" ] || cp -p "$O/rg.$x" "$O/rgm.$x"; done
+  RUSTLE_MULTICOPY_MONO=1 RUSTLE_MULTICOPY_EQ=0 run rustle_mode_mono bash "$DR" multicopy --seed-pool good --bam "$O/x.bam" --fasta "$FA" --out "$O/rgm" --bin "$BIN" --threads "$T"
+  [ ! -s "$O/rgm.multicopy.gtf" ] || run rustle_mode_mono_em python3 "$H/em_filter.py" "$O/rgm.multicopy.gtf" "$O/x.bam" "$O/x.bam.as_table.tsv" "$O/rgm.o2" --threads 8
+fi
 if command -v stringtie > /dev/null; then run stringtie stringtie -L -p 8 -o "$O/stringtie.gtf" "$O/x.bam"; else say "stringtie not on PATH: arm skipped"; fi
 if [ -n "${O2_ISOQUANT_MANIFEST:-}" ]; then run isoquant pixi run --manifest-path "$O2_ISOQUANT_MANIFEST" isoquant -d pacbio_ccs --bam "$O/x.bam" --reference "$FA" -o "$O/iq" -p x -t 16; fi
 if [ -n "${O2_FLAIR_PATH:-}" ]; then
@@ -37,6 +43,7 @@ fi
 if [ -n "${O2_BAMBU_MANIFEST:-}" ]; then run bambu pixi run --manifest-path "$O2_BAMBU_MANIFEST" Rscript "$R/bench/famcmp/bambu_run.R" "$O/x.bam" "$FA" "$O/bambu" 16 "${TMPDIR:-/tmp}/rc.$$"; fi
 LABELS=(rustle_primary="$O/rp.gtf" primary+em="$O/rp.o2.gtf" rustle_secondaries="$O/rg.gtf" rustle_mode="$O/rg.multicopy.gtf" mode+em="$O/rg.o2.gtf" stringtie="$O/stringtie.gtf"
   flair="$O/fl.isoforms.gtf" isoquant="$O/iq/x/x.transcript_models.gtf" bambu="$O/bambu.gtf")
+[[ $ARMS != *" mono "* ]] || LABELS+=(mode_mono="$O/rgm.multicopy.gtf" mode_mono+em="$O/rgm.o2.gtf")
 python3 "$H/score.py" "$P" "$SC" --families --out "$O/score.tsv" "${LABELS[@]}" > /dev/null
 # units of identical copies and divergence classes (register 1906); built once per planted set
 [ -s "$P/units.tsv" ] || python3 "$H/units.py" "$P" "$FA" 8 > "$P/units.log" 2>&1 || say "units FAILED (see $P/units.log)"

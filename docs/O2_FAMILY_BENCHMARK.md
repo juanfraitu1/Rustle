@@ -194,6 +194,14 @@ hold many copies at a few reads, where near ties seed loci that primaries leave 
   expressed when one is, is not claimed (row 1870: CT47A1-4 on A119b have 125-131 reads and none supports them at the
   bases that distinguish them).
 
+## Single-exon copies (row 1919, `PREREG_mono_family_rescue_2026-11-23.md`)
+Tried: floor-free single-exon models kept only as copies of a family of >= 2 loci (`RUSTLE_MULTICOPY_MONO=1`, opt-in).
+Planted gorilla own families, expressed single-exon copies found: the mode 101 -> 119 of 147 (FLAIR 146, Rustle
+primaries 124, StringTie 0); with the EM test 8 silent ones called against FLAIR's 11. Real OR6737: the 728 rescued
+models are on an annotated exon 13% of the time, the default's 534 single-exon models 56%, StringTie's 51%, FLAIR's
+14,850 22%. Family membership does not select real single-exon genes; not proposed. FLAIR's lead on planted single-exon
+copies is bought with tens of thousands of unannotated single-exon models on real data.
+
 ## Open
 - The four human copies and the single-exon class Rustle misses: single-exon copies inside families; the HSFY2-type
   fragments; whether a strongly supported non-canonical junction should pass (GOLGA6L2, GOLGA8Q on real reads).

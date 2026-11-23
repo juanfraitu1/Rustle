@@ -210,6 +210,14 @@ Not supported:
 - The expressed-or-not scripts ran on A119b and OR6737 only; reference copies are CHM13's, not the sample's; indels unscored.
 - A119b and OR6737 were development samples for the family definition and for this mode.
 
+## Tried and not adopted
+- `RUSTLE_MULTICOPY_MONO=1` (row 1919, opt-in, off): single-exon models of a floor-free run kept only as copies of a
+  family of >= 2 loci (`multicopy_rescue.py candidates --mono`, driver env `RUSTLE_POLISH_MONO_QUANTILE`). Planted
+  gorilla: expressed single-exon copies 101 -> 119 of 147 (FLAIR 146). Real OR6737: the 728 rescued models are on an
+  annotated exon 13% of the time against 56% for the default's single-exon models. Family membership does not pick out
+  real single-exon genes. `PREREG_mono_family_rescue_2026-11-23.md`.
+- Pairwise decisive-read verdicts (`tools/copy_verdicts.py`, row 1904): 42 -> 40 false copies; the joint EM test is used.
+
 ## Open
 - Isoform precision with near-tie secondaries; single-exon copies inside families; the EM test's one to two units.
 - A PSV catalogue from an alignment of the copies (with indels); the base-level verdicts as an output of the stage.

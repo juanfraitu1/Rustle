@@ -52,14 +52,16 @@ def by_transcript(path):
             if m: tx.setdefault(m.group(1), []).append(l)
     return tx
 
-def candidates(base, floor1, out):
+def candidates(base, floor1, out, mono=False):
+    """mono: single-exon floor-1 transcripts are candidates too (row 1919); they are tagged at `select`."""
     sp = spans(base); n = 0
     with open(out, 'w') as w:
         for t, L in by_transcript(floor1).items():
             ex = [l.split('\t') for l in L if l.split('\t')[2] == 'exon']
-            if len(ex) < 2: continue
+            if len(ex) < 2 and not mono: continue
             a, b = min(int(e[3]) for e in ex), max(int(e[4]) for e in ex)
             if occupied(sp, ex[0][0], ex[0][6], a, b): continue
+            if len(ex) < 2 and ex[0][6] not in '+-' and (occupied(sp, ex[0][0], '+', a, b) or occupied(sp, ex[0][0], '-', a, b)): continue   # a strandless single exon under any model
             n += 1
             for l in L: w.write(l.replace('gene_id "', 'gene_id "MC_', 1).replace('transcript_id "', 'transcript_id "MC_', 1))
     return n
@@ -71,13 +73,14 @@ def select(base, cand, copies, out, table):
         g = f[h['gene_id']]; fam[f[h['family_id']]].add(g); of[g] = f[h['family_id']]
     have = {m.group(1) for l in open(cand) for m in [GID.search(l)] if m}
     keep = {g for g, k in of.items() if g in have and len(fam[k]) >= 2}
+    nex = collections.Counter(TID.search(l.split('\t')[8]).group(1) for l in open(cand) if l.split('\t')[2] == 'exon'); mono_tx = {t: k == 1 for t, k in nex.items()}
     n = 0
     with open(out, 'w') as w:
         w.write(open(base).read())
         for l in open(cand):
             f = l.split('\t')
             if len(f) > 8 and GID.search(f[8]).group(1) in keep:
-                if f[2] == 'transcript': n += 1; l = l.rstrip('\n').rstrip().rstrip(';') + '; multicopy_rescue "1";\n'
+                if f[2] == 'transcript': n += 1; l = l.rstrip('\n').rstrip().rstrip(';') + f'; multicopy_rescue "{"mono" if mono_tx.get(TID.search(f[8]).group(1)) else "1"}";\n'
                 w.write(l)
     with open(table, 'w') as w:
         w.write('gene_id\tfamily_id\tfamily_copies\tbase_copies\n')
@@ -126,6 +129,8 @@ def selftest():
                                     + tx('c1', '+', 'G4', 'G4.1', [(5000, 5100)])               # unspliced: never
                                     + tx('c2', '+', 'G5', 'G5.1', [(10, 20), (30, 40)]))        # empty contig: candidate
         assert candidates(p('b.gtf'), p('f.gtf'), p('c.gtf')) == 3
+        assert candidates(p('b.gtf'), p('f.gtf'), p('cm.gtf'), mono=True) == 4 and 'MC_G4.1' in open(p('cm.gtf')).read()
+        open(p('km.tsv'), 'w').write('family_id\tcopy_idx\tgene_id\nF0\t0\tG1\nF0\t1\tMC_G4\n'); assert select(p('b.gtf'), p('cm.gtf'), p('km.tsv'), p('om.gtf'), p('om.tsv')) == (1, 1) and 'multicopy_rescue "mono"' in open(p('om.gtf')).read()
         ids = set(TID.findall(open(p('c.gtf')).read())); assert ids == {'MC_G2.1', 'MC_G3.1', 'MC_G5.1'}, ids
         open(p('k.tsv'), 'w').write('family_id\tcopy_idx\tgene_id\nF0\t0\tG1\nF0\t1\tMC_G3\nF1\t0\tMC_G5\nF2\t0\tMC_G2\nF2\t1\tMC_G9\n')
         assert select(p('b.gtf'), p('c.gtf'), p('k.tsv'), p('o.gtf'), p('o.tsv')) == (2, 2)   # G3 (with a base copy), G2 (family of two candidates); G5 alone in its family
@@ -142,7 +147,7 @@ def selftest():
 if __name__ == '__main__':
     a = sys.argv[1:]
     if a == ['--selftest']: selftest()
-    elif len(a) == 4 and a[0] == 'candidates': print(f"{candidates(*a[1:])} spliced floor-1 transcripts where the assembly has none on that strand")
+    elif len(a) in (4, 5) and a[0] == 'candidates' and a[4:] in ([], ['--mono']): print(f"{candidates(*a[1:4], mono=len(a) == 5)} {'spliced or single-exon' if len(a) == 5 else 'spliced'} floor-1 transcripts where the assembly has none on that strand")
     elif len(a) == 6 and a[0] == 'select':
         g, n = select(*a[1:]); print(f"{g} rescued loci ({n} transcripts) are copies of a family of >= 2 loci")
     elif len(a) == 5 and a[0] == 'annotate':

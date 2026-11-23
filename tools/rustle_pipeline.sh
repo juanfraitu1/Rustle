@@ -571,7 +571,7 @@ fi
 # RUSTLE_POLISH_ISOFORM_FRACTION (unset = 0.02, the value this command always had): the isoform fraction of the polish. A switch only so
 # that the relaxed assembly of RUSTLE_RANKED_TAIL=1 can turn the rule off (0); no other value has been judged as a default (rows 1837, 1876).
 case "${RUSTLE_POLISH_ISOFORM_FRACTION:-0.02}" in ""|*[!0-9.]*|*.*.*) echo "[rustle_pipeline] RUSTLE_POLISH_ISOFORM_FRACTION must be a number >= 0 (got '${RUSTLE_POLISH_ISOFORM_FRACTION:-}')" >&2; exit 2 ;; esac
-POLISH="--assembly-polish full --polish-isoform-fraction ${RUSTLE_POLISH_ISOFORM_FRACTION:-0.02} --polish-mono-shadow --polish-mono-quantile 0.82 --polish-ism-ratio ${RUSTLE_POLISH_ISM_RATIO:-0.3} --polish-retained-ratio ${RUSTLE_POLISH_RETAINED_RATIO:-10}"
+POLISH="--assembly-polish full --polish-isoform-fraction ${RUSTLE_POLISH_ISOFORM_FRACTION:-0.02} --polish-mono-shadow --polish-mono-quantile ${RUSTLE_POLISH_MONO_QUANTILE:-0.82} --polish-ism-ratio ${RUSTLE_POLISH_ISM_RATIO:-0.3} --polish-retained-ratio ${RUSTLE_POLISH_RETAINED_RATIO:-10}"
 # RUSTLE_POLISH_ISM_RATIO=R (register 1810; unset = 0.3 since 2026-11-18, 0.7 = the command before): a transcript whose intron chain is a
 # contiguous part of a longer assembled chain is kept when it has at least R times that chain's reads. 0.7 was overfit to the primate
 # samples (register 1793: it cost 9-10% of the correct chains on mouse); 0.1 is the non-primate choice of register 1800.
@@ -1157,6 +1157,12 @@ layered_report() {
 stage_multicopy() {
   [ -s "$OUT.gtf" ] && [ -s "$BAM" ] && [ -s "$FASTA" ] || { echo "[rustle_pipeline] multicopy needs $OUT.gtf (run assemble --seed-pool good first), --bam and --fasta" >&2; exit 2; }
   local py=${RUSTLE_PYTHON:-python3} d="$OUT.multicopy.d" f1; mkdir -p "$d"; f1="$d/f1.gtf"
+  # RUSTLE_MULTICOPY_MONO=1 (opt-in, row 1919): single-exon models are rescued the same way. The floor-1 run is made without the
+  # single-exon support floor (RUSTLE_POLISH_MONO_QUANTILE=0; the shadow and internal-priming rules stay), its single-exon
+  # transcripts at places the assembly leaves empty are candidates, and one is kept only as a copy of a family of >= 2 loci
+  # (tagged multicopy_rescue "mono"): relatedness to another assembled locus replaces the read-count floor.
+  local monoenv=() monoarg=(); case "${RUSTLE_MULTICOPY_MONO:-0}" in 0) ;; 1) monoenv=(RUSTLE_POLISH_MONO_QUANTILE=0); monoarg=(--mono) ;;
+    *) echo "[rustle_pipeline] RUSTLE_MULTICOPY_MONO must be 0 or 1 (got '$RUSTLE_MULTICOPY_MONO')" >&2; exit 2 ;; esac
   [ "$SEED_POOL" = good ] || say "multicopy: seeding pool is $SEED_POOL, not good: the floor-1 run will not see near-tie secondaries"
   if [ -n "${RUSTLE_MULTICOPY_F1:-}" ]; then
     [ -s "$RUSTLE_MULTICOPY_F1" ] || { echo "[rustle_pipeline] RUSTLE_MULTICOPY_F1=$RUSTLE_MULTICOPY_F1: no such non-empty file" >&2; exit 2; }
@@ -1166,11 +1172,11 @@ stage_multicopy() {
     # (unset = 0) adds the bypass (RUSTLE_GATE_MIN_READS=1, row 1866): 2.4 x the candidates on OR6737, not judged for this mode
     local gate1=(); case "${RUSTLE_MULTICOPY_GATE:-0}" in 0) ;; 1) gate1=(RUSTLE_GATE_MIN_READS=1) ;;
       *) echo "[rustle_pipeline] RUSTLE_MULTICOPY_GATE must be 0 or 1 (got '$RUSTLE_MULTICOPY_GATE')" >&2; exit 2 ;; esac
-    env "${gate1[@]}" RUSTLE_DUP_COUNT="${RP_DUP_COUNT_USER:-0}" RUSTLE_MIN_CHAIN_READS=1 RUSTLE_ASSEMBLY_LAYERS=off RUSTLE_ONEREAD=0 RUSTLE_SEED_POOL="$SEED_POOL" RUSTLE_SEED_AS_RATIO="$SEED_RATIO" \
+    env "${gate1[@]}" "${monoenv[@]}" RUSTLE_DUP_COUNT="${RP_DUP_COUNT_USER:-0}" RUSTLE_MIN_CHAIN_READS=1 RUSTLE_ASSEMBLY_LAYERS=off RUSTLE_ONEREAD=0 RUSTLE_SEED_POOL="$SEED_POOL" RUSTLE_SEED_AS_RATIO="$SEED_RATIO" \
         bash "$0" assemble --bam "$BAM" --fasta "$FASTA" --out "$d/f1" --threads "$THREADS" ${BIN:+--bin "$BIN"} ${CONTIG:+--contig "$CONTIG"} ${AS_TABLE:+--as-table "$AS_TABLE"} > "$OUT.multicopy.log" 2>&1 \
       || { echo "[rustle_pipeline] multicopy: the floor-1 assembly failed (see $OUT.multicopy.log); $OUT.gtf is unaffected" >&2; exit 1; }
   fi
-  $py "$RP_DRIVER_DIR/multicopy_rescue.py" candidates "$OUT.gtf" "$f1" "$d/cand.gtf" >> "$OUT.multicopy.log" 2>&1 \
+  $py "$RP_DRIVER_DIR/multicopy_rescue.py" candidates "$OUT.gtf" "$f1" "$d/cand.gtf" "${monoarg[@]}" >> "$OUT.multicopy.log" 2>&1 \
     || { echo "[rustle_pipeline] multicopy: candidates failed (see $OUT.multicopy.log)" >&2; exit 1; }
   say "multicopy: $(tail -1 "$OUT.multicopy.log")"
   rm -f "$d"/u.fam.* "$d/u.families.gtf"
