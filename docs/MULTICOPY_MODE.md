@@ -1,18 +1,21 @@
 # Multi-copy mode: assembling the copies of known gene families
 
 ## Current state
-(2026-11-21) The mode exists as two driver commands, uncommitted:
+(2026-11-23) The mode is the O2 stage of the default pipeline (user, 2026-11-22; committed 074557f7):
 
 ```
-tools/rustle_pipeline.sh assemble  --seed-pool good --bam B --fasta G --out PREFIX
-tools/rustle_pipeline.sh multicopy --seed-pool good --bam B --fasta G --out PREFIX
+tools/rustle_pipeline.sh all --bam B --fasta G --out PREFIX          # assemble (--seed-pool good), families, o2, flag
+tools/rustle_pipeline.sh o2  --bam B --fasta G --out PREFIX          # the same step alone, after assemble + families
 ```
 
-Output: `PREFIX.multicopy.gtf` (= `PREFIX.gtf` + rescued transcripts tagged `multicopy_rescue "1"`) and
-`PREFIX.multicopy.tsv` (one line per rescued locus: gene, family, copies in the family, copies from the base assembly).
-Since row 1871 every transcript also carries tie-adjusted counts and its tie group, and `PREFIX.multicopy.groups.tsv`
-lists the groups (see "Counts and tie groups").
-No other product changes. Opt-in; not part of `all`; no default was changed.
+Stage `o2` runs stage `multicopy` (near-tie secondaries seed the family copies, floor-1 rescue inside families ->
+`PREFIX.multicopy.gtf`, rescued transcripts tagged `multicopy_rescue "1"`, `PREFIX.multicopy.tsv`), then the provenance
+labels (`o2_status` expressed / shared / homology_only from the EM over the tied reads; nothing dropped) ->
+`PREFIX.o2.gtf`, `PREFIX.o2.em.tsv`, then the family report `PREFIX.o2.families.tsv`, `PREFIX.o2.copies.tsv`.
+`RUSTLE_O2_EXTEND=0` turns the extension off; `RUSTLE_O2_DROP=1` drops the homology_only loci; `PREFIX.gtf` is never
+changed. `multicopy` can still be called alone; with `RUSTLE_MULTICOPY_EQ=1` it also writes tie-adjusted counts and
+`PREFIX.multicopy.groups.tsv` (see "Counts and tie groups"; inside `o2` that step is off, the labels replace it).
+Validation and every planted number: `O2_FAMILY_BENCHMARK.md`.
 
 On the named multi-copy families (mainstays + Y-ampliconic) it models more annotated copies than StringTie, FLAIR and
 IsoQuant on six testis samples, at StringTie's junction precision or better. It was confirmed on four samples it was not
@@ -170,20 +173,31 @@ and lands there).
 shared; the named families are identical either way (row 1870). Every StringTie assembly compared here was run on BAMs
 that hold the secondaries. IsoQuant, FLAIR and bambu were not checked.
 
-## Planted truth across tools (row 1903, `O2_FAMILY_BENCHMARK.md`)
-On planted reads of the 133 named copies every tool reaches 0.87-0.99 of the expressed copies; the mode has no lead
-(0.970 / 0.970 / 0.971 against StringTie 0.970 / 0.977 / 0.986). With 63 copies silent the mode gives a transcript to 42 of
-them, StringTie to 25, every tool to at least 18. Rustle reproduces more planted isoforms (0.74-0.79 against 0.64-0.65)
-at lower isoform precision. The table of real samples below counts copies modeled; it does not show them expressed.
+## Planted truth across tools (`O2_FAMILY_BENCHMARK.md`; rows 1917, 1918, reads with ragged ends)
+- Isoforms: Rustle reproduces the most of the genome-based tools at every coverage (0.82 against 0.66-0.82 at 60 reads
+  per copy, 0.67 against 0.31 at 3; gorilla's own families 0.96-0.98 against 0.85-0.94).
+- Copies: near-tie secondaries add expressed copies only at about 3 reads per copy (the mode 125 of 133, StringTie 95);
+  from 5 reads up every tool reaches them. On copies with ordinary introns Rustle finds 267 of 267; it misses
+  single-exon models and lift-over models with non-canonical introns.
+- False copies: taking every near tie gives 24 false units with half the copies silent, the other tools 9-16, the mode
+  with the EM test 3. The default labels instead of dropping: 86-92 units available against 75-76, 0-2 expressed units
+  mislabelled.
+- The earlier planted numbers (rows 1903-1911) were made with reads whose ends coincide, which Rustle counts as
+  duplicates; they are superseded for Rustle against other tools.
+The table of real samples above counts copies modeled; it does not show them expressed.
 
 ## Wording
-Supported: "On known multi-copy families, Rustle's multi-copy mode assembles transcripts at more annotated copies than
-StringTie, FLAIR or IsoQuant run on the same alignments (701 against 587 for StringTie over four ape testis samples), at
-equal or better junction precision. Within Rustle the gain comes from letting near-tie secondary alignments seed loci."
+Supported, real samples: "On known multi-copy families Rustle's multi-copy mode has transcripts at more annotated copies
+than StringTie, FLAIR or IsoQuant run on the same alignments (701 against 587 for StringTie over four ape testis
+samples), at equal or better junction precision. Within Rustle the gain comes from near-tie secondaries seeding loci."
+Supported, planted reads: the three statements of `O2_FAMILY_BENCHMARK.md` (most isoforms; fewest false copies with the
+provenance test; most members available with labels), and copies gained at about three reads per copy.
 
 Not supported:
-- "more expressed paralogs": for copies resting on tied reads, give the range or the base-level verdicts.
-- "Rustle by default": with primaries only it is behind StringTie on these families (480 against 587).
+- "more expressed paralogs" / "the extra copies are expressed": give the label (`o2_status`), the tie-group range or the
+  base-level verdicts.
+- "Rustle finds more copies" in general: on planted reads only at very low coverage.
+- "Rustle by default with primaries only": on real samples it is behind StringTie on these families (480 against 587).
 - "StringTie discards secondaries": it reads them and does not turn them into copies.
 - "better families than every tool genome-wide": row 1855 failed its bar on OR6737 recall (0.320 against StringTie 0.353),
   and with primaries only StringTie leads the human-specific pairs on A119b (0.658 against 0.588, row 1857).
@@ -197,13 +211,12 @@ Not supported:
 - A119b and OR6737 were development samples for the family definition and for this mode.
 
 ## Open
-- A PSV catalogue from an alignment of the copies (with indels), replacing the read-derived positions; `assign` already
-  builds PSVs for read placement.
-- The base-level verdicts (supported / identical / not needed) as an output of the stage (tie groups: done, row 1871).
-- The 47 minutes of the counting step on a human sample.
-- One unused testis sample for the final code.
-- Commit: `tools/rustle_pipeline.sh` (stage `multicopy`; the file also carries another session's edits),
-  `tools/multicopy_rescue.py`, `tools/test_selftests.py`, the six pre-registrations, register rows 1855-1877 (not 1872, 1876) and 1881, `PREREG_tandem_joins_2026-11-21.md`, `PREREG_tied_truth_2026-11-21.md`, this file.
+- Isoform precision with near-tie secondaries; single-exon copies inside families; the EM test's one to two units.
+- A PSV catalogue from an alignment of the copies (with indels); the base-level verdicts as an output of the stage.
+- A planted set whose sample differs from the reference; one unused real testis sample for the final code.
+- The 47 minutes of the tie-count step on a human sample (off inside `o2`); the extension's own run time on human.
+- Known error: `DN_chr5_17456902_1`, a 113 kb single-exon model over the TAF11L array made by near-tie secondaries (row 1881).
+- Uncommitted since 074557f7: ragged ends in `plant.py`, `member_discovery.py` rebuilt, `related_gtf.py`, rows 1913-1918.
 
 ## Where things are (Fritz workspace `/anvme/workspace/v138da13-rustle`)
 | row | directory | what |
@@ -227,3 +240,9 @@ Not supported:
 | 1885 | `r1885_minimap_p09_n1000` | minimap2 -p 0.9 -N 1000 against the usual settings |
 | 1894 | `r1894_minimap_two_pass` | two-pass minimap2, recipe -N 50 -p 0.8 (`arm.sbatch`, `junc.py`, `compare.sh`) |
 | 1888 | `r1888_multimapper_limit` | OR6737 realigned whole at four values of -p (`arm.sbatch`, `stats.py`, `compare.sh`) |
+| 1903 | `r1903_o2_family_benchmark` | O2 benchmark, seven tools on planted reads (old reads); driver checks |
+| 1904-1905 | `r1904_copy_verdicts`, `r1905_em_filter` | pairwise verdicts; the EM provenance test |
+| 1906-1908, 1911 | `r1906_yag_cases`, `r1907_o2_replication`, `r1908_depth_sweep`, `r1911_label_validation` | units, IsoCon, replication, depth, labels (old reads) |
+| 1909, 1910, 1913-1915 | `r1909_silent_members`, `r1910_member_discovery`, `r1913_members_real`, `r1914_read_relatedness`, `r1915_members_blocks` | silent relatives, the member layer |
+| 1916-1918 | `r1916_isoform_loss`, `r1917_ragged_reads`, `r1918_rerun_ragged` | the read-end artefact and the corrected reruns |
+| - | `annot_related` | relatedness annotation of CHM13, NCBI gene_group |

@@ -1701,7 +1701,10 @@ stage_o2bench() {
 stage_members() {
   local gtf=${FAM_GTF:-$OUT.gtf}; [ -s "$gtf" ] || gtf=$OUT.gtf
   [ -s "$gtf" ] || { echo "[rustle_pipeline] members needs $OUT.gtf (run assemble first)" >&2; exit 2; }
-  "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/member_discovery.py" "$gtf" "$BAM" "$OUT.members.tmp" --min-reads "${RUSTLE_MEMBERS_MIN_READS:-5}" --min-ratio "${RUSTLE_MEMBERS_MIN_RATIO:-0.3}" --threads "$JOB_THREADS" > "$OUT.members.log" 2>&1 \
+  # the run's score table gives each read's best AS (saves a pass); the satellite list assign used keeps the scan off the arrays
+  local tab=$OUT.molecules.tsv; [ -s "$tab" ] || tab=$BAM.as_table.tsv; local mtab=(); [ ! -s "$tab" ] || mtab=(--as-table "$tab")
+  local bed=${RUSTLE_EXCLUDE_BED-$FASTA.exclude.bed}; local mex=(); [ ! -s "$bed" ] || mex=(--exclude "$bed")
+  "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/member_discovery.py" "$gtf" "$BAM" "$OUT.members.tmp" --min-reads "${RUSTLE_MEMBERS_MIN_READS:-5}" --min-ratio "${RUSTLE_MEMBERS_MIN_RATIO:-0.3}" "${mtab[@]}" "${mex[@]}" --threads "$JOB_THREADS" > "$OUT.members.log" 2>&1 \
     || { echo "[rustle_pipeline] members failed (see $OUT.members.log); no other product is affected" >&2; rm -f "$OUT.members.tmp".*; exit 1; }
   mv -f "$OUT.members.tmp.members.tsv" "$OUT.members.tsv"; mv -f "$OUT.members.tmp.members.gtf" "$OUT.members.gtf"
   say "$(tail -1 "$OUT.members.log" | sed 's/ -> .*//') -> $OUT.members.tsv, $OUT.members.gtf"

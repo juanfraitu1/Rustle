@@ -2,7 +2,7 @@
 """Plant reads at the copies of known gene families, with the copy of origin of every read recorded (O2 family benchmark).
 
     plant.py ANNOT.gff3.gz GENOME.fa OUTDIR [--scenarios E,D,S] [--reads 60] [--isoforms 2] [--seed 1903]
-             [--sub 0.001 --ins 0.002 --dele 0.002] [--full 0.7]
+             [--sub 0.001 --ins 0.002 --dele 0.002] [--full 0.7] [--ragged 20]
     plant.py --from-run PREFIX.gtf PREFIX.fam.copies.tsv GENOME.fa OUTDIR [same options]
 
 Copies: the protein-coding members of famtruth's MAINSTAYS + YAGS on the annotation (CHM13 CAT/Liftoff; env as famtruth).
@@ -15,7 +15,10 @@ Scenarios (per family, drawn with --seed):
   D  one copy 10 x --reads, the others --reads / 3
   S  half of the copies (rounded down) silent, the others --reads   (families of >= 2 copies)
 Reads: the transcript's sequence on its strand; a share --full complete, the others cut at the 5' end at a uniform point
-leaving >= 500 bases; substitutions, insertions, deletions per base. No read is a readthrough or a chimera.
+leaving >= 500 bases; then 0..--ragged bases (default 20) are taken off each end, so reads of one transcript do not all
+share their two coordinates (with --ragged 0, the setting of rows 1903-1911, the full-length reads of a transcript are
+coordinate duplicates, which Rustle counts once toward its 2-read floor: row 1916); substitutions, insertions,
+deletions per base. No read is a readthrough or a chimera.
 Writes OUTDIR/loci.gtf (planted transcripts; gene_id = copy; attributes family, name), plan.tsv (family, copy, name,
 transcript, exons, length, reads per scenario), SC.fq, SC.truth.tsv (read, copy, transcript).
 --selftest runs the pure parts."""
@@ -51,8 +54,10 @@ def split(n, k):
     if k == 1: return [n]
     a = round(n * 2 / 3); return [a, n - a] + [0] * (k - 2)
 
-def mutate(s, rng, sub, ins, dele, full):
+def mutate(s, rng, sub, ins, dele, full, ragged=0):
     if rng.random() >= full and len(s) > 500: s = s[rng.randint(0, len(s) - 500):]
+    if ragged and len(s) > 4 * ragged + 100:   # ragged ends: no two reads of a transcript share both coordinates (row 1916)
+        a, b = rng.randint(0, ragged), rng.randint(0, ragged); s = s[a:len(s) - b]
     o = []
     for b in s:
         x = rng.random()
@@ -113,6 +118,7 @@ def selftest():
     assert split(60, 2) == [40, 20] and split(1, 2) == [1, 0] and split(7, 1) == [7]
     s = 'ACGT' * 300
     assert mutate(s, random.Random(2), 0, 0, 0, 1.0) == s and 500 <= len(mutate(s, random.Random(3), 0, 0, 0, 0.0)) <= len(s)
+    r = [mutate(s, random.Random(i), 0, 0, 0, 1.0, 20) for i in range(30)]; assert all(len(s) - 40 <= len(x) <= len(s) and x in s for x in r) and len(set(r)) > 10
     print('plant selftest ok')
 
 def main():
@@ -121,7 +127,7 @@ def main():
     ap.add_argument('--from-run', nargs=2, metavar=('GTF', 'COPIES')); ap.add_argument('pos', nargs='+')
     ap.add_argument('--scenarios', default='E,D,S'); ap.add_argument('--reads', type=int, default=60); ap.add_argument('--isoforms', type=int, default=2)
     ap.add_argument('--seed', type=int, default=1903); ap.add_argument('--sub', type=float, default=0.001); ap.add_argument('--ins', type=float, default=0.002)
-    ap.add_argument('--dele', type=float, default=0.002); ap.add_argument('--full', type=float, default=0.7)
+    ap.add_argument('--dele', type=float, default=0.002); ap.add_argument('--full', type=float, default=0.7); ap.add_argument('--ragged', type=int, default=20)
     a = ap.parse_args()
     if a.from_run:
         if len(a.pos) != 2: ap.error('--from-run GTF COPIES GENOME.fa OUTDIR')
@@ -171,7 +177,7 @@ def main():
             for g in sorted(per[sc]):
                 for t, k in per[sc][g].items():
                     for i in range(k):
-                        s = mutate(seqs[t], rng, a.sub, a.ins, a.dele, a.full); nm = f'{sc}|{g}|{t}|{i}'; n += 1
+                        s = mutate(seqs[t], rng, a.sub, a.ins, a.dele, a.full, a.ragged); nm = f'{sc}|{g}|{t}|{i}'; n += 1
                         q.write(f'@{nm}\n{s}\n+\n{"I" * len(s)}\n'); tr.write(f'{nm}\t{g}\t{t}\n')
         print(sc, 'copies', len(per[sc]), 'silent', sum(1 for g in plan[sc] if plan[sc][g] == 0), 'reads', n)
 

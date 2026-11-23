@@ -143,3 +143,113 @@ P1 fails or is close (I expect 50-75%: UTR repeats and readthrough into neighbou
 larger on real reads). P2 fails (I expect 20-40% of control genes hit, through repeats in long 3' UTRs). P3 holds.
 If P1 or P2 fail, the next step is a repeat filter on the hit (soft-masked fraction) before the layer is used on real
 samples, tested as its own row.
+
+# PREREG: relatedness from the reads, cross-mapping links against the families stage and Compara (row 1914, 2026-11-22)
+
+User (2026-11-22): "is there anything that the reads themselves can tell us? ... can the relationships be modelled
+automatically from the reads?" Written before row 1913's member table of A119b exists. Seen: rows 1910, 1912 (place
+classes); the families stage's pair scores on A119b (row 1858: 0.650 / 0.639 with near-tie secondaries).
+
+## Measure (A119b, CHM13; workspace `r1914_read_relatedness`, `pairs.py`)
+Universe = protein-coding genes with an assembled transcript that are in the Ensembl paralogue table; truth = paralogue
+pairs of last common ancestor up to Simiiformes with both genes in the universe (as `pairscore.py`).
+- READ LINKS: (gene of the source locus, gene under the place) from row 1913's `a1.members.tsv`, both in the universe;
+  at the layer's default (>= 5 reads, ratio >= 0.3), and restricted to places whose best ratio is >= 0.8 and >= 0.98.
+- FAMILIES: all pairs of genes inside one family of `r1858_seed_pool_families/a1/good/x.fam.copies.tsv`.
+- Union and intersection of the default read links and the families pairs.
+Pair precision and recall for each. Also, without a bar: read links whose target gene is NOT expressed (truth pairs with
+one expressed gene), the part no expression-based family definition can reach.
+
+## Claims
+- X1: read links at the default have pair precision >= 0.5.
+- X2: the union has recall at least 0.05 above the families stage alone.
+- X3: read links restricted to ratio >= 0.8 have precision at least as high as the families stage.
+
+## Predictions (mine)
+X1 fails (0.2-0.4: links through repeats and shared domains among expressed genes). X2 fails (the families stage
+compares the same sequences more sensitively; I expect under 0.03). X3 unsure, leaning fail.
+
+## Amendment to rows 1913 and 1914 (2026-11-22, before any human result)
+The run of row 1913 has been scanning one contig for over three hours (the other contigs were done within minutes; the
+known satellite hot spot of A119b), with 2.5 h of its limit left. A second run is started beside it with
+`member_discovery.py --exclude` on the satellite list assign uses (`chm13v2.0_censat_v2.1.satellite_only.bed`): records
+starting inside a satellite interval are not read (new option; output unchanged with an empty list). Rows 1913 and 1914
+are scored on the full run if it finishes, otherwise on the excluded run, said which. No number of either seen.
+
+## Result of rows 1913 and 1914 (2026-11-22, job 4495226, the satellite-excluded run; the full run was cancelled at 4 h 50 min, still on one contig): the numbers below are NOT a measure of specificity
+As registered. Row 1913: P1 holds (relative 26.7% + annotated pseudogene 44.3% = 71.0% of 23,164 places of non-control
+sources; bar 70%), P2 holds (610 of 4,714 control sources with a place, 12.9%; bar 15%), P3 holds (2,030 of 3,584 recent
+paralogues of sources with >= 20 reads reached, 56.6%). 68,901 of the 97,501 rows are on sources that are no annotated
+protein-coding gene. 1 h 17 min, 25 GB.
+Row 1914 (16,024 expressed genes, 2,112 truth pairs): read links at the default 41,688 pairs, precision 0.034, recall
+0.679; at ratio >= 0.8 0.088 / 0.566; near ties 0.163 / 0.365; families stage 2,116 pairs, 0.816 / 0.818; union 0.046 /
+0.931; intersection 0.818 / 0.565. X1 fails, X2 holds (recall + 0.113), X3 fails. Against paralogues of any age the
+default links are 0.057 precise.
+Why none of this can be read as intended (found after): a PLACE is built from the SPANS of the hits, merged within
+1 kb. A spliced alignment's span covers its introns, so places chain neighbouring genes: 15,903 places, median span
+21.5 kb, 5,834 over 100 kb, 258 over 1 Mb, the largest 6.0 Mb. A place that covers many genes is counted as RELATIVE
+when any of them is one (inflating P1 and P3) and yields a pair with every gene under it (deflating row 1914's
+precision). The planted rows are affected less (hits on intronless pseudogenes are short) but the same rule was used:
+row 1910's 90% is an upper bound.
+What stands: the families stage is 0.82 / 0.82 on this sample; cross-mapping reads reach relatives the families stage
+does not (the union's recall), but with the present place rule the links cannot be told from neighbours.
+Next (its own row): places from the aligned BLOCKS of the hits, not their spans, and the gene under a hit taken per hit
+by exon overlap; then rows 1910, 1912, 1913 and 1914 scored again.
+Predictions: P1 and P2 wrong (they hold), P3 right; X1 fails right, X2 wrong (it holds), X3 fails right; none of it
+worth more than the measure.
+
+# PREREG: the layer with places from aligned blocks, every earlier claim scored again (row 1915, 2026-11-22)
+
+Rows 1910, 1913 and 1914 were scored with places merged from hit spans, which chains neighbouring genes. Since then
+`member_discovery.py` builds a place from overlapping aligned BLOCKS (no slack), takes a read's source from its primary
+record, counts secondary records only, and classification uses the place's block footprint, not its span. Truth for a
+relative is now the relations table of `related_gtf.py` (Compara paralogues of any age, NCBI pseudogene parents, the
+naming rule, copies of one source gene), not the name rule alone.
+Seen: the old-rule numbers; one run of the new tool on planted draw B for its span statistics only (1,038 places,
+median 1.6 kb, largest 435 kb), no class, no pair.
+Thresholds stay 5 reads at ratio 0.3 (chosen under the old rule on draw A: said, not re-chosen).
+
+## Runs (workspace `r1915_members_blocks`, `eval2.py`)
+- Planted draws A and B of row 1910 (same BAMs).
+- A119b (`--as-table`, `--exclude` satellites), assembly as row 1913.
+
+## Claims, the earlier bars unchanged
+- B1 (row 1910's N2 on draw B): <= 10% of control genes with a place; >= 80% of the places of the other genes on a
+  listed relative or an annotated pseudogene.
+- B2 (N1 on draw B): >= 50% of named processed pseudogenes and of recent paralogues reached.
+- B3 (row 1913's P1, P2, P3 on A119b): >= 70%; <= 15% of control sources; >= 50% of recent paralogues of sources with
+  >= 20 reads.
+- B4 (row 1914's X1 on A119b): gene pairs from the places, pair precision >= 0.5 against paralogues up to Simiiformes;
+  reported beside the families stage, their union and intersection.
+
+## Predictions (mine)
+B1 holds. B2 holds for paralogues, fails for pseudogenes (as before). B3: the 70% share fails (I expect 50-65% once
+neighbours stop counting), the control and paralogue halves hold. B4 fails but far above 0.034 (I expect 0.15-0.35).
+
+## Result of row 1915 (2026-11-22, job 4495547, `r1915_members_blocks`): B1 HOLDS, B2 HOLDS, B3 FAILS on the share, B4 FAILS
+Planted, places from blocks, truth from the relations table:
+| draw | control genes with a place | places on a relative + annotated pseudogene | recent paralogues reached | pseudogenes of the gene reached | place span median / largest |
+|---|---|---|---|---|---|
+| A | 14 of 150 (9.3%) | 81.9% + 12.8% = 94.6% | 823 of 1,099 (74.9%) | 267 of 699 (38.2%) | 2.4 kb / 618 kb |
+| B | 9 of 150 (6.0%) | 79.4% + 13.2% = 92.7% | 824 of 1,066 (77.3%) | 348 of 691 (50.4%) | 1.8 kb / 435 kb |
+B1 and B2 hold on draw B (pseudogenes by 0.4 points; draw A 38%).
+A119b (53 min 38 s, 7.6 GB; 97,978 rows, 68,798 on sources that are no annotated protein-coding gene):
+- places of non-control sources 24,199: relative 29.7%, annotated pseudogene 18.6%, other gene 5.4%, UNANNOTATED 46.4%.
+  Relative + pseudogene 48.3% (bar 70%): B3 fails on the share. Control sources with a place 559 of 4,635 (12.1%,
+  holds); recent paralogues of sources with >= 20 reads reached 2,292 of 3,584 (64.0%, holds); pseudogenes of the gene
+  3,703 of 6,603 (56.1%).
+- gene pairs (2,112 truth pairs among 16,024 expressed genes), precision / recall: read links 0.228 / 0.737; links at
+  ratio >= 0.8 0.360 / 0.617; families stage 0.816 / 0.818; union 0.266 / 0.920; intersection 0.821 / 0.635; families +
+  links at >= 0.8 0.427 / 0.874. B4 fails (bar 0.5); precision is 0.228, not row 1914's 0.034.
+- Places still chain on real data: median span 122 kb, largest 5.4 Mb. A place is a connected set of hits, and spliced
+  hits of different reads bridge neighbouring genes through shared exons. The footprint is exact, the unit is still too
+  coarse.
+Predictions: B1 right; B2 right for paralogues, wrong for pseudogenes on B (50.4%); B3 as predicted (48%); B4 fails
+right, 0.228 inside my 0.15-0.35.
+Reading: on planted reads the layer finds three quarters of recent paralogues and half the pseudogenes, 93-95% of its
+places on known relatives, 6-9% of control genes hit. On a real human sample it reaches 64% of recent paralogues and 56%
+of pseudogenes, but 46% of its places lie on no annotated exon and its gene pairs are 23% precise. The families stage,
+which compares the assembled sequences, is 0.82 / 0.82 on the same sample: that is the working read-derived relatedness.
+Cross-mapping adds recall (0.92 in union) at a precision no better than 0.27-0.43.
+Open: links per (source, target locus) instead of connected places; what the unannotated half is (repeats in
+transcripts, unannotated copies); the gorilla rescoring with the repaired tool.
