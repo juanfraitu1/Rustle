@@ -257,8 +257,11 @@ differences from the reference that recur are candidate sequences; IsoCon's stat
 separating variant, per-read error probabilities, Raghavan's bound, iterative merge at 0.01) decides which are real.
 -> `PREFIX.o2.sequences.tsv` and the column `tied_sequences` of the report. On planted samples with per-copy variants
 the count is exact in 0.80 of (unit, isoform) cells on unseen seeds, against 0.57 for IsoCon on the same groups and
-0.50 for the best constant; with no variants it never over-counts. It counts sequences: two alleles of one copy are two
-(row 1927), and it never says which copy. Real OR6737: 392 sequences at 194 loci, 116 of 379 families.
+0.50 for the best constant; with no variants it never over-counts. It counts sequences: two alleles of one copy are two,
+and on a planted heterozygous sample the count is exact on haplotypes in 0.53 of cells and over-counts copies in 140 of
+199 (row 1927); it never says which copy. Real OR6737: 392 sequences at 194 loci, 116 of 379 families.
+Real KB3781 against its own haplotypes (row 1928): single sequences agree, but 49 of 54 pairs of sequences at one locus
+are not confirmed; a count of 2 or more on real data is unverified.
 `PREREG_isocon_port_2026-11-23.md`.
 
 ## Where things are (Fritz workspace `/anvme/workspace/v138da13-rustle`)

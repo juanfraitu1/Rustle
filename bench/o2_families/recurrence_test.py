@@ -100,7 +100,8 @@ def decide(reads, mult, alpha=0.01, ratio=5):
                 else:
                     prob = {q: p_read(err[q], length[q], D, mult) for q in R}
                     m = sorted(length[q] for q in R)[len(R) // 2]
-                    pv = min(1.0, raghavan(prob, support) * factor(m, D))
+                    rb = raghavan(prob, support)          # the placement factor is an exact integer and can exceed any float: combine in logs
+                    pv = 0.0 if rb <= 0 else min(1.0, 10 ** min(0.0, math.log10(rb) + math.log10(factor(m, D))))
                 if worst is None or pv > worst[0]: worst = (pv, t)
             if not tested: continue
             c['p'] = worst[0]
@@ -145,6 +146,10 @@ def selftest():
     c, amb, s = decide(P, {})
     assert len(c) == 2 and amb == 6, (len(c), amb)
     assert raghavan({'a': 1e-4, 'b': 1e-4}, []) == 1.0 and raghavan({f'r{i}': 2e-4 for i in range(60)}, [f'r{i}' for i in range(20)]) < 1e-30
+    big = [(i * 7, 'S', 'A') for i in range(400)]                              # 400 separating sites: the factor has > 1,000 digits
+    assert factor(3000, big) > 10 ** 400 and math.log10(factor(3000, big)) > 400
+    Q = {f'x{i}': (set(big), [(0, 3000)]) for i in range(10)}; Q.update({f'y{i}': (set(), [(0, 3000)]) for i in range(30)})
+    c, amb, s_ = decide(Q, {}); assert len(c) == 2, len(c)
     print('recurrence_test selftest ok')
 
 def main():

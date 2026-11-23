@@ -35,3 +35,28 @@ B1 uncertain, 0.6-0.75: twice the sequences at half the support each. B2 holds. 
 homozygous copies are as balanced as two alleles, so pairing halves real copies; I expect it right in about half of the
 cells, better in D than in E. If B3 fails the record says plainly that the count is of sequences and that telling
 alleles from copies needs evidence the RNA reads do not hold (the sample's genome, or known heterozygous sites).
+
+## Result (job 4496857, workspace `r1927_het_alleles`; cells with the count exact, three seeds)
+
+| | E, all expressed (69) | S, half silent (61) | D, one copy 10 x (69) | all (199) |
+|---|---|---|---|---|
+| sequences against true HAPLOTYPES | 39 (0.57) | 42 (0.69) | 25 (0.36) | 106 (0.53); over 36, under 57 |
+| sequences against true COPIES | 10 (0.14) | 25 (0.41) | 22 (0.32) | 57 (0.29); over 140, under 2 |
+| paired estimate against COPIES | 39 (0.57) | 43 (0.70) | 26 (0.38) | 108 (0.54); over 28, under 63 |
+| every copy of the unit, against COPIES | 64 | 2 | 64 | 130 (0.65) |
+| one per cell, against COPIES | 0 | 44 | 0 | 44 (0.22) |
+
+- **B1 FAILS** (0.53 against 0.70). With two alleles per copy the count of sequences itself degrades: twice the
+  sequences at half the reads each. Worst where copies are weakly expressed (D: the copies at a third have about 20
+  reads per isoform, 10 per allele; 34 of 69 cells under-counted). Row 1926's 0.80 holds for homozygous copies only.
+- **B2 HOLDS** (0.29): read as copies the sequence count is too high in 140 of 199 cells. The limit, measured.
+- **B3 FAILS** (0.54 against 0.70). Pairing balanced sequences does better than the raw count as a copy count (108
+  against 57 cells) but is below "every copy of the unit" overall (130) and is right only as often as the sequence
+  count is right about haplotypes. It beats that constant only where copies are silent (S: 43 against 2).
+- Predictions: B2 and B3 as expected; B1 came in under my range (I said 0.6-0.75); "pairing better in D than in E" was
+  wrong (0.38 against 0.57), because D's weak copies are lost before any pairing.
+- **What stands.** The opt-in output is a count of SEQUENCES, reliable when copies are homozygous and well covered
+  (about 30 reads per sequence), and it must not be read as a number of copies on a heterozygous sample. Telling an
+  allele from a copy needs evidence the RNA reads do not hold: the sample's genome or known heterozygous sites. The
+  pairing estimate is not built into the tool.
+- Not tried, the user's call: support thresholds scaled to coverage; phasing-free use of a DNA call set for the sample.

@@ -34,8 +34,8 @@ What holds, on planted reads with ragged ends (rows 1917, 1918) unless said:
 | Low-scoring secondaries reveal silent relatives | holds on planted reads (70-81%); as a member list on real data not usable yet |
 | Alignment scores inside the EM help | small, confirmed: mislabelled silent units 35 -> 30 over eight seeds, no expressed unit lost (row 1921, default) |
 | minimap2's wrong calls can be overruled from the read | does NOT hold: 12.6% of reads are on the wrong unit, 96.5% of those are exact ties identical in every tag; error-aware re-scoring moves nothing (rows 1922, 1923) |
-| Recurrence across reads counts the expressed copies the reference cannot separate | holds when the sample carries its own variants: IsoCon's test ported to Rustle's tied groups is exact in 0.80 of cells (IsoCon itself 0.48-0.57, best constant 0.50), control never over-counts (row 1926, opt-in `RUSTLE_O2_SEQUENCES=1`) |
-| That count is a count of copies | NOT shown: it counts sequences; two alleles of one copy are two (row 1927 measures it) |
+| Recurrence across reads counts the expressed copies the reference cannot separate | on PLANTED reads only (on real KB3781 reads 49 of 54 splits are unconfirmed by the haplotypes, row 1928); holds when the sample carries its own variants: IsoCon's test ported to Rustle's tied groups is exact in 0.80 of cells (IsoCon itself 0.48-0.57, best constant 0.50), control never over-counts (row 1926, opt-in `RUSTLE_O2_SEQUENCES=1`) |
+| That count is a count of copies | does NOT hold: with two alleles per copy it over-counts copies in 140 of 199 cells and is exact on haplotypes in only 0.53 (row 1927) |
 
 The first eight rows are on planted reads where the sample equals the reference; the last four use `plant.py --private`
 (per-copy variants) or real reads with own-haplotype truth.
@@ -261,7 +261,16 @@ locus with exactly two reads and a similar relative one substitution away is whe
   Untested on real errors, heterozygous variants and real data.
 - **Wired, opt-in:** `RUSTLE_O2_SEQUENCES=1` on stage `o2` -> `PREFIX.o2.sequences.tsv` (group, loci, locus read at,
   sequence, reads, alleles, p, isoform) and the column `tied_sequences` of both report tables.
-- **Heterozygous copies (row 1927, `PREREG_het_alleles_2026-11-23.md`):** see that record; the count is of sequences.
+- **Heterozygous copies (row 1927, `PREREG_het_alleles_2026-11-23.md`):** with a second allele per copy the sequence
+  count is exact against the true haplotypes in 0.53 of cells (0.36 where most copies are weakly expressed), and read
+  as copies it over-counts in 140 of 199 cells. Pairing sequences of balanced support reaches 0.54 against copies,
+  below "every copy of the unit" (0.65) except where copies are silent. The 0.80 of row 1926 is for homozygous copies
+  at about 30 reads per sequence. Alleles against copies needs the sample's genome.
+- **Real reads against the sample's own haplotypes (row 1928, KB3781, `PREREG_real_haplotypes_2026-11-23.md`):** kept
+  sequences are pure (175 of 178) and the count agrees with the haplotypes at 126 of 147 loci x isoforms, but that is
+  because most loci show one sequence: of 54 pairs of sequences at one locus the haplotypes confirm 5. The unconfirmed
+  patterns are recurrent substitutions with a DNA-like spectrum in neither haplotype; what they are is open. On real
+  data a `tied_sequences` of 2 or more is unverified.
 Pre-registrations: `PREREG_minimap_wrong_calls_2026-11-23.md` (1922), `PREREG_error_context_2026-11-23.md` (1923),
 `PREREG_sample_psv_2026-11-23.md` (1924), `PREREG_isocon_groups_2026-11-23.md` (1925), `PREREG_isocon_port_2026-11-23.md`
 (1926), `PREREG_het_alleles_2026-11-23.md` (1927).
