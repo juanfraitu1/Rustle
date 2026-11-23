@@ -17,6 +17,7 @@ def load(path):  # (chrom, strand, chain) -> (max reads, a transcript id)
     for l in op(path):
         f = l.split('\t')
         if len(f) < 9: continue
+        if f[2] not in ('exon', 'transcript'): continue   # gene lines carry no transcript_id (IsoQuant)
         t = re.search(r'transcript_id "([^"]*)"', f[8]).group(1)
         if f[2] == 'exon': ex[(f[0], f[6], t)].append((int(f[3]), int(f[4])))
         elif f[2] == 'transcript':
