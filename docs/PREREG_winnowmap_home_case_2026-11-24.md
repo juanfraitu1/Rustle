@@ -51,3 +51,17 @@ aligner and says nothing about real satellite variation. A control for a diagram
 - Every wrong read of every class lies on the true chromosome.
 - For the page: the placement gain on satellites stays the paper's claim (noisier reads, real arrays); what we measured is
   the confidence gain, and that length decides at gene families.
+
+## Addendum, registered before running (2026-11-24): noisy reads
+User, on the page: "The numbers don't look that much different where it supposedly helps". Correct: the outcome above shows
+no placement gain. The simulated reads were HiFi-accurate (0.5%) and cut from the reference, the easiest case for
+minimap2. Winnowmap was introduced for noisy long reads, so the fair version of its home case is run before the page
+words anything as "helps".
+- Reads: classes SAT10 and FAM10 as above (same sampling, seed 1939), at 5% and at 10% errors (same mix of error types),
+  2,000 reads per class and rate.
+- Aligners: `minimap2 -ax map-ont`; Winnowmap `-W repetitive_k15.txt -ax map-ont`.
+- Reading, per error rate, on SAT10: WORKS ON ITS TARGET = minimap2 wrong >= 1% and Winnowmap at most half as many;
+  otherwise NOT REPRODUCED. Reported beside: FAM10, and right / wrong reads with MAPQ >= 30.
+- Prediction (mine): uncertain. If there is a placement gain anywhere it is at 10%; I expect minimap2 wrong on a few
+  percent there and Winnowmap fewer, but not by half. If neither rate shows it, the page will say that we could not
+  reproduce a placement gain and show the confidence difference as the only measured effect.
