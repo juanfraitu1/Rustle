@@ -115,7 +115,11 @@ def scan(contig):
 def em(classes, placed, rounds=500, tol=1e-6):
     """counts-only EM: theta = placed + expected class reads; classes {frozenset: n}."""
     members = {l for c in classes for l in c}
-    theta = {l: placed.get(l, 0) + sum(n / len(c) for c, n in classes.items() if l in c) for l in members}
+    start = dict.fromkeys(members, 0)      # one pass over the classes (was one per locus), same sums in the same order
+    for c, n in classes.items():
+        for l in c:
+            start[l] += n / len(c)
+    theta = {l: placed.get(l, 0) + start[l] for l in members}
     for _ in range(rounds):
         new = {l: float(placed.get(l, 0)) for l in members}
         for c, n in classes.items():

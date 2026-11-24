@@ -54,7 +54,7 @@ Planted, the mode (seeds 1951-1953; E, S):
 | M1, `ms` 0.98 | the same | 2, 4, 3 | the same | 0.619, 0.423, 0.635, 0.424, 0.631, 0.421 |
 | M2, within 10 `ms` | the same | 2, 4, 3 | the same | 0.664, 0.445, 0.676, 0.409, 0.679, 0.413 |
 
-Real (`toolcompare.py`: the named families' annotated copies with a spliced transcript / junction precision / junctions):
+Real (`toolcompare.py`: the named families' annotated copies with a spliced transcript / junction precision / spliced transcripts at those copies; corrected 2026-11-25, the third number was first labelled "junctions"):
 
 | | OR6737 | KB3781 | rescued loci OR / KB | transcripts with the mode OR / KB |
 |---|---|---|---|---|

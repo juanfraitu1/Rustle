@@ -18,7 +18,7 @@ for i, l in enumerate(open(f'{p}/{sc}.fq')):
         out[f].write(f'>{name.replace("|", "_")}\n{l}')
 PY
 ( cd "${ISOCON_DIR:?set ISOCON_DIR}" && ls "$O"/pools/*.fa | xargs -P 4 -I{} bash -c 't=$(basename {} .fa); pixi run IsoCon pipeline -fl_reads {} -outfolder '"$O"'/isocon/$t --nr_cores '"$T"' > '"$O"'/logs/$t.log 2>&1; echo "isocon $t exit $?"' )
-cat /dev/null > "$O/cand.fa"; for f in "$O"/isocon/*/final_candidates.fa; do t=$(basename "$(dirname "$f")"); awk -v t="$t" '/^>/{print ">" t "__" substr($1,2); next}{print}' "$f" >> "$O/cand.fa"; done
+cat /dev/null > "$O/cand.fa"; for f in "$O"/isocon/*/final_candidates.fa; do [ -s "$f" ] || continue; t=$(basename "$(dirname "$f")"); awk -v t="$t" '/^>/{print ">" t "__" substr($1,2); next}{print}' "$f" >> "$O/cand.fa"; done
 minimap2 -ax splice:hq -uf --eqx -t "$T" "$FA" "$O/cand.fa" 2> "$O/mm.err" | samtools view -F 0x904 - > "$O/cand.sam"
 python3 - "$P" "$SC" "$O" "$FA" "$H" <<'PY'
 import sys, re, collections

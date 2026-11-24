@@ -8,7 +8,7 @@
 #   O2_BAMBU_MANIFEST=pixi.toml      (pixi run --manifest-path ... Rscript bench/famcmp/bambu_run.R)
 # MAP_P (default 0.1; 0.8 = the slim mapping mode of row 1902). Arms that fail are reported and scored as MISSING.
 set -uo pipefail
-P=$1; SC=$2; FA=$3; O=$4; T=${5:-32}
+P=$(realpath "$1"); SC=$2; FA=$(realpath "$3"); mkdir -p "$4"; O=$(realpath "$4"); T=${5:-32}   # absolute: the script works inside OUTDIR
 H=$(cd "$(dirname "$0")" && pwd); R=$(cd "$H/../.." && pwd); BIN=${RUSTLE_BIN:-$R/target/release}; DR=$R/tools/rustle_pipeline.sh
 mkdir -p "$O" && cd "$O" || exit 1
 say() { echo "[o2_families] $SC $*"; }

@@ -58,7 +58,7 @@ def candidates(base, floor1, out, mono=False):
     with open(out, 'w') as w:
         for t, L in by_transcript(floor1).items():
             ex = [l.split('\t') for l in L if l.split('\t')[2] == 'exon']
-            if len(ex) < 2 and not mono: continue
+            if not ex or (len(ex) < 2 and not mono): continue      # a transcript line without exon lines is no candidate
             a, b = min(int(e[3]) for e in ex), max(int(e[4]) for e in ex)
             if occupied(sp, ex[0][0], ex[0][6], a, b): continue
             if len(ex) < 2 and ex[0][6] not in '+-' and (occupied(sp, ex[0][0], '+', a, b) or occupied(sp, ex[0][0], '-', a, b)): continue   # a strandless single exon under any model

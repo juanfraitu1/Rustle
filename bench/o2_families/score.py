@@ -132,15 +132,7 @@ def main():
     if fams: a.remove('--families')
     if '--out' in a: i = a.index('--out'); out = a[i + 1]; del a[i:i + 2]
     d, sc = a[0], a[1]
-    T = load_gtf(f'{d}/loci.gtf'); truth = {t: (c, st, ex, g) for t, (c, st, ex, g) in T.items()}
-    planted, fam = {}, {}; hdr = None
-    for l in open(f'{d}/plan.tsv'):
-        f = l.rstrip('\n').split('\t')
-        if hdr is None: hdr = f; continue
-        fam[f[1]] = f[0]
-        if f[hdr.index(sc)] != 'NA': planted[f[3]] = int(f[hdr.index(sc)])
-    keep = {truth[t][3] for t in planted}; truth = {t: v for t, v in truth.items() if v[3] in keep}
-    planted = {t: planted.get(t, 0) for t in truth}
+    truth, planted, fam = load_plan(d, sc)
     rows = []
     for x in a[2:]:
         lab, path = x.split('=', 1)

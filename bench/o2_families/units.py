@@ -34,7 +34,7 @@ with open(f'{d}/units.tsv', 'w') as w, open(f'{d}/copies.fa', 'w') as q:
         w.write(f"{c['fam']}\t{g}\t{c['name']}\t{uid[key[g]]}\t{size[key[g]]}\t{meta[t0][0]}\t{min(a for a, _ in ex)}\t{max(b for _, b in ex)}\t{meta[t0][1]}\t{len(c['tx'])}\n")
         q.write(f">{g}\n{seq[t0]}\n")
 L = {g: len(seq[c['tx'][0]]) for g, c in copy.items()}
-paf = subprocess.run(['minimap2', '-c', '--eqx', '-x', 'asm20', '-X', '-N', '200', '-p', '0.1', '-t', thr, f'{d}/copies.fa', f'{d}/copies.fa'], capture_output=True, text=True).stdout
+paf = subprocess.run(['minimap2', '-c', '--eqx', '-x', 'asm20', '-X', '-N', '200', '-p', '0.1', '-t', thr, f'{d}/copies.fa', f'{d}/copies.fa'], capture_output=True, text=True, check=True).stdout      # check: a failed minimap2 must not read as "no copy aligns to another"
 best = {}
 for l in paf.splitlines():
     f = l.split('\t'); a, b = f[0], f[5]

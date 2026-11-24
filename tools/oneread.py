@@ -43,6 +43,23 @@ def models(path):
     for t in T.values(): t[2].sort()
     return T
 
+def primary_chains(records, want):
+    """{(contig, intron chain): primary alignments} for the chains that hold a junction of `want`"""
+    prim = collections.Counter()
+    for a in records:
+        if a.is_unmapped or a.is_secondary or a.is_supplementary: continue
+        p = a.reference_start; ch = []
+        for op, n in a.cigartuples:
+            if op == 3: ch.append((p, p + n))
+            if op in (0, 2, 3, 7, 8): p += n
+        if ch and any((a.reference_name, i) in want for i in ch): prim[(a.reference_name, tuple(ch))] += 1
+    return prim
+
+_SCAN = {}
+def _scan(contig):
+    import pysam
+    return primary_chains(pysam.AlignmentFile(_SCAN['bam']).fetch(contig), _SCAN['want'])
+
 chain = lambda ex: tuple((ex[i][1], ex[i + 1][0]) for i in range(len(ex) - 1))
 
 def main(default, floor1, bam, fasta, out):
@@ -53,13 +70,13 @@ def main(default, floor1, bam, fasta, out):
         k = (c, chain(ex))
         if len(ex) > 1 and s in '+-' and k not in have and k not in cand: cand[k] = (s, ex, lines)
     want = {(c, i) for c, ch in cand for i in ch}; prim = collections.Counter()
-    for a in pysam.AlignmentFile(bam, threads=4):
-        if a.is_unmapped or a.is_secondary or a.is_supplementary: continue
-        p = a.reference_start; ch = []
-        for op, n in a.cigartuples:
-            if op == 3: ch.append((p, p + n))
-            if op in (0, 2, 3, 7, 8): p += n
-        if ch and any((a.reference_name, i) in want for i in ch): prim[(a.reference_name, tuple(ch))] += 1
+    B = pysam.AlignmentFile(bam); contigs = sorted({c for c, _ in want} & set(B.references))    # only contigs with a candidate are read
+    if B.has_index() and len(contigs) > 1:      # one contig per worker, four at a time (as the four decompression threads before)
+        import multiprocessing
+        _SCAN.update(bam=bam, want=want)
+        with multiprocessing.get_context('fork').Pool(4) as pool:
+            for part in pool.imap_unordered(_scan, contigs, chunksize=1): prim.update(part)
+    else: prim = primary_chains(pysam.AlignmentFile(bam, threads=4), want)
     has = collections.defaultdict(set)
     for c, ch in prim:
         for i in ch: has[(c, i)].add(ch)
