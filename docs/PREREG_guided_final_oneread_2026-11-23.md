@@ -5,7 +5,7 @@ registering the two arms below. Written before any run of this row. Workspace `r
 `bench/famcmp/guided_arms.py`, job `run.sbatch` there.
 
 ## Current state
-Registered, jobs not yet run. Outcome section is appended below when they end.
+Run 2026-11-23/24 (jobs 4498896, 4498934-4498944). Arm A PASSES on 10 of 10 judging samples (candidate; the default is the user\'s call). Arm B FAILS on 10 of 10 (precision bar B1). Outcome at the end.
 
 ## What is known before (step 0, read-only, runs of `artifact_refresh_2026-11-21`, OR6737 and A119b only; workspace `guided_step0_2026-11-23`)
 - Guided mode (rule G1d, row 1622) filters `PREFIX.gtf` and adds guide chains with a full-chain read, so it cannot find a hidden
@@ -50,3 +50,34 @@ A candidate rule for the opt-in guided mode, the user's call; nothing changes in
 (`src/guide.rs` reading `final.gtf`; the one-read class behind a switch) follows only on the user's word. A FAIL closes the arm.
 Limits stated now: RefSeq is the only truth, and on the non-human apes it is computed models; a new combination of known
 introns that RefSeq lacks counts as wrong although some are real; one-read chains have no second read by definition.
+
+## Outcome (2026-11-24; workspace `r1934_guided_final_oneread/runs/STEM/score.txt`)
+OR6737 and A119b are the development samples, the other ten judge.
+
+| sample | today: hidden / precision | arm A | A lost chains (hidden) | arm B | B added chains (hidden, share) |
+|---|---|---|---|---|---|
+| A119b | 7794 / 0.1377 | 7722 / 0.1588 | 7986 (72) | 8793 / 0.1467 | 11300 (1071, 0.0948) |
+| OR6737 | 5428 / 0.3709 | 5421 / 0.3923 | 816 (7) | 6330 / 0.3560 | 3963 (909, 0.2294) |
+| HG002_kinnex.t2t | 7238 / 0.1842 | 7207 / 0.2011 | 3468 (31) | 8418 / 0.1891 | 8679 (1211, 0.1395) |
+| GGO_KB3781_fib_mm | 5834 / 0.3437 | 5822 / 0.3575 | 690 (12) | 6570 / 0.3419 | 2930 (748, 0.2553) |
+| PTR_mm | 3895 / 0.4369 | 3894 / 0.4604 | 458 (1) | 5450 / 0.4253 | 4356 (1556, 0.3572) |
+| PTR_AG18354_lcl_mm | 6372 / 0.3553 | 6362 / 0.3671 | 603 (10) | 7816 / 0.3651 | 4081 (1454, 0.3563) |
+| PPA_mm | 3447 / 0.3157 | 3441 / 0.3263 | 371 (6) | 4221 / 0.3147 | 2865 (780, 0.2723) |
+| PPA_PR00251_fib_mm | 4305 / 0.2034 | 4291 / 0.2286 | 2397 (14) | 4935 / 0.2190 | 3769 (644, 0.1709) |
+| PPY_mm | 3962 / 0.1770 | 3947 / 0.1966 | 2310 (15) | 4687 / 0.1920 | 4334 (740, 0.1707) |
+| PPY_AG05252_fib_mm | 5143 / 0.3095 | 5132 / 0.3364 | 1363 (11) | 5902 / 0.3109 | 3729 (770, 0.2065) |
+| PAB_mm | 3062 / 0.1938 | 3047 / 0.2202 | 1962 (15) | 3736 / 0.2153 | 3514 (689, 0.1961) |
+| PAB_AG06213_fib_mm | 5465 / 0.3433 | 5451 / 0.3600 | 776 (14) | 6226 / 0.3389 | 3227 (775, 0.2402) |
+
+- **Arm A (rule G1d on `final.gtf`): PASS on 10 of 10 judging samples** (and on both development samples). It drops 371 to
+  3,468 chains per judging sample, of which 1 to 31 are hidden transcripts (share 0.2% to 1.8%); precision outside the guide
+  rises by 0.010 to 0.027 on every sample; no chain is added. Bars A1 and A2 hold everywhere.
+- **Arm B (A + one-read chains made only of guide introns): FAIL on 10 of 10**, always on B1: the added chains are less often
+  hidden transcripts than arm A's chains outside the guide (closest: PTR_AG18354 0.356 against 0.367). B2 holds everywhere:
+  +12% to +40% hidden transcripts found (PTR testis 3,894 -> 5,450). Against TODAY's guided mode arm B still finds more hidden
+  transcripts on all twelve samples, at a precision above today's on 6 of the 10 judging samples and below on 4.
+- Cost: `oneread` within 2 x `assemble` on every sample.
+- Predictions: A passes everywhere, held. B1 "passes on most" WRONG (0 of 10). B2 "doubtful, +1% to +4%" WRONG the other way
+  (+12% to +40%).
+- Not done, the user's call: port arm A to `src/guide.rs`; arm B as an opt-in "sensitive" guided output (it is a trade, not a
+  gain by the registered bar); a stricter class inside B (e.g. two reads) would be a new row.
