@@ -14,19 +14,8 @@ import sys, os, argparse, collections, multiprocessing
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'tools'))
 import eq_classes as E
 
-def variants(r):
-    """-> set of (pos, kind, alt) on the reference, list of aligned blocks (0-based half open)"""
-    out = set(); rp, qp = r.reference_start, 0; seq = r.query_sequence
-    for op, n in r.cigartuples:
-        if op in (0, 7): rp += n; qp += n
-        elif op == 8:
-            for i in range(n): out.add((rp + i, 'S', seq[qp + i] if seq else 'N'))
-            rp += n; qp += n
-        elif op == 1: out.add((rp, 'I', seq[qp:qp + n] if seq else str(n))); qp += n
-        elif op == 2: out.add((rp, 'D', n)); rp += n
-        elif op == 3: rp += n
-        elif op == 4: qp += n
-    return out, r.get_blocks()
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from recurrence_test import variants   # the shipped tool owns it; this failed arm (row 1924) borrows
 
 def haplotypes(reads, min_reads, min_share):
     """reads {name: (variants, blocks)} -> sites, [haplotype read lists]"""
@@ -50,26 +39,7 @@ def haplotypes(reads, min_reads, min_share):
         else: haps.append([dict(vec[q]), [q]])
     return sites, [h[1] for h in haps]
 
-def tie_groups(gtf, bam, tab, threads=8, ties=None):
-    """-> meta, {read: loci it is exactly tied between}, {group: loci}, {group: tied reads}; a group = loci joined by tied reads.
-    The pass over the BAM is the shared one (tools/tie_table.py; `ties` = its table, read when it matches the inputs)."""
-    import tie_table as TT
-    meta, _, pairs, _ = TT.get(gtf, bam, tab, threads, ties)
-    sets = collections.defaultdict(set)
-    for q, g, gap in pairs:
-        if gap == 0 and g != E.OUTSIDE: sets[q].add(g)
-    parent = {}
-    def find(x):
-        while parent.setdefault(x, x) != x: parent[x] = parent[parent[x]]; x = parent[x]
-        return x
-    for s in sets.values():
-        if len(s) > 1:
-            s = sorted(s)
-            for y in s[1:]: parent[find(y)] = find(s[0])
-    groups = collections.defaultdict(set); gr = collections.defaultdict(set)
-    for q, s in sets.items():
-        if len(s) > 1: k = find(next(iter(s))); groups[k] |= s; gr[k].add(q)
-    return meta, sets, groups, gr
+from tie_table import tie_groups      # moved to tools/tie_table.py (2026-11-24), kept under this name for isocon_groups.sh
 
 def selftest():
     bl = [(0, 100)]; R = {}

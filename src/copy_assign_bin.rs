@@ -14232,6 +14232,21 @@ mod tests {
     ///  - MONOHI single exon inside LONG's span, 9 reads    -> kept
     ///  - MONOLO single exon inside LONG's span, 1 read     -> dropped by the ISM pass (host = LONG)
     ///  - FREE   single exon at its own locus, 1 read       -> dropped only by the mono floor
+    /// `--polish-reasons` reads each transcript back from its GTF lines: exons sorted, the largest `reads`, the strand.
+    #[test]
+    fn tx_snapshot_reads_exons_strand_and_reads() {
+        let l = |f: &str, a: i64, b: i64, attr: &str| format!("c\tx\t{f}\t{a}\t{b}\t.\t-\t.\t{attr}");
+        let lines = vec![
+            l("transcript", 101, 600, "gene_id \"G\"; transcript_id \"T\"; reads \"7\";"),
+            l("exon", 501, 600, "gene_id \"G\"; transcript_id \"T\";"),
+            l("exon", 101, 200, "gene_id \"G\"; transcript_id \"T\";"),
+            "# a comment".to_string(),
+        ];
+        let s = tx_snapshot(&lines);
+        assert_eq!(s.len(), 1);
+        assert_eq!(s["T"], ("-".to_string(), vec![(101, 200), (501, 600)], 7));
+    }
+
     #[test]
     fn polish_drops_unsupported_fragments_and_bare_mono_loci() {
         fn gtf(tid: &str, reads: u64, exons: &[(i64, i64)]) -> Vec<String> {

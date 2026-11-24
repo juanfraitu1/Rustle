@@ -33,10 +33,11 @@ Not taken: IsoCon's all-against-all alignment and consensus (the genome alignmen
 OUT.tsv: group, loci, read_at, candidate, reads, sites (its alleles), p (largest of its tests, NA untested), ambiguous
 reads of the locus, read names, isoform (index of the intron chain at that locus).
 It says how many different sequences are expressed among copies the reference cannot separate, never which copy."""
-import sys, os, re, argparse, collections, math, multiprocessing
+import sys, os, re, argparse, bisect, collections, math, multiprocessing
 from decimal import Decimal, getcontext
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import sample_psv as S
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'tools'))
+import eq_classes as E
+import tie_table as TT
 getcontext().prec = 60
 
 def raghavan(prob, support):
@@ -165,7 +166,6 @@ def decide(reads, mult, alpha=0.01, ratio=5, cluster='fold', qinfo=None, qmode=N
     """reads {name: (variants, blocks)} -> candidates [{'cov': frozenset, 'pat': {site: bool}, 'reads': [..], 'p': float|None}], n ambiguous"""
     sup = collections.Counter(x for v, _ in reads.values() for x in v)
     sites = sorted(x for x, n in sup.items() if n >= 2)
-    import bisect
     spos = [x[0] for x in sites]
     pat = {}; err = {}; length = {}
     for q, (v, bl) in reads.items():
@@ -225,7 +225,7 @@ def decide(reads, mult, alpha=0.01, ratio=5, cluster='fold', qinfo=None, qmode=N
                 if not R: pv = 1.0
                 else:
                     if qmode:               # IsoCon with qualities: per-base probabilities, and no placement factor
-                        R = [q for q in R if qinfo.get(q) is not None]; support = [q for q in support if q in set(R)]
+                        R = [q for q in R if qinfo.get(q) is not None]; Rs = set(R); support = [q for q in support if q in Rs]
                         ti = max(1.0, sum(err[q][0] for q in R)); td = max(1.0, sum(err[q][1] for q in R)); ts = max(1.0, sum(err[q][2] for q in R)); tt = ti + td + ts
                         prob = {q: p_read_qual(qinfo[q], D, mult, (ts / tt, ti / tt, td / tt), qmode) for q in R}
                         pv = min(1.0, raghavan(prob, support)) if R else 1.0
@@ -240,6 +240,20 @@ def decide(reads, mult, alpha=0.01, ratio=5, cluster='fold', qinfo=None, qmode=N
             if worst[0] >= alpha:
                 worst[1]['reads'] += c['reads']; cands.remove(c); changed = True; break
     return cands, amb, sites
+
+def variants(r):
+    """-> set of (pos, kind, alt) on the reference, list of aligned blocks (0-based half open)"""
+    out = set(); rp, qp = r.reference_start, 0; seq = r.query_sequence
+    for op, n in r.cigartuples:
+        if op in (0, 7): rp += n; qp += n
+        elif op == 8:
+            for i in range(n): out.add((rp + i, 'S', seq[qp + i] if seq else 'N'))
+            rp += n; qp += n
+        elif op == 1: out.add((rp, 'I', seq[qp:qp + n] if seq else str(n))); qp += n
+        elif op == 2: out.add((rp, 'D', n)); rp += n
+        elif op == 3: rp += n
+        elif op == 4: qp += n
+    return out, r.get_blocks()
 
 def introns(r):
     out = []; pos = r.reference_start
@@ -353,9 +367,9 @@ def _collect_group(k):
         for r in B.fetch(c, s - 1, e):
             q = r.query_name
             if r.is_unmapped or r.is_supplementary or q not in left or rep not in sets[q]: continue
-            if r.is_secondary and r.get_tag('ms') != S.E.G_TIES.get(q): continue
-            if S.E.tx_strand(r) != st and st in '+-': continue
-            if q not in reads or r.query_alignment_length > ln[q]: reads[q] = (*S.variants(r), introns(r), qual_blocks(r) if wq else None); ln[q] = r.query_alignment_length
+            if r.is_secondary and r.get_tag('ms') != E.G_TIES.get(q): continue
+            if E.tx_strand(r) != st and st in '+-': continue
+            if q not in reads or r.query_alignment_length > ln[q]: reads[q] = (*variants(r), introns(r), qual_blocks(r) if wq else None); ln[q] = r.query_alignment_length
         left -= {q for q in left if rep in sets[q]}
         if not reads: continue
         mult = {}
@@ -370,7 +384,7 @@ def _collect_group(k):
 
 def signature(a):
     """what the collected reads depend on: the four inputs (size and time) and the read floor of the collection"""
-    return [[os.path.abspath(p), os.path.getsize(p), int(os.path.getmtime(p))] for p in (a.gtf, a.bam, a.tab, a.fasta)] + [a.min_reads, 'v1']
+    return TT.stamp(a.gtf, a.bam, a.tab, a.fasta) + [a.min_reads, 'v1']
 
 def collect(a):
     """The costly half (two passes over the BAM): groups of tied loci and, per locus read, each tied read's differences,
@@ -384,7 +398,7 @@ def collect(a):
                 print(f'recurrence_test: reads taken from the cache {a.cache}', file=sys.stderr); return d['units'], d['groups']
             print(f'recurrence_test: cache {a.cache} is for other inputs; collecting again', file=sys.stderr)
         except Exception as e: print(f'recurrence_test: cache {a.cache} unreadable ({e}); collecting again', file=sys.stderr)
-    meta, sets, groups, gr = S.tie_groups(a.gtf, a.bam, a.tab, a.threads, a.ties)
+    meta, sets, groups, gr = TT.tie_groups(a.gtf, a.bam, a.tab, a.threads, a.ties)
     wq = a.qual != 'none' or bool(a.cache)
     _W.update(meta=meta, sets=sets, groups=groups, gr=gr, a=a, wq=wq)
     keys = sorted(groups, key=lambda k: (meta[k][0], meta[k][1])); big = sorted(keys, key=lambda k: -len(gr[k]))

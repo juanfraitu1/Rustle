@@ -13,7 +13,7 @@ the distinct sequences (per isoform) the reads show among copies they are exactl
 tied reads were read at; in the family row their sum. A count of sequences, not of copies: two alleles of one copy are two.
 The same question for several tools, with planted truth: bench/o2_families/ (docs/O2_FAMILY_BENCHMARK.md).
 --selftest runs the pure parts."""
-import sys, re, csv, collections
+import sys, os, re, csv, collections
 
 def load_gtf(path):
     """-> {gene_id: {'tx': n, 'spliced': n, 'chains': set, 'reads': float, 'name': str}}"""
@@ -73,7 +73,7 @@ def read_sequences(path):
     return sq
 
 def selftest():
-    import tempfile, os
+    import tempfile
     d = tempfile.mkdtemp(); p = os.path.join(d, 'x.gtf')
     open(p, 'w').write('c\tx\ttranscript\t1\t300\t.\t+\t.\tgene_id "A"; transcript_id "a1"; reads "5"; ref_gene_name "N1";\n'
                        'c\tx\texon\t1\t100\t.\t+\t.\tgene_id "A"; transcript_id "a1";\nc\tx\texon\t201\t300\t.\t+\t.\tgene_id "A"; transcript_id "a1";\n'
@@ -110,7 +110,7 @@ def main():
     ch = 'family_id\tgene_id\tchrom\tstart\tend\tstrand\tname\ttranscripts\tisoforms\treads' + ('\treads_placed\treads_max\treads_em\ttie_group' if eq is not None else '') + ('\ttied_sequences' if sq is not None else '')
     for p, h, rows in ((out + '.families.tsv', fh, F), (out + '.copies.tsv', ch, C)):
         with open(p + '.tmp', 'w') as w: w.write(h + '\n'); w.writelines('\t'.join(map(str, r)) + '\n' for r in rows)
-        __import__('os').replace(p + '.tmp', p)
+        os.replace(p + '.tmp', p)
     multi = [r for r in F if r[1] >= 2]
     print(f'o2: {len(F)} families ({len(multi)} with >= 2 copies: {sum(r[1] for r in multi)} copies, {sum(r[2] for r in multi)} with a spliced transcript, {sum(r[4] for r in multi)} isoforms)')
 

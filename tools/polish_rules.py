@@ -147,9 +147,10 @@ def drop_set(lines, mode='full', mono_quantile=0.82, isoform_fraction=0.02, mono
                 if out and a <= out[-1][1]: out[-1][1] = max(out[-1][1], b); out[-1][2] = max(out[-1][2], r)
                 else: out.append([a, b, r])
             return out
-        exons_any = {k: merge(v) for k, v in exons_any.items()}; spans_same = {k: merge(v) for k, v in spans_same.items()}
-        def hits(v, s, e):
-            hi = bisect.bisect_right([x[0] for x in v], e); top = None; i = hi - 1
+        def index(d): return {k: (m, [x[0] for x in m]) for k, m in ((k, merge(v)) for k, v in d.items())}     # the starts once, not per lookup
+        exons_any = index(exons_any); spans_same = index(spans_same)
+        def hits(vs, s, e):
+            v, starts = vs; hi = bisect.bisect_right(starts, e); top = None; i = hi - 1
             while i >= 0 and v[i][1] >= s:
                 top = v[i][2] if top is None else max(top, v[i][2]); i -= 1
             return top

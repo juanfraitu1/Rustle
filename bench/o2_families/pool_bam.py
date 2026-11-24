@@ -10,18 +10,19 @@ always kept. Rules, each against the read's genome-wide best from AS_TABLE (as_t
   as:R      AS >= R x best AS      (as:0.98 = the `good` pool; the control that this emulation is faithful)
   ms:R      ms >= R x best ms      (the same width on the score minimap2 ranks by)
   msgap:N   ms >= best ms - N      (msgap:10 = the near-tie band of the labels)
-A secondary without the tag, or of a read missing from the table, is kept (as the assembler does)."""
-import sys, os, argparse, multiprocessing
+A secondary without the tag, or of a read missing from the table, is kept (as the assembler does). Reads without a
+position (unmapped) are not copied: the assembler does not read them."""
+import sys, os, re, argparse, multiprocessing
 G = {}
 
 def work(job):
     import pysam
-    i, contig = job; part = f"{G['out']}.part.{i:06d}.bam"; kept = seen = 0; kind, val = G['rule']; best = G['best']
+    i, contig = job; tag = 'AS' if G['rule'][0] == 'as' else 'ms'; part = f"{G['out']}.part.{i:06d}.bam"; kept = seen = 0; kind, val = G['rule']; best = G['best']
     B = pysam.AlignmentFile(G['bam'])
     with pysam.AlignmentFile(part, 'wb', template=B) as w:
         for r in B.fetch(contig):
             if r.is_secondary:
-                seen += 1; b = best.get(r.query_name); tag = 'AS' if kind == 'as' else 'ms'
+                seen += 1; b = best.get(r.query_name)
                 if b is not None and r.has_tag(tag):
                     t = r.get_tag(tag); top = b[0] if kind == 'as' else b[1]
                     if top is not None and (t < val * top if kind in ('as', 'ms') else t < top - val): continue
@@ -29,10 +30,13 @@ def work(job):
             w.write(r)
     return part, seen, kept
 
-def load_best(tab):
+def load_best(tab, bam=None):
     best = {}
     for l in open(tab):
-        if l[0] == '#': continue
+        if l[0] == '#':
+            m = re.search(r'\tbam_bytes=(\d+)', l)          # as_table's header records its BAM's size: another BAM's scores filter silently wrong
+            if m and bam and int(m.group(1)) != os.path.getsize(bam): sys.exit(f'pool_bam: {tab} was made from a BAM of {m.group(1)} bytes; {bam} has {os.path.getsize(bam)}')
+            continue
         f = l.rstrip('\n').split('\t')
         a = int(f[1]) if f[1].lstrip('-').isdigit() else None; m = int(f[6]) if len(f) > 6 and f[6].lstrip('-').isdigit() else None
         best[f[0]] = (a, m)
@@ -41,7 +45,7 @@ def load_best(tab):
 def run(bam, tab, out, rule, threads):
     import pysam
     kind, val = rule.split(':'); assert kind in ('as', 'ms', 'msgap'), rule
-    G.update(bam=bam, out=out, rule=(kind, float(val)), best=load_best(tab))
+    G.update(bam=bam, out=out, rule=(kind, float(val)), best=load_best(tab, bam))
     refs = list(pysam.AlignmentFile(bam).references)
     with multiprocessing.get_context('fork').Pool(threads) as pool: res = pool.map(work, list(enumerate(refs)), chunksize=1)
     parts = [p for p, _, _ in res]; pysam.cat('-o', out + '.tmp', *parts)
@@ -66,6 +70,9 @@ def selftest():
     assert run(bam, tab, os.path.join(d, 'm.bam'), 'ms:0.98', 1) == (4, 3) and [x[0] for x in names(os.path.join(d, 'm.bam'))] == [100, 1000, 2000, 4000]
     assert run(bam, tab, os.path.join(d, 'g.bam'), 'msgap:10', 1) == (4, 3) and [x[0] for x in names(os.path.join(d, 'g.bam'))] == [100, 1000, 2000, 4000]
     assert run(bam, tab, os.path.join(d, 'g0.bam'), 'msgap:0', 1) == (4, 2)
+    open(tab, 'w').write('#as_table\tbam=/some/other.bam\tbam_bytes=1\n')
+    try: load_best(tab, bam); raise AssertionError('a table of another BAM was accepted')
+    except SystemExit: pass
     print('pool_bam selftest ok')
 
 if __name__ == '__main__':

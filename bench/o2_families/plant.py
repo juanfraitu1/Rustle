@@ -136,6 +136,7 @@ def main():
     ap.add_argument('--dele', type=float, default=0.002); ap.add_argument('--full', type=float, default=0.7); ap.add_argument('--ragged', type=int, default=20)
     ap.add_argument('--private', type=float, default=0.0, metavar='RATE'); ap.add_argument('--het', type=float, default=0.0, metavar='RATE')
     a = ap.parse_args()
+    if a.het > 0 and a.private <= 0: ap.error('--het needs --private > 0 (the second allele is built on the private variants)')
     if a.from_run:
         if len(a.pos) != 2: ap.error('--from-run GTF COPIES GENOME.fa OUTDIR')
         a.genome, a.out = a.pos

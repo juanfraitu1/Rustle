@@ -73,6 +73,11 @@ def introns(r):
         elif op in (0, 2, 7, 8): pos += n
     return tuple(out)
 
+def spans(v):
+    """(start, end, id) sorted, with the starts and the longest span: so `inside` starts at the first span that can reach"""
+    v = sorted(v)
+    return v, [x[0] for x in v], max((x[1] - x[0] for x in v), default=0)
+
 def contig_index(txs):
     """per strand: chain -> transcript, sorted junctions, junction -> transcripts, single-exon spans, exons of spliced transcripts"""
     ix = {}
@@ -87,7 +92,7 @@ def contig_index(txs):
                 exons += [(a, b, t) for a, b in e]
             else: mono.append((e[0][0], e[0][1], t))
         js = sorted(junc)
-        ix[s] = dict(chain=chain, junc=junc, js=js, jstart=[j[0] for j in js], has=has, mono=sorted(mono), exons=sorted(exons), info=info)
+        ix[s] = dict(chain=chain, junc=junc, js=js, jstart=[j[0] for j in js], has=has, mono=spans(mono), exons=spans(exons), info=info)
     return ix
 
 def near_junction(j, x, w):
@@ -111,8 +116,9 @@ def pieces(ch, x):
 
 def inside(a, b, spans):
     """the span (start, end, id) that covers most of [a, b] (1-based closed), with the covered share"""
+    spans, starts, longest = spans
     best = (0.0, None); L = b - a + 1
-    for s, e, t in spans:
+    for s, e, t in spans[bisect.bisect_left(starts, a - longest):]:
         if s > b: break
         if e < a: continue
         ov = min(b, e) - max(a, s) + 1
@@ -216,7 +222,7 @@ def run(a):
     G['family'] = fam
     # exact rule per removed chain (polish_rules.py on the unpolished assembly of the same run): {contig: {(strand, chain): rule}}
     rules = collections.defaultdict(dict)
-    if getattr(a, 'unpolished', None) and getattr(a, 'reasons', None):
+    if a.unpolished and a.reasons:
         why = {}
         with open(a.reasons) as f:
             f.readline()
@@ -226,7 +232,7 @@ def run(a):
             for t, s_, g, rd, lab, e, ch in txs:
                 if ch and t in why: rules[c].setdefault((s_, ch), why[t])
     exact = collections.defaultdict(dict)          # the assembler's own table: {contig: {(strand, chain): rule}}
-    if getattr(a, 'polish_reasons', None) and os.path.exists(a.polish_reasons):
+    if a.polish_reasons and os.path.exists(a.polish_reasons):
         with open(a.polish_reasons) as f:
             f.readline()
             for l in f:
@@ -270,7 +276,8 @@ def selftest():
     with pysam.AlignmentFile(bam, 'wb', header=hdr) as w:
         for r in sorted(recs, key=lambda r: r.reference_start): w.write(r)
     pysam.index(bam)
-    a = argparse.Namespace(gtf=gtf, bam=bam, out=os.path.join(d, 'o'), fasta=None, as_table=None, shortexons=None, sequences=None, copies=None, window=10, threads=1)
+    pr = os.path.join(d, 'pr.tsv'); open(pr, 'w').write('transcript\tcontig\tstrand\texons\treads\trule\nX1\tc\t+\t101-200,351-600\t3\tfrac\n')   # the chain of `lone`
+    a = argparse.Namespace(gtf=gtf, bam=bam, out=os.path.join(d, 'o'), fasta=None, as_table=None, shortexons=None, sequences=None, copies=None, window=10, threads=1, unpolished=None, reasons=None, polish_reasons=None)
     run(a)
     rows = {l.split('\t')[0]: l.rstrip('\n').split('\t') for l in gzip.open(a.out + '.reads.tsv.gz', 'rt')}
     want = {'exact': ('exact', 'T1'), 'shift': ('exact_after_replacement', 'T1'), 'piece': ('partial', 'T1'), 'skip': ('exact', 'T2'), 'lone': ('none', '.'),
@@ -279,6 +286,9 @@ def selftest():
     assert rows['shift'][9] == '204-300>201-300' and rows['lone'][14].startswith('under the read floor') and rows['nowhere'][14] == 'unspliced, no model here' and rows['exact'][12] == 'expressed'
     t = {l.split('\t')[0]: l.rstrip('\n').split('\t') for l in open(a.out + '.transcripts.tsv')}
     assert t['T1'][8:13] == ['1', '1', '1', '0', '0'] and t['T1'][15] == '204-300>201-300 x1' and t['M1'][12] == '1', t['T1']
+    assert inside(5, 9, spans([(1, 100, 'long'), (50, 60, 'x'), (70, 80, 'y')])) == (1.0, 'long')        # a long span that starts far to the left is still found
+    a.polish_reasons = pr; run(a)
+    assert next(l for l in gzip.open(a.out + '.reads.tsv.gz', 'rt') if l.startswith('lone\t')).rstrip('\n').split('\t')[14] == 'removed by the rule frac'
     print('read_provenance selftest ok')
 
 def main():

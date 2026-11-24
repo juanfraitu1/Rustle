@@ -16,6 +16,8 @@ use std::process::Command;
 const DRIVER: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tools/rustle_pipeline.sh");
 
 const COPY_ASSIGN_STUB: &str = r#"#!/bin/bash
+# the driver asks `--help` to see whether the binary has --polish-reasons: this stub has not, and the question is no run
+[ "${1:-}" != --help ] || exit 0
 out=""; args=("$@")
 while [ $# -gt 0 ]; do case "$1" in --out) out=$2; shift 2;; *) shift;; esac; done
 case "${STUB_WARN:-}" in

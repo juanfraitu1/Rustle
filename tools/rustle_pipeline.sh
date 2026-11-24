@@ -1013,7 +1013,7 @@ stage_assemble() {
   # by the assembler itself (exact, unlike tools/polish_rules.py on a file made with polishing off). Read by stage `provenance`.
   # RUSTLE_POLISH_REASONS=0 = no table; a binary built before the option is detected and simply gets no such argument.
   local reasons=(); rm -f "$OUT.polish_reasons.tsv"
-  if [ "${RUSTLE_POLISH_REASONS:-1}" != 0 ] && [ "${RUSTLE_ASSEMBLY_POLISH:-full}" = full ] && "$BIN/copy_assign" --help 2>/dev/null | grep -q -- '--polish-reasons'; then
+  if [ "${RUSTLE_POLISH_REASONS:-1}" != 0 ] && [ "${RUSTLE_ASSEMBLY_POLISH:-full}" = full ] && [[ "$("$BIN/copy_assign" --help 2>/dev/null)" == *--polish-reasons* ]]; then   # not `| grep -q`: under pipefail an early-closed pipe (the help is 100 kB) reads as "no such option"
     reasons=(--polish-reasons "$OUT.polish_reasons.tsv"); fi
   env "${seed_env[@]}" RUSTLE_REGION_READ_BUDGET="$ASM_BUDGET" "$BIN/copy_assign" --assemble-only --region-threads "${RUSTLE_REGION_THREADS:-$ASM_REGIONS}" "${scope[@]}" --assembly-junctions strict $POLISH "${reasons[@]}" --gtf-tpm \
     --bam "$BAM" --fasta "$FASTA" --out "$OUT" > "$OUT.assemble.log" 2>&1 || rc=$?
@@ -2167,7 +2167,7 @@ stage_all() {
   # default (primary, register 1812) while PREFIX.assemble.env recorded good
   if [ -n "${SEED_POOL:-}" ]; then args+=(--seed-pool "$SEED_POOL"); fi
   # GNU time: the system's, else one on PATH or pixi's (`pixi global install time`; compute nodes have no /usr/bin/time)
-  local gtime=/usr/bin/time; [ -x "$gtime" ] || gtime=$(PATH="$PATH:$HOME/.pixi/bin" type -P time || true)
+  local gtime=/usr/bin/time; [ -x "$gtime" ] || gtime=$(PATH="$PATH:${HOME:-}/.pixi/bin" type -P time || true)
   export RP_ALL=1   # the stage calls below are part of `all`: assemble leaves the guided assembly to this loop
   # families, assign, index and flag all run minimap2: a missing one fails at start, not after the assembly (round-13 audit)
   command -v "${RUSTLE_MINIMAP2:-minimap2}" > /dev/null || { echo "[rustle_pipeline] no ${RUSTLE_MINIMAP2:-minimap2} on PATH (families, assign and flag run it); set RUSTLE_MINIMAP2 or PATH" >&2; exit 2; }

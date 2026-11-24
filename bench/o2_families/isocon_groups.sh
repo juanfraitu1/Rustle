@@ -18,14 +18,12 @@ with open(f'{o}/groups.tsv', 'w') as w:
         n = f'g{i:04d}'; w.write(f"{n}\t{','.join(sorted(groups[k]))}\t{len(gr[k])}\n")
         if len(gr[k]) >= 5:
             for q in gr[k]: pool[q] = n
-out = {}; name = None
+out = {}; name = None          # held in memory (tied reads only) and written pool by pool: one open file per pool runs out of handles past ~1,000 pools
 for i, l in enumerate(open(fq)):
     if i % 4 == 0: name = l[1:].split()[0]
-    elif i % 4 == 1 and name in pool:
-        f = pool[name]
-        if f not in out: out[f] = open(f'{o}/pools/{f}.fa', 'w')
-        out[f].write(f'>{name.replace("|", "_")}\n{l}')
-for f in out.values(): f.close()
+    elif i % 4 == 1 and name in pool: out.setdefault(pool[name], []).append(f'>{name.replace("|", "_")}\n{l}')
+for f, v in out.items():
+    with open(f'{o}/pools/{f}.fa', 'w') as w: w.writelines(v)
 print(f'isocon_groups: {len(groups)} groups, {len(out)} pools of >= 5 tied reads, {len(pool)} reads')
 PY
 ( cd "${ISOCON_DIR:?set ISOCON_DIR}" && ls "$O"/pools/*.fa | xargs -P 4 -I{} bash -c 't=$(basename {} .fa); pixi run IsoCon pipeline -fl_reads {} -outfolder '"$O"'/isocon/$t --nr_cores '"$T"' > '"$O"'/logs/$t.log 2>&1; echo "isocon $t exit $?"' )

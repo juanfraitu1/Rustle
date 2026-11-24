@@ -344,3 +344,26 @@ fn families_keeps_the_first_table_as_base_unless_famreps_is_off() {
         }
     }
 }
+
+/// The floor-1 assembly is shared between the stages `oneread` and `multicopy` (register 1937, default). `f1_shared` is
+/// the one place that decides whether the other stage's file can stand for this one: same recorded settings, newer than
+/// the assembly, and not switched off. A wrong "yes" here would hand a stage an assembly made with other settings.
+#[test]
+fn a_floor_one_assembly_is_shared_only_with_equal_settings_and_a_newer_file() {
+    let d = scratch("f1_shared");
+    let script = format!(
+        r#"set -u; eval "$(sed -n '/^f1_shared() {{/,/^}}/p' '{DRIVER}')"; cd '{}'
+OUT=run; mkdir -p o; echo x > run.gtf; sleep 1.1; echo y > o/f1.gtf; echo 'gate=1 pool=good' > o/f1.settings
+echo "same:[$(f1_shared o 'gate=1 pool=good')]"
+echo "other:[$(f1_shared o 'gate=0 pool=good')]"
+echo "off:[$(RUSTLE_F1_SHARE=0 f1_shared o 'gate=1 pool=good')]"
+sleep 1.1; echo x2 > run.gtf
+echo "stale:[$(f1_shared o 'gate=1 pool=good')]"
+rm o/f1.settings; touch o/f1.gtf
+echo "unstamped:[$(f1_shared o 'gate=1 pool=good')]""#,
+        d.display()
+    );
+    let o = Command::new("bash").args(["-c", &script]).output().unwrap();
+    let out = String::from_utf8_lossy(&o.stdout);
+    assert_eq!(out.trim(), "same:[o/f1.gtf]\nother:[]\noff:[]\nstale:[]\nunstamped:[]", "{out}\n{}", err(&o));
+}

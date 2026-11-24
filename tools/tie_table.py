@@ -15,12 +15,21 @@ OUT.tsv.gz, one row per (read, locus):
 OUT.tsv.gz.placed.tsv: per locus, the reads with NO second alignment in the band, i.e. placed there without question.
 The first line of OUT.tsv.gz is a comment naming the three inputs with size and time; a table whose inputs changed is
 not used. Only reads with a rival in the band are listed: the others are in the `placed` counts."""
-import sys, os, gzip, json, argparse, collections, multiprocessing
+import sys, os, re, gzip, json, argparse, collections, multiprocessing
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import eq_classes as E
 
-def signature(gtf, bam, tab):
-    return [[os.path.abspath(p), os.path.getsize(p), int(os.path.getmtime(p))] for p in (gtf, bam, tab)] + ['ms', 10, 'v1']
+def stamp(*paths):
+    """path, size and time of each input: what a cached product is checked against"""
+    return [[os.path.abspath(p), os.path.getsize(p), int(os.path.getmtime(p))] for p in paths]
+
+def signature(gtf, bam, tab): return stamp(gtf, bam, tab) + ['ms', 10, 'v1']
+
+def check_table(tab, bam):
+    """stop when the score table was made from another BAM (its header records the BAM's size): the scores of another BAM give
+    wrong ties without any error (2026-11-24: a table overwritten for a reduced BAM). Size, not path, so a moved BAM passes."""
+    with open(tab) as f: m = re.search(r'\tbam_bytes=(\d+)', f.readline())
+    if m and int(m.group(1)) != os.path.getsize(bam): sys.exit(f'tie_table: {tab} was made from a BAM of {m.group(1)} bytes; {bam} has {os.path.getsize(bam)}')
 
 def scan(contig):
     """as eq_classes.scan, with every candidate in the band kept together with its ms gap: -> placed, [(read, locus, gap)]"""
@@ -78,7 +87,7 @@ def read(path, sig):
 def get(gtf, bam, tab, threads=8, ties=None):
     """The shared pass: read `ties` when it matches the inputs, otherwise scan (and write it when a path is given).
     -> meta, placed, pairs, best; also leaves eq_classes' globals set as the scan would."""
-    sig = signature(gtf, bam, tab)
+    check_table(tab, bam); sig = signature(gtf, bam, tab)
     got = read(ties, sig) if ties else None
     if got is not None:
         meta, E.G_GEX = E.load_loci(gtf); E.G_FLOOR = E.floor_fn(10); E.G_BAM, E.G_TAG, E.G_TIES = bam, 'ms', got[2]
@@ -89,13 +98,43 @@ def get(gtf, bam, tab, threads=8, ties=None):
         write(ties, sig, placed, pairs, best); print(f'tie_table: written to {ties}', file=sys.stderr)
     return meta, placed, pairs, best
 
+def groups(pairs):
+    """-> {read: loci it is exactly tied between}, {group: loci}, {group: tied reads}; a group = loci joined by tied reads"""
+    sets = collections.defaultdict(set)
+    for q, g, gap in pairs:
+        if gap == 0 and g != E.OUTSIDE: sets[q].add(g)
+    parent = {}
+    def find(x):
+        while parent.setdefault(x, x) != x: parent[x] = parent[parent[x]]; x = parent[x]
+        return x
+    for s in sets.values():
+        if len(s) > 1:
+            s = sorted(s)
+            for y in s[1:]: parent[find(y)] = find(s[0])
+    loci = collections.defaultdict(set); reads = collections.defaultdict(set)
+    for q, s in sets.items():
+        if len(s) > 1: k = find(next(iter(s))); loci[k] |= s; reads[k].add(q)
+    return sets, loci, reads
+
+def tie_groups(gtf, bam, tab, threads=8, ties=None):
+    """the shared pass, then `groups`: -> meta, sets, {group: loci}, {group: tied reads}"""
+    meta, _, pairs, _ = get(gtf, bam, tab, threads, ties)
+    return (meta, *groups(pairs))
+
 def selftest():
     import tempfile
+    s_, lo, rd = groups([('r1', 'A', 0), ('r1', 'B', 0), ('r2', 'B', 0), ('r2', 'C', 0), ('r3', 'D', 0), ('r3', 'E', 4), ('r4', 'F', 0), ('r4', 'outside', 0)])
+    assert [sorted(v) for v in lo.values()] == [['A', 'B', 'C']] and [sorted(v) for v in rd.values()] == [['r1', 'r2']], (lo, rd)   # a near tie (gap 4) and `outside` join nothing
     d = tempfile.mkdtemp(); p = os.path.join(d, 't.tsv.gz'); sig = [['a', 1, 2], 'ms', 10, 'v1']
     placed = collections.Counter({'G1': 7, 'outside': 2}); pairs = [('r1', 'G1', 0), ('r1', 'G2', 0), ('r2', 'G1', 0), ('r2', 'outside', 5)]; best = {'r1': 900, 'r2': 450}
     write(p, sig, placed, pairs, best)
     assert read(p, sig) == (placed, pairs, best)
     assert read(p, [['a', 1, 3], 'ms', 10, 'v1']) is None and read(os.path.join(d, 'none.gz'), sig) is None
+    bam = os.path.join(d, 'x.bam'); open(bam, 'wb').write(b'12345'); tab = os.path.join(d, 't.tsv')
+    open(tab, 'w').write('#as_table\tbam=/x.bam\tbam_bytes=5\trecords=1\n'); check_table(tab, bam)
+    open(tab, 'w').write('#as_table\tbam=/x.bam\tbam_bytes=6\trecords=1\n')
+    try: check_table(tab, bam); raise AssertionError('a table of another BAM was accepted')
+    except SystemExit: pass
     print('tie_table selftest ok')
 
 if __name__ == '__main__':
