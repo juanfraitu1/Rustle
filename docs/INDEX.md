@@ -1,92 +1,120 @@
-# docs/ index — every document, one line each (generated 2026-11-22)
+# docs/ index — every document, one line each (generated 2026-11-24)
 
 Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or archiving a document. Archived files keep their names; only the directory changed, so grepping a filename still finds it. Verdicts of archived studies are in the register rows that cite them; pre-registrations are kept verbatim (the commit that introduced each one is the proof it preceded the result).
 
-## Living documents (18, undated, maintained in place)
+## Living documents (19, undated, maintained in place)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
 | [`ADVISOR_QUESTIONS.md`](ADVISOR_QUESTIONS.md) | The advisor's standing questions — and what the codebase can answer | 2026-11-19 | memory ×1 |
-| [`AUDIT_ROUNDS_2026-11.md`](AUDIT_ROUNDS_2026-11.md) | Audit rounds, November 2026 (ponytail-audit, goal: 100 rounds) | 2026-11-19 | memory ×2 |
-| [`DATA.md`](DATA.md) | Datasets — what they are, where they came from, how to rebuild them | 2026-11-19 | register ×1, memory ×2 |
+| [`AUDIT_ROUNDS_2026-11.md`](AUDIT_ROUNDS_2026-11.md) | Audit rounds, November 2026 (ponytail-audit, goal: 100 rounds) | 2026-11-23 | memory ×1 |
+| [`DATA.md`](DATA.md) | Datasets — what they are, where they came from, how to rebuild them | 2026-11-19 | register ×1, memory ×1 |
 | [`LEDGER_GENERAL.md`](LEDGER_GENERAL.md) | Ledger: general (handoffs, pending lists, register drafts, overviews) | 2026-11-18 | — |
 | [`LEDGER_O1.md`](LEDGER_O1.md) | Ledger: O1 (family definition, assembler, locus units) | 2026-11-18 | register ×1, memory ×2 |
-| [`LEDGER_O2.md`](LEDGER_O2.md) | Ledger: O2 (copy assignment of tied reads) | 2026-11-18 | register ×1, memory ×1 |
+| [`LEDGER_O2.md`](LEDGER_O2.md) | Ledger: O2 (copy assignment of tied reads) | 2026-11-23 | register ×1, memory ×1 |
 | [`LEDGER_O3.md`](LEDGER_O3.md) | Ledger: O3 (copies the reference lacks) | 2026-11-18 | — |
 | [`MODULE_STATUS.md`](MODULE_STATUS.md) | Module status — what is SHIPPED vs what was TRIED | 2026-11-19 | — |
-| [`MULTICOPY_MODE.md`](MULTICOPY_MODE.md) | Multi-copy mode: assembling the copies of known gene families | uncommitted | memory ×1 |
-| [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) | REGISTER OF NEGATIVE RESULTS (full: archive/2026-11/NEGATIVE_RESULTS_REGISTER.md:1) | 2026-11-22 | memory ×4 |
+| [`MULTICOPY_MODE.md`](MULTICOPY_MODE.md) | Multi-copy mode: assembling the copies of known gene families | 2026-11-24 | memory ×2 |
+| [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) | REGISTER OF NEGATIVE RESULTS (full: archive/2026-11/NEGATIVE_RESULTS_REGISTER.md:1) | 2026-11-24 | memory ×4 |
+| [`O2_FAMILY_BENCHMARK.md`](O2_FAMILY_BENCHMARK.md) | O2: known gene families across tools, on planted and real reads | 2026-11-24 | register ×1, memory ×2 |
 | [`PARKED.md`](PARKED.md) | Parked items (to pick up later, on any cluster) | 2026-11-19 | memory ×2 |
 | [`PERFORMANCE.md`](PERFORMANCE.md) | Pipeline performance: where the time goes and the switches that change it | 2026-11-15 | — |
 | [`README.md`](README.md) | docs/ — what is where | 2026-11-16 | memory ×3 |
-| [`REFERENCE.md`](REFERENCE.md) | REFERENCE — glossary, data locations, and a worked example | 2026-11-07 | — |
+| [`REFERENCE.md`](REFERENCE.md) | REFERENCE — glossary, data locations, and a worked example | 2026-11-23 | — |
 | [`SCRIPT_INVENTORY.md`](SCRIPT_INVENTORY.md) | Script inventory (2026-11-02) | 2026-11-16 | — |
-| [`THESIS_OBJECTIVES.md`](THESIS_OBJECTIVES.md) | Thesis objectives — the current three | 2026-11-18 | — |
+| [`THESIS_OBJECTIVES.md`](THESIS_OBJECTIVES.md) | Thesis objectives — the current three | 2026-11-23 | — |
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-18 | register ×1 |
 | [`seeded_family_definition.md`](seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-08 | — |
 
-## Open studies and current handoff (314)
+## Open studies and current handoff (341)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
-| [`ONEREAD_MODEL_MONO_PAIRING_2026-11-22.md`](ONEREAD_MODEL_MONO_PAIRING_2026-11-22.md) | Rows 1900 and 1901 (2026-11-22, user decisions): the refitted one-read ranking is the default; two single-exon pairing o | uncommitted | register ×1 |
+| [`PREREG_guided_tworead_2026-11-24.md`](PREREG_guided_tworead_2026-11-24.md) | PREREG: guided mode, chains of guide introns at a two-read floor (row 1939, 2026-11-24) | 2026-11-24 | register ×1 |
+| [`PREREG_minimap2_sweep_2026-11-24.md`](PREREG_minimap2_sweep_2026-11-24.md) | PREREG: can a minimap2 parameter change remove or decide the near-tied reads (row 1940, 2026-11-24) | 2026-11-24 | register ×1 |
+| [`PREREG_multicopy_tool_pages_2026-11-24.md`](PREREG_multicopy_tool_pages_2026-11-24.md) | PREREG: the three tool-comparison pages restricted to multi-copy genes (row 1941) | uncommitted | register ×1 |
+| [`PREREG_shared_floor1_2026-11-24.md`](PREREG_shared_floor1_2026-11-24.md) | PREREG: one one-read assembly for both the one-read tiers and the multi-copy stage (row 1937, 2026-11-24) | 2026-11-24 | register ×1 |
+| [`PREREG_vacmap_spliced_2026-11-24.md`](PREREG_vacmap_spliced_2026-11-24.md) | PREREG: VACmap on Iso-Seq reads, against the genome and against isoform sequences (row 1936, 2026-11-24) | 2026-11-24 | register ×1 |
+| [`PREREG_winnowmap_home_case_2026-11-24.md`](PREREG_winnowmap_home_case_2026-11-24.md) | PREREG: Winnowmap on its own target, as a positive control for the page (row 1938, 2026-11-24) | 2026-11-24 | register ×1 |
+| [`PREREG_correlation_clustering_2026-11-23.md`](PREREG_correlation_clustering_2026-11-23.md) | Correlation clustering of the reads as the candidate step of the sequence test: stopped at development (row 1932, 2026-1 | 2026-11-24 | register ×1 |
+| [`PREREG_empty_places_2026-11-23.md`](PREREG_empty_places_2026-11-23.md) | PREREG: the second assembly of the multi-copy stage only where the first left nothing (row 1935, 2026-11-23) | 2026-11-24 | register ×1 |
+| [`PREREG_error_context_2026-11-23.md`](PREREG_error_context_2026-11-23.md) | PREREG: sequencing-error context against minimap2's choice, real reads with own-haplotype truth (row 1923, 2026-11-23) | 2026-11-23 | register ×1 |
+| [`PREREG_guided_final_oneread_2026-11-23.md`](PREREG_guided_final_oneread_2026-11-23.md) | PREREG r1934: guided mode on final.gtf, and one-read chains made only of guide introns (2026-11-23) | 2026-11-24 | register ×1, memory ×1 |
+| [`PREREG_het_alleles_2026-11-23.md`](PREREG_het_alleles_2026-11-23.md) | PREREG: heterozygous copies, do alleles get counted as copies (row 1927, 2026-11-23) | 2026-11-23 | register ×1 |
+| [`PREREG_hg002_sequences_2026-11-23.md`](PREREG_hg002_sequences_2026-11-23.md) | PREREG: the non-reference sequences on HG002, a second sample with both haplotypes (row 1931, 2026-11-23) | 2026-11-23 | register ×1 |
+| [`PREREG_isocon_groups_2026-11-23.md`](PREREG_isocon_groups_2026-11-23.md) | PREREG: IsoCon on the reads of Rustle's tied groups, a hybrid count of expressed copies (row 1925, 2026-11-23) | 2026-11-23 | register ×1 |
+| [`PREREG_isocon_port_2026-11-23.md`](PREREG_isocon_port_2026-11-23.md) | PREREG: IsoCon's decision logic ported into Rustle, tested against IsoCon itself (row 1926, 2026-11-23) | 2026-11-23 | register ×1 |
+| [`PREREG_lower_hits_2026-11-23.md`](PREREG_lower_hits_2026-11-23.md) | PREREG: are the unconfirmed sequences explained by a haplotype hit that scores lower (row 1930, 2026-11-23) | 2026-11-23 | register ×1 |
+| [`PREREG_minimap_wrong_calls_2026-11-23.md`](PREREG_minimap_wrong_calls_2026-11-23.md) | PREREG: where minimap2's primary is wrong on reads of known origin, and can the alignments' own context overrule it (row | 2026-11-23 | register ×1 |
+| [`PREREG_mono_family_rescue_2026-11-23.md`](PREREG_mono_family_rescue_2026-11-23.md) | PREREG: single-exon models admitted on family evidence (row 1919, 2026-11-23) | 2026-11-23 | register ×2 |
+| [`PREREG_mosaic_check_2026-11-23.md`](PREREG_mosaic_check_2026-11-23.md) | PREREG: what are the sequence splits the haplotypes do not confirm; the mosaic check (row 1929, 2026-11-23) | 2026-11-23 | register ×1 |
+| [`PREREG_quality_model_2026-11-23.md`](PREREG_quality_model_2026-11-23.md) | PREREG: IsoCon's base-quality model in the sequence test, on the two samples with haplotype truth (row 1933, 2026-11-23) | 2026-11-24 | — |
+| [`PREREG_real_haplotypes_2026-11-23.md`](PREREG_real_haplotypes_2026-11-23.md) | PREREG: the sequence count on real reads, judged by the sample's own two haplotypes (row 1928, 2026-11-23) | 2026-11-23 | register ×1 |
+| [`PREREG_sample_psv_2026-11-23.md`](PREREG_sample_psv_2026-11-23.md) | PREREG: counting expressed copies from variants that recur across reads, on a planted sample that differs from the refer | 2026-11-23 | register ×1 |
+| [`PREREG_weighted_em_2026-11-23.md`](PREREG_weighted_em_2026-11-23.md) | PREREG: alignment scores inside the EM of the `o2` labels (row 1921, 2026-11-23) | 2026-11-23 | register ×1 |
+| [`ONEREAD_MODEL_MONO_PAIRING_2026-11-22.md`](ONEREAD_MODEL_MONO_PAIRING_2026-11-22.md) | Rows 1900 and 1901 (2026-11-22, user decisions): the refitted one-read ranking is the default; two single-exon pairing o | 2026-11-22 | register ×1 |
+| [`PREREG_copy_verdicts_2026-11-22.md`](PREREG_copy_verdicts_2026-11-22.md) | PREREG: use the near-tied multimappers with evidence, not all of them and not none (row 1904, 2026-11-22) | 2026-11-22 | register ×1 |
 | [`PREREG_extension_tier_2026-11-22.md`](PREREG_extension_tier_2026-11-22.md) | Row 1892: extension as a tier of the ranked list only, never in `final.gtf` (pre-registered 2026-11-22) | 2026-11-22 | register ×1 |
 | [`PREREG_isoquant_only_2026-11-22.md`](PREREG_isoquant_only_2026-11-22.md) | Row 1896: which annotated chains does IsoQuant report that Rustle lacks, on twenty datasets? (step 0, pre-registered 202 | 2026-11-22 | register ×1 |
 | [`PREREG_list_tail_2026-11-22.md`](PREREG_list_tail_2026-11-22.md) | Row 1884: a third tier at the end of the ranked list, against FLAIR on HG002 (pre-registered 2026-11-22) | 2026-11-22 | register ×1 |
 | [`PREREG_locus_share_order_2026-11-22.md`](PREREG_locus_share_order_2026-11-22.md) | Row 1895: StringTie's selection as an order of the one-read tier (locus share), twenty datasets (pre-registered 2026-11- | 2026-11-22 | register ×1 |
-| [`PREREG_minimap_p09_n1000_2026-11-22.md`](PREREG_minimap_p09_n1000_2026-11-22.md) | PREREG: minimap2 with -p 0.9 -N 1000 instead of -p 0.1 -N 50, does it recover more family members (row 1885, 2026-11-22) | uncommitted | register ×2 |
+| [`PREREG_member_discovery_2026-11-22.md`](PREREG_member_discovery_2026-11-22.md) | PREREG: a member-discovery layer, the relatives of every expressed locus through all of its reads' secondaries (row 1910 | 2026-11-23 | register ×4 |
+| [`PREREG_minimap_p09_n1000_2026-11-22.md`](PREREG_minimap_p09_n1000_2026-11-22.md) | PREREG: minimap2 with -p 0.9 -N 1000 instead of -p 0.1 -N 50, does it recover more family members (row 1885, 2026-11-22) | 2026-11-22 | register ×3 |
 | [`PREREG_mono_pairing_2026-11-22.md`](PREREG_mono_pairing_2026-11-22.md) | Row 1897: pairing single-exon models with the multi-exon transcripts around them (step 0, pre-registered 2026-11-22) | 2026-11-22 | register ×1 |
+| [`PREREG_o2_family_benchmark_2026-11-22.md`](PREREG_o2_family_benchmark_2026-11-22.md) | PREREG: O2 as a benchmark of known gene families across tools, on planted reads of known origin (row 1903, 2026-11-22) | 2026-11-22 | register ×1 |
 | [`PREREG_oneread_refit_2026-11-22.md`](PREREG_oneread_refit_2026-11-22.md) | Row 1899: the one-read ranking refitted at today's defaults, judged with each species held out (pre-registered 2026-11-2 | 2026-11-22 | register ×1 |
 | [`PREREG_pab_good_pool_2026-11-22.md`](PREREG_pab_good_pool_2026-11-22.md) | Row 1889: the Sumatran testis comparison with the seeding pool of `all` (pre-registered 2026-11-22) | 2026-11-22 | register ×1 |
 | [`PREREG_replication_score_2026-11-22.md`](PREREG_replication_score_2026-11-22.md) | Row 1898: a one-read ranking fitted to replication instead of to the annotation (pre-registered 2026-11-22) | 2026-11-22 | register ×1 |
+| [`PREREG_silent_members_2026-11-22.md`](PREREG_silent_members_2026-11-22.md) | PREREG: do secondary alignments reveal silent family members, a silent gene from its expressed pseudogene and back (row  | 2026-11-22 | register ×1 |
 | [`PREREG_stringtie_strategies_2026-11-22.md`](PREREG_stringtie_strategies_2026-11-22.md) | Row 1893: what StringTie's coverage trimming and its coverage-driven assembly contribute, by its own switches (pre-regis | 2026-11-22 | register ×1 |
 | [`PREREG_tier2_order_2026-11-22.md`](PREREG_tier2_order_2026-11-22.md) | Row 1890: is there a better order for the one-read tier, judged on all twenty datasets? (pre-registered 2026-11-22) | 2026-11-22 | register ×1 |
 | [`PREREG_unseen_check_2026-11-22.md`](PREREG_unseen_check_2026-11-22.md) | Row 1887: the two defaults of row 1886 on libraries neither rule has seen (pre-registered 2026-11-22) | 2026-11-22 | register ×1 |
+| [`PREREG_yag_cases_2026-11-22.md`](PREREG_yag_cases_2026-11-22.md) | PREREG: the cases one by one, recently diverged copies, tandem copies, the Y-ampliconic genes, and IsoCon (row 1906, 202 | 2026-11-23 | register ×6 |
 | [`SHORTEXONS_RANKED_DEFAULT_2026-11-22.md`](SHORTEXONS_RANKED_DEFAULT_2026-11-22.md) | Row 1886 (2026-11-22, user decisions): the short-exon repair is part of `assemble`; `PREFIX.ranked.gtf` is written | 2026-11-22 | register ×2 |
-| [`PREREG_copy_evidence_2026-11-21.md`](PREREG_copy_evidence_2026-11-21.md) | PREREG: do the copies added by secondaries have reads of their own (row 1863, 2026-11-21) | uncommitted | register ×1 |
-| [`PREREG_copy_psv_2026-11-21.md`](PREREG_copy_psv_2026-11-21.md) | PREREG: which tied copies can sequence differences decide, and does StringTie read secondaries (row 1870, 2026-11-21) | uncommitted | register ×1 |
+| [`PREREG_copy_evidence_2026-11-21.md`](PREREG_copy_evidence_2026-11-21.md) | PREREG: do the copies added by secondaries have reads of their own (row 1863, 2026-11-21) | 2026-11-22 | register ×1 |
+| [`PREREG_copy_psv_2026-11-21.md`](PREREG_copy_psv_2026-11-21.md) | PREREG: which tied copies can sequence differences decide, and does StringTie read secondaries (row 1870, 2026-11-21) | 2026-11-22 | register ×1 |
 | [`PREREG_depth_floor_2026-11-21.md`](PREREG_depth_floor_2026-11-21.md) | Row 1852: a read floor that scales with library depth (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
-| [`PREREG_dup_count_rerun_2026-11-21.md`](PREREG_dup_count_rerun_2026-11-21.md) | Row 1849: every read counted, re-run on today's defaults (pre-registered 2026-11-21) | 2026-11-21 | register ×2, memory ×1 |
-| [`PREREG_es_precision_2026-11-21.md`](PREREG_es_precision_2026-11-21.md) | Row 1851: why is precision low on the mouse ES library? (pre-registered 2026-11-21) | 2026-11-21 | register ×1, memory ×1 |
+| [`PREREG_dup_count_rerun_2026-11-21.md`](PREREG_dup_count_rerun_2026-11-21.md) | Row 1849: every read counted, re-run on today's defaults (pre-registered 2026-11-21) | 2026-11-21 | register ×2 |
+| [`PREREG_es_precision_2026-11-21.md`](PREREG_es_precision_2026-11-21.md) | Row 1851: why is precision low on the mouse ES library? (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
 | [`PREREG_extension_short_reads_2026-11-21.md`](PREREG_extension_short_reads_2026-11-21.md) | Row 1882: does transfrag extension close the short-read testis miss of row 1880? (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
 | [`PREREG_extension_today_2026-11-21.md`](PREREG_extension_today_2026-11-21.md) | Row 1883: transfrag extension at today's defaults, twenty datasets (pre-registered 2026-11-21) | 2026-11-22 | register ×1 |
-| [`PREREG_family_by_age_2026-11-21.md`](PREREG_family_by_age_2026-11-21.md) | PREREG: family recall by age of the duplication, per tool (row 1857, 2026-11-21) | uncommitted | register ×2 |
-| [`PREREG_family_by_family_2026-11-21.md`](PREREG_family_by_family_2026-11-21.md) | PREREG: named families one by one, loci and isoforms per tool (row 1859, 2026-11-21) | uncommitted | register ×1 |
+| [`PREREG_family_by_age_2026-11-21.md`](PREREG_family_by_age_2026-11-21.md) | PREREG: family recall by age of the duplication, per tool (row 1857, 2026-11-21) | 2026-11-22 | register ×2 |
+| [`PREREG_family_by_family_2026-11-21.md`](PREREG_family_by_family_2026-11-21.md) | PREREG: named families one by one, loci and isoforms per tool (row 1859, 2026-11-21) | 2026-11-22 | register ×1 |
 | [`PREREG_isocon_panels_2026-11-21.md`](PREREG_isocon_panels_2026-11-21.md) | Row 1872: IsoCon gene panels for all six species (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
-| [`PREREG_isoquant_es_2026-11-21.md`](PREREG_isoquant_es_2026-11-21.md) | Row 1853: where is IsoQuant ahead on mouse ES, and is any of it a rule to port? (pre-registered 2026-11-21) | 2026-11-21 | register ×1, memory ×1 |
+| [`PREREG_isoquant_es_2026-11-21.md`](PREREG_isoquant_es_2026-11-21.md) | Row 1853: where is IsoQuant ahead on mouse ES, and is any of it a rule to port? (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
 | [`PREREG_junction_edit_2026-11-21.md`](PREREG_junction_edit_2026-11-21.md) | Row 1879: near-miss junctions judged by the edit distance of the two transcripts (step 0, pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
 | [`PREREG_lost_introns_2026-11-21.md`](PREREG_lost_introns_2026-11-21.md) | Row 1864: which step loses real introns that have reads? (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
-| [`PREREG_multicopy_mode_2026-11-21.md`](PREREG_multicopy_mode_2026-11-21.md) | PREREG: multi-copy mode, the copies with own reads and no transcript (row 1865, 2026-11-21) | uncommitted | register ×4 |
+| [`PREREG_multicopy_mode_2026-11-21.md`](PREREG_multicopy_mode_2026-11-21.md) | PREREG: multi-copy mode, the copies with own reads and no transcript (row 1865, 2026-11-21) | 2026-11-22 | register ×4 |
 | [`PREREG_oneread_guard_2026-11-21.md`](PREREG_oneread_guard_2026-11-21.md) | Row 1866: one-read candidates with the pooling guard bypassed, promoted by a partner library (pre-registered 2026-11-21) | 2026-11-21 | register ×2 |
 | [`PREREG_polya_ends_2026-11-21.md`](PREREG_polya_ends_2026-11-21.md) | Row 1860: polyA tails on a second library, and a 3' end placed at the tailed reads (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
-| [`PREREG_polya_tails_2026-11-21.md`](PREREG_polya_tails_2026-11-21.md) | Row 1856: are polyA tails in the reads evidence the assembler should use? (pre-registered 2026-11-21) | 2026-11-21 | register ×1, memory ×1 |
-| [`PREREG_ranked_vs_rivals_2026-11-21.md`](PREREG_ranked_vs_rivals_2026-11-21.md) | Row 1880: one ranked Rustle list against every other assembler, primates and non-primates (pre-registered 2026-11-21) | 2026-11-22 | register ×1, memory ×1 |
-| [`PREREG_shortexons_truth_2026-11-21.md`](PREREG_shortexons_truth_2026-11-21.md) | Row 1878: does the short-exon repair pay on complete truth and outside primates? (pre-registered 2026-11-21) | 2026-11-21 | register ×1, memory ×1 |
+| [`PREREG_polya_tails_2026-11-21.md`](PREREG_polya_tails_2026-11-21.md) | Row 1856: are polyA tails in the reads evidence the assembler should use? (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
+| [`PREREG_ranked_vs_rivals_2026-11-21.md`](PREREG_ranked_vs_rivals_2026-11-21.md) | Row 1880: one ranked Rustle list against every other assembler, primates and non-primates (pre-registered 2026-11-21) | 2026-11-22 | register ×1 |
+| [`PREREG_shortexons_truth_2026-11-21.md`](PREREG_shortexons_truth_2026-11-21.md) | Row 1878: does the short-exon repair pay on complete truth and outside primates? (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
 | [`PREREG_single_intron_2026-11-21.md`](PREREG_single_intron_2026-11-21.md) | Row 1854: would IsoQuant's rules for 2-exon models separate Rustle's wrong single-intron chains? (pre-registered 2026-11 | 2026-11-21 | register ×1 |
-| [`PREREG_tandem_joins_2026-11-21.md`](PREREG_tandem_joins_2026-11-21.md) | PREREG: do near-tied alignments join one tandem copy to the next, and is Rustle fooled (row 1881, 2026-11-21) | uncommitted | register ×1, memory ×1 |
-| [`PREREG_tied_truth_2026-11-21.md`](PREREG_tied_truth_2026-11-21.md) | PREREG: which rule shares tied reads correctly, tested where the origin is known (rows 1873, 1874, 2026-11-21) | uncommitted | register ×3, memory ×1 |
+| [`PREREG_tandem_joins_2026-11-21.md`](PREREG_tandem_joins_2026-11-21.md) | PREREG: do near-tied alignments join one tandem copy to the next, and is Rustle fooled (row 1881, 2026-11-21) | 2026-11-22 | register ×1 |
+| [`PREREG_tied_truth_2026-11-21.md`](PREREG_tied_truth_2026-11-21.md) | PREREG: which rule shares tied reads correctly, tested where the origin is known (rows 1873, 1874, 2026-11-21) | 2026-11-22 | register ×3 |
 | [`PREREG_whats_left_2026-11-21.md`](PREREG_whats_left_2026-11-21.md) | Row 1876: what is left on complete truth at today's defaults? (step 0, pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
-| [`PREREG_wtc11_compare_2026-11-21.md`](PREREG_wtc11_compare_2026-11-21.md) | Row 1862: a blind comparison on WTC11, then WTC11 as development data for new rules (pre-registered 2026-11-21) | 2026-11-21 | register ×1, memory ×1 |
-| [`END_LAYERS_OPTIN_2026-11-20.md`](END_LAYERS_OPTIN_2026-11-20.md) | Row 1846: the three end layers of `final.gtf` become opt-in (user decision, 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
-| [`JUNCTION_RATIO_DEFAULT_2026-11-20.md`](JUNCTION_RATIO_DEFAULT_2026-11-20.md) | Row 1845: junction replacement at 20 x support becomes the driver default (user decision, 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
-| [`PREREG_acceptor_near_2026-11-20.md`](PREREG_acceptor_near_2026-11-20.md) | Row 1842: near misses at splice sites, acceptor against donor (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
-| [`PREREG_assembly_compare_2026-11-20.md`](PREREG_assembly_compare_2026-11-20.md) | Row 1838: where do other assemblers find true chains that Rustle misses, primate against non-primate? (pre-registered 20 | 2026-11-20 | register ×1, memory ×1 |
-| [`PREREG_count_all_reads_2026-11-20.md`](PREREG_count_all_reads_2026-11-20.md) | Row 1833: every read counted (no collapse of coordinate duplicates), tested off the spike-ins (pre-registered 2026-11-20 | 2026-11-20 | register ×1, memory ×1 |
-| [`PREREG_dup_count_2026-11-20.md`](PREREG_dup_count_2026-11-20.md) | Row 1836: floor on distinct records, read count on every record (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
-| [`PREREG_duplomap_tbc1d3_2026-11-20.md`](PREREG_duplomap_tbc1d3_2026-11-20.md) | PREREG: DuploMap on Iso-Seq reads at TBC1D3 (row 1844, 2026-11-20) | uncommitted | register ×1 |
-| [`PREREG_end_peak_2026-11-20.md`](PREREG_end_peak_2026-11-20.md) | Row 1840: keep a contained chain when its own end is a read-end peak (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
-| [`PREREG_end_through_2026-11-20.md`](PREREG_end_through_2026-11-20.md) | Row 1841: does an end peak judged against the reads running through separate true contained chains? (pre-registered 2026 | 2026-11-20 | register ×1, memory ×1 |
-| [`PREREG_family_benchmark_2026-11-20.md`](PREREG_family_benchmark_2026-11-20.md) | PREREG: one family definition on every assembler's output (row 1855; filed as 1847 until that number turned out taken by | uncommitted | register ×1, memory ×1 |
+| [`PREREG_wtc11_compare_2026-11-21.md`](PREREG_wtc11_compare_2026-11-21.md) | Row 1862: a blind comparison on WTC11, then WTC11 as development data for new rules (pre-registered 2026-11-21) | 2026-11-21 | register ×1 |
+| [`END_LAYERS_OPTIN_2026-11-20.md`](END_LAYERS_OPTIN_2026-11-20.md) | Row 1846: the three end layers of `final.gtf` become opt-in (user decision, 2026-11-20) | 2026-11-20 | register ×1 |
+| [`JUNCTION_RATIO_DEFAULT_2026-11-20.md`](JUNCTION_RATIO_DEFAULT_2026-11-20.md) | Row 1845: junction replacement at 20 x support becomes the driver default (user decision, 2026-11-20) | 2026-11-20 | register ×1 |
+| [`PREREG_acceptor_near_2026-11-20.md`](PREREG_acceptor_near_2026-11-20.md) | Row 1842: near misses at splice sites, acceptor against donor (pre-registered 2026-11-20) | 2026-11-20 | register ×1 |
+| [`PREREG_assembly_compare_2026-11-20.md`](PREREG_assembly_compare_2026-11-20.md) | Row 1838: where do other assemblers find true chains that Rustle misses, primate against non-primate? (pre-registered 20 | 2026-11-20 | register ×1 |
+| [`PREREG_count_all_reads_2026-11-20.md`](PREREG_count_all_reads_2026-11-20.md) | Row 1833: every read counted (no collapse of coordinate duplicates), tested off the spike-ins (pre-registered 2026-11-20 | 2026-11-20 | register ×1 |
+| [`PREREG_dup_count_2026-11-20.md`](PREREG_dup_count_2026-11-20.md) | Row 1836: floor on distinct records, read count on every record (pre-registered 2026-11-20) | 2026-11-20 | register ×1 |
+| [`PREREG_duplomap_tbc1d3_2026-11-20.md`](PREREG_duplomap_tbc1d3_2026-11-20.md) | PREREG: DuploMap on Iso-Seq reads at TBC1D3 (row 1844, 2026-11-20) | 2026-11-22 | register ×1 |
+| [`PREREG_end_peak_2026-11-20.md`](PREREG_end_peak_2026-11-20.md) | Row 1840: keep a contained chain when its own end is a read-end peak (pre-registered 2026-11-20) | 2026-11-20 | register ×1 |
+| [`PREREG_end_through_2026-11-20.md`](PREREG_end_through_2026-11-20.md) | Row 1841: does an end peak judged against the reads running through separate true contained chains? (pre-registered 2026 | 2026-11-20 | register ×1 |
+| [`PREREG_family_benchmark_2026-11-20.md`](PREREG_family_benchmark_2026-11-20.md) | PREREG: one family definition on every assembler's output (row 1855; filed as 1847 until that number turned out taken by | 2026-11-22 | register ×1 |
 | [`PREREG_ism_3p_only_2026-11-20.md`](PREREG_ism_3p_only_2026-11-20.md) | Row 1843: the sub-chain collapse spares chains cut at the 3' side only (pre-registered 2026-11-20) | 2026-11-20 | register ×1 |
-| [`PREREG_mono_end_rules_2026-11-20.md`](PREREG_mono_end_rules_2026-11-20.md) | Row 1831: are the single-exon rules and the end layers overfit to primates? (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
-| [`PREREG_mono_quantile_grid_2026-11-20.md`](PREREG_mono_quantile_grid_2026-11-20.md) | Row 1832: the read floor of single-exon transcripts, a grid of its quantile (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
+| [`PREREG_mono_end_rules_2026-11-20.md`](PREREG_mono_end_rules_2026-11-20.md) | Row 1831: are the single-exon rules and the end layers overfit to primates? (pre-registered 2026-11-20) | 2026-11-20 | register ×1 |
+| [`PREREG_mono_quantile_grid_2026-11-20.md`](PREREG_mono_quantile_grid_2026-11-20.md) | Row 1832: the read floor of single-exon transcripts, a grid of its quantile (pre-registered 2026-11-20) | 2026-11-20 | register ×1 |
 | [`PREREG_real_count_grid_2026-11-20.md`](PREREG_real_count_grid_2026-11-20.md) | Row 1837: isoform fraction and sub-chain ratio re-set on real read counts (pre-registered 2026-11-20) | 2026-11-20 | register ×1 |
-| [`PREREG_sirv_rules_run_2026-11-20.md`](PREREG_sirv_rules_run_2026-11-20.md) | Row 1847: the two parked SIRV rules, tested on the twelve datasets (pre-registered 2026-11-20) | 2026-11-21 | register ×2, memory ×1 |
-| [`PREREG_subchain_ratio_001_2026-11-20.md`](PREREG_subchain_ratio_001_2026-11-20.md) | Row 1839: sub-chain collapse ratio at 0.01 (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
-| [`PREREG_support_filter_2026-11-20.md`](PREREG_support_filter_2026-11-20.md) | Row 1830: does the support profile, used as a FILTER, remove wrong transcripts? (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
-| [`PREREG_tssend_cap_gate_2026-11-20.md`](PREREG_tssend_cap_gate_2026-11-20.md) | Row 1834: does the assembler's cap signal say where the median 5' end helps? (pre-registered 2026-11-20) | 2026-11-20 | register ×1, memory ×1 |
+| [`PREREG_sirv_rules_run_2026-11-20.md`](PREREG_sirv_rules_run_2026-11-20.md) | Row 1847: the two parked SIRV rules, tested on the twelve datasets (pre-registered 2026-11-20) | 2026-11-21 | register ×2 |
+| [`PREREG_subchain_ratio_001_2026-11-20.md`](PREREG_subchain_ratio_001_2026-11-20.md) | Row 1839: sub-chain collapse ratio at 0.01 (pre-registered 2026-11-20) | 2026-11-20 | register ×1 |
+| [`PREREG_support_filter_2026-11-20.md`](PREREG_support_filter_2026-11-20.md) | Row 1830: does the support profile, used as a FILTER, remove wrong transcripts? (pre-registered 2026-11-20) | 2026-11-20 | register ×1 |
+| [`PREREG_tssend_cap_gate_2026-11-20.md`](PREREG_tssend_cap_gate_2026-11-20.md) | Row 1834: does the assembler's cap signal say where the median 5' end helps? (pre-registered 2026-11-20) | 2026-11-20 | register ×1 |
 | [`CORRELATION_CLUSTERING_2026-11-19.md`](CORRELATION_CLUSTERING_2026-11-19.md) | Correlation clustering (Strainy / SDA lineage) for assignment and for copies the reference lacks (2026-11-19, PSU) | 2026-11-19 | register ×1, memory ×1 |
-| [`GOAL_multicopy_families_2026-11-19.md`](GOAL_multicopy_families_2026-11-19.md) | Goal: resolution-aware assembly of multi-copy gene families (set by the user 2026-11-19) | 2026-11-19 | register ×1, memory ×1 |
+| [`GOAL_multicopy_families_2026-11-19.md`](GOAL_multicopy_families_2026-11-19.md) | Goal: resolution-aware assembly of multi-copy gene families (set by the user 2026-11-19) | 2026-11-23 | register ×1, memory ×1 |
 | [`HANDOFF_PSU_TO_FRITZ_2026-11-19.md`](HANDOFF_PSU_TO_FRITZ_2026-11-19.md) | Handoff: what was done on PSU Roar (2026-11-18 / 19) and how a Fritz session takes it over | 2026-11-20 | memory ×1 |
 | [`MULTICOPY_DEV_LEDGER_2026-11-19.md`](MULTICOPY_DEV_LEDGER_2026-11-19.md) | Development ledger of the multi-copy goal (copy of PSU workspace goal_multicopy_dev/LEDGER.md, 2026-11-19) | 2026-11-19 | memory ×1 |
 | [`MULTICOPY_FAMILIES_2026-11-19.md`](MULTICOPY_FAMILIES_2026-11-19.md) | Multi-copy gene families: what the reads can decide (session of 2026-11-18 / 19, on PSU Roar) | 2026-11-19 | memory ×1 |
@@ -94,7 +122,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_borrow_isoformk_2026-11-19.md`](PREREG_borrow_isoformk_2026-11-19.md) | PREREG r1822: borrowed structure (question 4), shared isoforms and RUSTLE_READ_ISOFORM_K=2 on KB3781 (2026-11-19) | 2026-11-19 | register ×1 |
 | [`PREREG_chainscore_ties_2026-11-19.md`](PREREG_chainscore_ties_2026-11-19.md) | Row 1813: the chain score without the tie instability (pre-registered 2026-11-19) | 2026-11-19 | register ×1 |
 | [`PREREG_junction_replace_2026-11-19.md`](PREREG_junction_replace_2026-11-19.md) | Row 1819: replace a weak junction by its strong neighbour instead of dropping the chain (pre-registered 2026-11-19) | 2026-11-20 | register ×2 |
-| [`PREREG_near_tie_census_2026-11-19.md`](PREREG_near_tie_census_2026-11-19.md) | PREREG r1829: how many near-tied reads exist, and what could separate them (2026-11-19) | 2026-11-19 | register ×1, memory ×1 |
+| [`PREREG_near_tie_census_2026-11-19.md`](PREREG_near_tie_census_2026-11-19.md) | PREREG r1829: how many near-tied reads exist, and what could separate them (2026-11-19) | 2026-11-19 | register ×1 |
 | [`PREREG_pooled_filter_2026-11-19.md`](PREREG_pooled_filter_2026-11-19.md) | Row 1818: a chain score fitted on primate and non-primate data together, judged leave-one-species-out (pre-registered 20 | 2026-11-19 | register ×1 |
 | [`PREREG_resolution_call_2026-11-19.md`](PREREG_resolution_call_2026-11-19.md) | PREREG r1821: resolution-aware output of multi-copy families, judged once on the last HG002 quarter (2026-11-19) | 2026-11-19 | register ×1 |
 | [`PREREG_rule_ablation2_2026-11-19.md`](PREREG_rule_ablation2_2026-11-19.md) | Row 1811: second ablation at the toned-down defaults: primate-only levers and untested levers (pre-registered 2026-11-19 | 2026-11-19 | register ×1 |
@@ -102,24 +130,24 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_undecidable_copies_2026-11-19.md`](PREREG_undecidable_copies_2026-11-19.md) | PREREG r1820: do undecidable reads depict the copies they cannot be placed on? (2026-11-19) | 2026-11-18 | register ×1, memory ×1 |
 | [`PREREG_wrong_chain_rules_2026-11-19.md`](PREREG_wrong_chain_rules_2026-11-19.md) | Row 1814: single-evidence rules against wrong chains, found on two non-primate samples (pre-registered 2026-11-19) | 2026-11-19 | register ×1 |
 | [`PREREG_wrong_chain_rules_primate_2026-11-19.md`](PREREG_wrong_chain_rules_primate_2026-11-19.md) | Row 1815: the single-evidence rule search of row 1814, with primate development samples (pre-registered 2026-11-19) | 2026-11-19 | register ×1 |
-| [`PRIMARY_CORRECTION_CEILING_2026-11-19.md`](PRIMARY_CORRECTION_CEILING_2026-11-19.md) | What is a corrected primary worth? The oracle ceiling (2026-11-19, PSU, register 1824) | 2026-11-19 | register ×1, memory ×1 |
+| [`PRIMARY_CORRECTION_CEILING_2026-11-19.md`](PRIMARY_CORRECTION_CEILING_2026-11-19.md) | What is a corrected primary worth? The oracle ceiling (2026-11-19, PSU, register 1824) | 2026-11-19 | register ×1 |
 | [`SD_FAMILIES_2026-11-19.md`](SD_FAMILIES_2026-11-19.md) | Are segmental duplications where recent multi-copy gene families live? (2026-11-19, PSU, register 1827) | 2026-11-19 | register ×1, memory ×1 |
 | [`SHADOW_LOCI_2026-11-19.md`](SHADOW_LOCI_2026-11-19.md) | Secondary alignments as shadow loci: real missed loci, or shadows? (2026-11-19, PSU, register 1825) | 2026-11-19 | register ×1, memory ×1 |
 | [`SUPPORT_PROFILE_2026-11-19.md`](SUPPORT_PROFILE_2026-11-19.md) | What do whole reads really support? A support profile per transcript (2026-11-19, PSU, register 1828) | 2026-11-19 | register ×1 |
-| [`TANDEM_ARRAYS_2026-11-19.md`](TANDEM_ARRAYS_2026-11-19.md) | Tandem arrays: how StringTie and Rustle assemble them, read artifacts, and the size of a member (2026-11-19, PSU, regist | 2026-11-19 | register ×1, memory ×1 |
+| [`TANDEM_ARRAYS_2026-11-19.md`](TANDEM_ARRAYS_2026-11-19.md) | Tandem arrays: how StringTie and Rustle assemble them, read artifacts, and the size of a member (2026-11-19, PSU, regist | 2026-11-19 | register ×1 |
 | [`OVERFIT_LEVERS_2026-11-18.md`](OVERFIT_LEVERS_2026-11-18.md) | Which assembler levers are overfit to the primate samples, and what was toned down (18 Nov 2026) | 2026-11-20 | register ×1, memory ×1 |
 | [`PRECISION_RULES_2026-11-18.md`](PRECISION_RULES_2026-11-18.md) | Precision rules on 12 samples, and the new chain score default (17-18 Nov 2026) | 2026-11-18 | memory ×1 |
 | [`PREREG_crosscopy_splicing_2026-11-18.md`](PREREG_crosscopy_splicing_2026-11-18.md) | PREREG r1802 / r1803 / r1804: splicing differences between the copies of a family, against the splice sites and against  | 2026-11-19 | memory ×1 |
 | [`PREREG_family_ties_2026-11-18.md`](PREREG_family_ties_2026-11-18.md) | PREREG r1790: are the near-tied reads concentrated in a few families? (2026-11-18) | 2026-11-18 | register ×1 |
 | [`PREREG_famwise_origin_2026-11-18.md`](PREREG_famwise_origin_2026-11-18.md) | PREREG r1796 / r1794 / r1795: the family-wise layer against the origin of the reads (2026-11-18) | 2026-11-18 | register ×1, memory ×1 |
 | [`PREREG_famwise_sim_2026-11-18.md`](PREREG_famwise_sim_2026-11-18.md) | PREREG r1797 / r1798 / r1799: a family library with exact provenance, and what exact provenance is worth on it | 2026-11-19 | register ×4, memory ×2 |
-| [`PREREG_one_read_chains_2026-11-18.md`](PREREG_one_read_chains_2026-11-18.md) | Row 1805: can a one-read chain be accepted on evidence other than its read count? (pre-registered 2026-11-18) | 2026-11-19 | register ×1, memory ×1 |
-| [`PREREG_one_read_promote_2026-11-18.md`](PREREG_one_read_promote_2026-11-18.md) | Row 1807: which one-read chains can be promoted into the main output? (pre-registered 2026-11-18) | 2026-11-19 | register ×1, memory ×1 |
-| [`PREREG_one_read_promote_check_2026-11-18.md`](PREREG_one_read_promote_check_2026-11-18.md) | Row 1808: one-read chains seen in a second library and ranked high, against the two-read chains (pre-registered 2026-11- | 2026-11-19 | register ×1, memory ×1 |
+| [`PREREG_one_read_chains_2026-11-18.md`](PREREG_one_read_chains_2026-11-18.md) | Row 1805: can a one-read chain be accepted on evidence other than its read count? (pre-registered 2026-11-18) | 2026-11-19 | register ×1 |
+| [`PREREG_one_read_promote_2026-11-18.md`](PREREG_one_read_promote_2026-11-18.md) | Row 1807: which one-read chains can be promoted into the main output? (pre-registered 2026-11-18) | 2026-11-19 | register ×1 |
+| [`PREREG_one_read_promote_check_2026-11-18.md`](PREREG_one_read_promote_check_2026-11-18.md) | Row 1808: one-read chains seen in a second library and ranked high, against the two-read chains (pre-registered 2026-11- | 2026-11-19 | register ×1 |
 | [`PREREG_one_read_score_2026-11-18.md`](PREREG_one_read_score_2026-11-18.md) | Row 1806: a score for one-read chains from the reads themselves (pre-registered 2026-11-18) | 2026-11-19 | register ×1 |
-| [`PREREG_rule_ablation_2026-11-18.md`](PREREG_rule_ablation_2026-11-18.md) | Row 1793: which assembler rules are overfit to the primate samples? (pre-registered 2026-11-18) | 2026-11-19 | register ×1, memory ×2 |
+| [`PREREG_rule_ablation_2026-11-18.md`](PREREG_rule_ablation_2026-11-18.md) | Row 1793: which assembler rules are overfit to the primate samples? (pre-registered 2026-11-18) | 2026-11-19 | register ×1, memory ×1 |
 | [`PREREG_sirv_rules_2026-11-18.md`](PREREG_sirv_rules_2026-11-18.md) | Row 1801: four rules from the SIRV diagnosis, tested off the spike-ins (DRAFT of 2026-11-18, bars not yet accepted) | 2026-11-19 | register ×1, memory ×1 |
-| [`PREREG_snap_ism_defaults_2026-11-18.md`](PREREG_snap_ism_defaults_2026-11-18.md) | Row 1800: polish junction snap on by default, ISM ratio re-set on non-primate data (pre-registered 2026-11-18) | 2026-11-19 | register ×1, memory ×1 |
+| [`PREREG_snap_ism_defaults_2026-11-18.md`](PREREG_snap_ism_defaults_2026-11-18.md) | Row 1800: polish junction snap on by default, ISM ratio re-set on non-primate data (pre-registered 2026-11-18) | 2026-11-19 | register ×1 |
 | [`PREREG_splicesite_features_2026-11-18.md`](PREREG_splicesite_features_2026-11-18.md) | Row 1789: does splice-site sequence strength add precision? (pre-registered 2026-11-18) | 2026-11-18 | register ×1 |
 | [`PREREG_testis_replication_2026-11-18.md`](PREREG_testis_replication_2026-11-18.md) | Row 1792: are the "wrong" chains the score keeps in testis real transcripts RefSeq lacks? (pre-registered 2026-11-18, di | 2026-11-18 | register ×1 |
 | [`PREREG_tie_split_2026-11-18.md`](PREREG_tie_split_2026-11-18.md) | PREREG r1791: what the "true ties" of r1790 are (2026-11-18) | 2026-11-18 | register ×1 |
@@ -134,18 +162,18 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_denovo_cut_2026-11-17.md`](PREREG_denovo_cut_2026-11-17.md) | Row 1774: can the chain score's cut be set per sample without an annotation? (pre-registered 2026-11-17) | 2026-11-18 | register ×1 |
 | [`PREREG_eichler_baseline_2026-11-17.md`](PREREG_eichler_baseline_2026-11-17.md) | PREREG r1775: the adapted Eichler filter as the baseline for reads of multi-copy families, and Winnowmap as an arm (2026 | 2026-11-18 | register ×1 |
 | [`PREREG_hg002_room_2026-11-17.md`](PREREG_hg002_room_2026-11-17.md) | PREREG r1776: room for graph assignment at near ties on a sample that is not its own reference (2026-11-17) | 2026-11-18 | register ×1 |
-| [`PREREG_multisample_precision_2026-11-17.md`](PREREG_multisample_precision_2026-11-17.md) | Row 1769: does a chain score fitted across species beat the frozen two-sample score? (pre-registered 2026-11-17) | 2026-11-18 | register ×1, memory ×1 |
+| [`PREREG_multisample_precision_2026-11-17.md`](PREREG_multisample_precision_2026-11-17.md) | Row 1769: does a chain score fitted across species beat the frozen two-sample score? (pre-registered 2026-11-17) | 2026-11-18 | register ×1 |
 | [`PREREG_own_psv_2026-11-17.md`](PREREG_own_psv_2026-11-17.md) | PREREG r1783: copy differences from the individual's own reads, certified against the other copy, HG002 (2026-11-17) | 2026-11-18 | register ×1 |
 | [`PREREG_readend_features_2026-11-17.md`](PREREG_readend_features_2026-11-17.md) | Row 1771: do read-end features (cap G, clip content, end sites shared across the locus) add precision? (pre-registered 2 | 2026-11-18 | register ×1 |
 | [`PREREG_sibling_reach_2026-11-17.md`](PREREG_sibling_reach_2026-11-17.md) | PREREG r1772: are the siblings of an expressed family member reached by its multimapping reads? (2026-11-17) | 2026-11-18 | register ×1 |
 | [`PREREG_sibling_reverse_2026-11-17.md`](PREREG_sibling_reverse_2026-11-17.md) | PREREG r1773: which loci do a family's multimapping reads reach? (2026-11-17) | 2026-11-18 | register ×1 |
-| [`PREREG_simulation_transfer_2026-11-17.md`](PREREG_simulation_transfer_2026-11-17.md) | Rows 1779 and 1780: does the assembler transfer to data it was never tuned on? (pre-registered 2026-11-17) | 2026-11-19 | register ×1, memory ×1 |
+| [`PREREG_simulation_transfer_2026-11-17.md`](PREREG_simulation_transfer_2026-11-17.md) | Rows 1779 and 1780: does the assembler transfer to data it was never tuned on? (pre-registered 2026-11-17) | 2026-11-19 | register ×1 |
 | [`PREREG_tie_ms_arm_2026-11-17.md`](PREREG_tie_ms_arm_2026-11-17.md) | PREREG r1781: the wider gate (`--tie-ms 10`) as an arm on the neutral truth, HG002 (2026-11-17) | 2026-11-18 | register ×1 |
 | [`PREREG_truth_repair_eichler_profile_2026-11-17.md`](PREREG_truth_repair_eichler_profile_2026-11-17.md) | PREREG r1785 (repair of the neutral truth) and r1786 (how far the adapted Eichler filter carries) (2026-11-17) | 2026-11-18 | register ×1 |
 | [`PREREG_winnowmap2_spliced_2026-11-17.md`](PREREG_winnowmap2_spliced_2026-11-17.md) | PREREG r1784: the Winnowmap2 method forced on for spliced reads, HG002 near ties (2026-11-17) | 2026-11-18 | register ×1 |
 | [`PREREG_winnowmap_hg002_2026-11-17.md`](PREREG_winnowmap_hg002_2026-11-17.md) | PREREG r1782: Winnowmap on the near-tied reads of HG002 against CHM13 (2026-11-17) | 2026-11-18 | register ×1 |
-| [`STEP0_seeding_band_sweep_2026-11-17.md`](STEP0_seeding_band_sweep_2026-11-17.md) | Step 0, row 1767: what do secondary alignments beyond the 0.98 band add to the assembly? (2026-11-16 / 17) | 2026-11-18 | register ×1, memory ×1 |
-| [`FAMILY_WISE_REVIEW_2026-11-16.md`](FAMILY_WISE_REVIEW_2026-11-16.md) | Family-wise assembly review, and the `names` / `eqclasses` / `psi` stages (2026-11-16) | 2026-11-16 | memory ×2 |
+| [`STEP0_seeding_band_sweep_2026-11-17.md`](STEP0_seeding_band_sweep_2026-11-17.md) | Step 0, row 1767: what do secondary alignments beyond the 0.98 band add to the assembly? (2026-11-16 / 17) | 2026-11-18 | register ×1 |
+| [`FAMILY_WISE_REVIEW_2026-11-16.md`](FAMILY_WISE_REVIEW_2026-11-16.md) | Family-wise assembly review, and the `names` / `eqclasses` / `psi` stages (2026-11-16) | 2026-11-16 | — |
 | [`PREREG_bundle_jaccard_2026-11-16.md`](PREREG_bundle_jaccard_2026-11-16.md) | PREREG row 1762: read-set Jaccard between de novo bundles as the family rule (2026-11-16) | 2026-11-16 | register ×1 |
 | [`PREREG_cellline_opt_ins_2026-11-16.md`](PREREG_cellline_opt_ins_2026-11-16.md) | PREREG: three assembly opt-ins on four unseen cell-line samples, with a promotion rule (2026-11-16, register 1760) | 2026-11-16 | register ×1 |
 | [`PREREG_chainscore_filter_2026-11-16.md`](PREREG_chainscore_filter_2026-11-16.md) | PREREG: the frozen r1677 chain score as a filter with a fixed cut, opt-in stage `chainscore` (2026-11-16, register 1761) | 2026-11-16 | register ×1 |
@@ -154,8 +182,8 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_isoquant_junctions_2026-11-16.md`](PREREG_isoquant_junctions_2026-11-16.md) | PREREG r1765: is IsoQuant's junction precision an operating point or a mechanism? (2026-11-16) | 2026-11-16 | register ×1 |
 | [`PREREG_isoseq_cluster2_2026-11-16.md`](PREREG_isoseq_cluster2_2026-11-16.md) | PREREG ISOSEQ-CLUSTER2 (2026-11-16, register 1759, written before any run) | 2026-11-16 | register ×1 |
 | [`PREREG_skip_search_floor_2026-11-16.md`](PREREG_skip_search_floor_2026-11-16.md) | PREREG row 1757 (2026-11-16): short-exon intron search with a floor of 2 reads, on four unseen samples | 2026-11-16 | register ×1 |
-| [`SHORT_EXONS_2026-11-16.md`](SHORT_EXONS_2026-11-16.md) | Alternative splicing classes, retained introns and short exons: what was measured and the `shortexons` stage, state on 2 | 2026-11-16 | memory ×1 |
-| [`APE_SAMPLES_2026-11-15.md`](APE_SAMPLES_2026-11-15.md) | Four new ape samples: chimp, bonobo, two orangutans (2026-11-15) | 2026-11-16 | register ×1, memory ×2 |
+| [`SHORT_EXONS_2026-11-16.md`](SHORT_EXONS_2026-11-16.md) | Alternative splicing classes, retained introns and short exons: what was measured and the `shortexons` stage, state on 2 | 2026-11-16 | — |
+| [`APE_SAMPLES_2026-11-15.md`](APE_SAMPLES_2026-11-15.md) | Four new ape samples: chimp, bonobo, two orangutans (2026-11-15) | 2026-11-16 | register ×1, memory ×1 |
 | [`PREREG_alt_events_missing_classes_2026-11-15.md`](PREREG_alt_events_missing_classes_2026-11-15.md) | PREREG row 1744 (2026-11-15): the event classes row 1714 did not measure, and whether alignment loses short exons | 2026-11-15 | register ×1 |
 | [`PREREG_families_darklist_2026-11-15.md`](PREREG_families_darklist_2026-11-15.md) | PREREG row 1749 (2026-11-15): a satellite / rDNA darklist BEFORE the families stage | 2026-11-16 | register ×1 |
 | [`PREREG_ptr_ppa_frozen_rules_2026-11-15.md`](PREREG_ptr_ppa_frozen_rules_2026-11-15.md) | PREREG: frozen assembly rules on two unseen samples, chimp PTR and bonobo PPA (2026-11-15) | 2026-11-16 | register ×5 |
@@ -184,7 +212,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_secondary_pool_rereg_2026-11-14.md`](PREREG_secondary_pool_rereg_2026-11-14.md) | PREREG row 1703 (2026-11-14): the informative-secondary pool for candidate copies, re-registered | 2026-11-15 | register ×1 |
 | [`PREREG_shifted_exon_ends_2026-11-14.md`](PREREG_shifted_exon_ends_2026-11-14.md) | PREREG row 1725 (2026-11-14): shifted ends of internal exons, the emitted side | 2026-11-15 | register ×1 |
 | [`PREREG_shifted_exon_rule_2026-11-14.md`](PREREG_shifted_exon_rule_2026-11-14.md) | PREREG row 1726 (2026-11-14): a graded drop rule for weaker shifted-site chains, derived on two samples, tested on HG002 | 2026-11-15 | register ×8 |
-| [`SHIFTED_EXON_ENDS_2026-11-14.md`](SHIFTED_EXON_ENDS_2026-11-14.md) | Shifted ends of internal exons: rules tried and the `shiftdrop` stage, state on 2026-11-15 | 2026-11-15 | memory ×1 |
+| [`SHIFTED_EXON_ENDS_2026-11-14.md`](SHIFTED_EXON_ENDS_2026-11-14.md) | Shifted ends of internal exons: rules tried and the `shiftdrop` stage, state on 2026-11-15 | 2026-11-15 | — |
 | [`PREREG_bubble_vote_2026-11-13.md`](PREREG_bubble_vote_2026-11-13.md) | STEP 0 PER-BUBBLE VOTE ON A FAMILY GRAPH (register 1696, 2026-11-13) | 2026-11-15 | register ×1 |
 | [`PREREG_chain_rules_2026-11-13.md`](PREREG_chain_rules_2026-11-13.md) | PREREG r1677: empirical precision / recall rules for assembly from the tool lessons (2026-11-13) | 2026-11-15 | register ×2 |
 | [`PREREG_cross_sample_witness_2026-11-13.md`](PREREG_cross_sample_witness_2026-11-13.md) | Row 1680 — a second sample as witness for a refused family pair (2026-11-13) | 2026-11-15 | register ×1 |
@@ -249,7 +277,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_tie_groups_ccm_2026-11-11.md`](PREREG_tie_groups_ccm_2026-11-11.md) | PREREG r1630: tie-group loci by correlation clustering plus a merge of duplicate models (2026-11-11) | 2026-11-15 | register ×1 |
 | [`PREREG_tie_groups_transfer_2026-11-11.md`](PREREG_tie_groups_transfer_2026-11-11.md) | PREREG r1631: tie groups, genome-wide, on a sample the rules never saw (KB3781) + an assembly bar (2026-11-11) | 2026-11-15 | register ×1 |
 | [`PREREG_tool_profiles_2026-11-11.md`](PREREG_tool_profiles_2026-11-11.md) | PREREG r1634: opt-in profiles that move the initial assembly toward StringTie or FLAIR, and their price (2026-11-11) | 2026-11-15 | register ×1 |
-| [`STEP0_tool_match_2026-11-11.md`](STEP0_tool_match_2026-11-11.md) | Step 0, r1633: how far is the initial assembly from StringTie's and FLAIR's, and what would matching cost? (2026-11-11) | 2026-11-15 | register ×3, memory ×1 |
+| [`STEP0_tool_match_2026-11-11.md`](STEP0_tool_match_2026-11-11.md) | Step 0, r1633: how far is the initial assembly from StringTie's and FLAIR's, and what would matching cost? (2026-11-11) | 2026-11-15 | register ×3 |
 | [`PREREG_cc_readthrough_allele_2026-11-10.md`](PREREG_cc_readthrough_allele_2026-11-10.md) | PREREG r1623 / r1624: step 0 for the two parked correlation-clustering uses (2026-11-10) | 2026-11-15 | register ×1 |
 | [`PREREG_chain_rule_screen_2026-11-10.md`](PREREG_chain_rule_screen_2026-11-10.md) | PREREG r1619: an empirical rule on our own chains that beats the read-count curve (2026-11-10) | 2026-11-15 | register ×1 |
 | [`PREREG_families_negative_edges_2026-11-10.md`](PREREG_families_negative_edges_2026-11-10.md) | PREREG r1621: families with negative edges (correlation clustering inside MCL families) (2026-11-10) | 2026-11-15 | register ×1 |
