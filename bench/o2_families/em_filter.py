@@ -14,7 +14,10 @@ this locus alone). T -> 0 is the default test exactly.
 --label drops nothing (user 2026-11-22, the advisor's point: a family member that is found stays available): every
 transcript is kept and tagged o2_status = "expressed" (reads placed here alone, EM >= --min-em), "shared" (no read placed
 here alone but the EM still leaves >= --min-em: indistinguishable from its partners on these reads) or "homology_only"
-(reads reach it, all better explained by other loci: the member exists, these reads do not show it expressed)."""
+(reads reach it, all better explained by other loci: the member exists, these reads do not show it expressed).
+--shares FILE.tsv.gz (with --weighted; 2026-11-25): one row per (tied read, candidate locus): read, locus, gap (ms below the
+read's best), share = the part of the read the EM gives that locus (abundance x exp(-gap / T), the shares of a read sum
+to 1). A share is how the EM divides the read between loci it cannot tell apart, NOT a statement of where it came from."""
 import sys, os, re, argparse, collections, multiprocessing
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'tools'))
 import eq_classes as E
@@ -43,6 +46,13 @@ def em_w(classes, placed, T, rounds=500, tol=1e-6):
         if d < tol: break
     return theta
 
+def read_shares(c, theta, T):
+    """c = [(locus, gap)] of one read -> [(locus, gap, share)]; as em_w's E step (equal by weight when every abundance is 0)"""
+    import math
+    w = [(l, g, theta.get(l, 0.0) * math.exp(-g / T)) for l, g in c]; z = sum(x for _, _, x in w)
+    if z <= 0: w = [(l, g, math.exp(-g / T)) for l, g in c]; z = sum(x for _, _, x in w)
+    return [(l, g, x / z) for l, g, x in w]
+
 def selftest():
     # two loci; 3 reads best at B by one substitution (gap 5 at A). T small: they stay at B; T = 1 and A 1000-fold
     # more abundant: A takes them (at 100-fold B still keeps about one read)
@@ -55,14 +65,17 @@ def selftest():
     c2 = collections.Counter({frozenset({('A', 0), ('B', 0)}): 10}); p2 = {'A': 9, 'B': 1}
     tw = em_w(c2, p2, 1.0); tc = E.em(collections.Counter({frozenset({'A', 'B'}): 10}), p2)
     assert all(abs(tw[k] - tc[k]) < 1e-4 for k in tc), (tw, tc)
+    sh = read_shares([('B', 0), ('A', 5)], t9, 1.0); assert abs(sum(x for _, _, x in sh) - 1) < 1e-9 and dict((l, x) for l, _, x in sh)['B'] > 0.9, sh
+    assert [round(x, 3) for _, _, x in read_shares([('A', 0), ('B', 0)], {}, 1.0)] == [0.5, 0.5]
     print('em_filter selftest ok')
 
 def main():
     if sys.argv[1:] == ['--selftest']: return selftest()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('gtf'); ap.add_argument('bam'); ap.add_argument('tab'); ap.add_argument('out')
-    ap.add_argument('--min-em', type=float, default=2); ap.add_argument('--pooled', action='store_true'); ap.add_argument('--label', action='store_true'); ap.add_argument('--threads', type=int, default=8); ap.add_argument('--weighted', type=float, default=None, metavar='T'); ap.add_argument('--ties', metavar='FILE', help='the shared tie table (tools/tie_table.py): read when it matches the inputs, else written')
+    ap.add_argument('--min-em', type=float, default=2); ap.add_argument('--pooled', action='store_true'); ap.add_argument('--label', action='store_true'); ap.add_argument('--threads', type=int, default=8); ap.add_argument('--weighted', type=float, default=None, metavar='T'); ap.add_argument('--shares', metavar='FILE.tsv.gz', help='per tied read, the share the EM gives each candidate locus (needs --weighted)'); ap.add_argument('--ties', metavar='FILE', help='the shared tie table (tools/tie_table.py): read when it matches the inputs, else written')
     a = ap.parse_args()
+    if a.shares and not a.weighted: ap.error('--shares needs --weighted T')
     meta, placed0, pairs, _ = TT.get(a.gtf, a.bam, a.tab, a.threads, a.ties)      # the shared pass (tools/tie_table.py)
     placed, sets = collections.Counter(placed0), collections.defaultdict(set)
     gaps = collections.defaultdict(dict)
@@ -81,6 +94,15 @@ def main():
         for c, n in wcl.items():
             for l, _ in c: mx[l] += n
         for l, n in solo.items(): placed[l] += n                       # for the `expressed` label and the placed column only
+        if a.shares:
+            import gzip
+            with gzip.open(a.shares + '.tmp', 'wt', compresslevel=3) as w:
+                w.write('read\tlocus\tgap\tshare\n')
+                for q, d in gaps.items():
+                    if len(d) < 2: continue
+                    out = 'outside#' + ','.join(sorted(k for k in d if k != E.OUTSIDE))
+                    for l, g, x in sorted(read_shares([(out if (k == E.OUTSIDE and not a.pooled) else k, g) for k, g in d.items()], theta, a.weighted), key=lambda z: -z[2]): w.write(f'{q}\t{l}\t{g}\t{x:.3f}\n')
+            os.replace(a.shares + '.tmp', a.shares)
         sets = {}
     for s in sets.values():
         if len(s) == 1: placed.update(s - {E.OUTSIDE})

@@ -1723,13 +1723,14 @@ stage_o2() {
   # Default since 2026-11-22 (user: "lets readd it by default"); RUSTLE_O2_EXTEND=0 turns it off.
   # RUSTLE_O2_EM_WEIGHT (default 1, user 2026-11-23, register 1921): alignment scores inside the EM; 0 = counts-only. A failure of the extension
   # is reported and leaves the family report on the base assembly: it never fails the stage (or `all`).
+  # RUSTLE_O2_SHARES=1 (opt-in, 2026-11-25): PREFIX.o2.shares.tsv.gz = per tied read, the share the EM gives each candidate locus.
   local ext=${RUSTLE_O2_EXTEND:-1}
   if [ "$ext" = 1 ]; then
-    rm -f "$OUT.o2.gtf" "$OUT.o2.em.tsv"
+    rm -f "$OUT.o2.gtf" "$OUT.o2.em.tsv" "$OUT.o2.shares.tsv.gz"
     local tab=$OUT.molecules.tsv; [ -s "$tab" ] || tab=$BAM.as_table.tsv
     if ! ( RUSTLE_MULTICOPY_EQ=${RUSTLE_MULTICOPY_EQ:-0} stage_multicopy ); then
       say "o2: the multi-copy extension FAILED (see $OUT.multicopy.log); the report is on $OUT.gtf"; ext=0
-    elif ! "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/../bench/o2_families/em_filter.py" "$OUT.multicopy.gtf" "$BAM" "$tab" "$OUT.o2.tmp" --min-em "${RUSTLE_O2_MIN_EM:-2}" $([ "${RUSTLE_O2_DROP:-0}" = 1 ] || echo --label) $([ "${RUSTLE_O2_EM_WEIGHT:-1}" = 0 ] || echo --weighted "${RUSTLE_O2_EM_WEIGHT:-1}") --ties "$OUT.o2.ties.tsv.gz" --threads "$JOB_THREADS" > "$OUT.o2.em.log" 2>&1; then
+    elif ! "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/../bench/o2_families/em_filter.py" "$OUT.multicopy.gtf" "$BAM" "$tab" "$OUT.o2.tmp" --min-em "${RUSTLE_O2_MIN_EM:-2}" $([ "${RUSTLE_O2_DROP:-0}" = 1 ] || echo --label) $([ "${RUSTLE_O2_EM_WEIGHT:-1}" = 0 ] || echo --weighted "${RUSTLE_O2_EM_WEIGHT:-1}") $([ "${RUSTLE_O2_SHARES:-0}" != 1 ] || [ "${RUSTLE_O2_EM_WEIGHT:-1}" = 0 ] || echo --shares "$OUT.o2.shares.tsv.gz") --ties "$OUT.o2.ties.tsv.gz" --threads "$JOB_THREADS" > "$OUT.o2.em.log" 2>&1; then
       say "o2: the provenance test FAILED (see $OUT.o2.em.log); the report is on $OUT.gtf"; rm -f "$OUT.o2.tmp".*; ext=0
     else
       mv -f "$OUT.o2.tmp.gtf" "$OUT.o2.gtf"; mv -f "$OUT.o2.tmp.em.tsv" "$OUT.o2.em.tsv"

@@ -2,6 +2,88 @@
 
 Compact, current version (2026-11-01). Verbatim previous text: `archive/2026-11/ADVISOR_QUESTIONS.md`; every entry ends with a pointer to it. `r####` = row of `NEGATIVE_RESULTS_REGISTER.md`. Audience: Stefan Canzar, who assumes a good number is luck or overfitting until shown otherwise; open with the discipline, then evidence, then concessions.
 
+## The questions of November 2026, with today's answer (state 2026-11-25)
+
+Since 2026-11-22 O2 is the family benchmark (how completely and correctly each tool reports the copies and isoforms of known
+multi-copy families), not per-read assignment; the sections below this one predate that. Each entry: the question as he
+puts it, the answer in one line, the numbers, where they come from, and how to show it. Longer text: `docs/MULTICOPY_MODE.md`,
+`docs/O2_FAMILY_BENCHMARK.md`. Wording rules: "reads with primary / secondary alignments"; say which score (`ms` first, AS
+beside it); "sequences", not copies, for the sequence count; copies are MODELED, not shown expressed.
+
+| # | Question | Answer in one line | Source |
+|---|---|---|---|
+| N1 | Near-tied multimappers are a gap no tool uses well. Does Rustle solve it? | Not per read (nothing in one read decides); across reads it uses them in three measured ways. | rows 1921-1926 |
+| N2 | What is a near tie, and why 0.98 x AS and not `ms`? | Two rules exist; the `ms`-within-10 band is the better seeding pool on the samples tested, confirmation running. | row 1942 |
+| N3 | IsoCon separates near-identical sequences. Port its logic. | Ported; exact count of expressed sequences in 0.80 of cells where IsoCon itself reaches 0.57. | rows 1926-1933 |
+| N4 | Are those sequences real? | About three quarters are in the individual's own DNA, about 15% are not. | rows 1930, 1931, 1933 |
+| N5 | DuploMap assigns by PSVs, so do we. Winnowmap, VACmap, other minimap2 settings? | None places the tied reads; reasons measured per tool. | rows 1844, 1936, 1938, 1940 |
+| N6 | If one family member is found, the others must be available. | They are kept and labelled, never dropped. | rows 1905-1918 |
+| N7 | A silent gene should be found through its expressed pseudogene, and back. | Its reads reach 70-81% of the silent relatives; that shows homology, not expression. | rows 1909, 1825 |
+| N8 | Do the unresolvable ties make wrong transcripts? | Taken as they come, yes (24 false units); with the labels, 3. | rows 1917-1918 |
+| N9 | What is new against StringTie, FLAIR, IsoQuant, bambu? | At multi-copy genes, the most correct chains on 9 of 12 samples with tied secondaries; most isoforms on planted reads. | rows 1941, 1917 |
+| N10 | Where did each read go? How did reads become transcripts? | One file per run, and the removal rules in readable Python with exact parity. | stage `provenance`, `tools/polish_rules.py` |
+| N11 | Is correlation clustering (Strainy) the better way? | Tried twice, no gain. | rows 1823, 1932 |
+| N12 | Is this luck or overfitting? | Rule fixed before each run, unseen seeds or samples, failures recorded (mine included). | register |
+
+### N1. Does Rustle solve near-tied multimappers?
+- **Per read: no, and no tool can.** On planted reads minimap2's primary is at the wrong copy for 12.6% of reads; 96.5% of those are exact `ms` ties whose candidate alignments are identical in AS, edit distance and clipping (row 1922). Re-scoring with the error context moves 0 of 20,656 reads on KB3781 and breaks 39 / fixes 4 on HG002 (row 1923). minimap2 is not blind to substitutions or indels (splice:hq: match +1, mismatch -4, gap 6 + 1 per base); it ranks on `ms` and breaks exact ties by a hash.
+- **Across reads: yes, in three ways.** (a) *Building:* tied secondaries seed the copies; at 3 reads per copy 125 of 133 planted copies are found against StringTie 95 and Rustle on primaries 81; from 5 reads up there is no lead. (b) *Labelling:* an EM over the tied reads with the alignment scores inside it (default) says per copy `expressed`, `shared` or `homology_only`; mislabelled silent units 35 -> 30 over eight seeds, none lost (row 1921). (c) *Counting:* IsoCon's test on the tied reads counts the distinct expressed sequences among copies the reference cannot separate (N3).
+- **Say:** "Rustle uses near-tied reads to build, label and count; it does not assign a tied read to a copy." **Show:** `PREFIX.o2.gtf` (attribute `o2_status`), `PREFIX.o2.em.tsv`, `PREFIX.o2.ties.tsv.gz` (per tied read, the loci it can sit at with the `ms` gap).
+
+### N2. What is a near tie; why 0.98 x AS and not 0.8 x AS or `ms`?
+- Two rules: the assembler's seeding pool (a secondary alignment helps build when its AS >= 0.98 x the read's best AS) and the near tie of the labels, the EM and the sequence test (`ms` within 10 of the best; 0 = exact tie). An intron costs about 24 on AS and nothing on `ms`, the score minimap2 ranks by.
+- Wider on AS (0.8) was tested and rejected: the additions are 1-16% correct and 70-75% of loci on secondaries alone are shadows (rows 1767, 1773).
+- `ms` instead (row 1942): pool = `ms` within 10 keeps planted units, labels and isoform recall and raises isoform precision (+0.012 mean, lower in two of three half-silent sets); real junction precision 0.67 -> 0.70 (OR6737) and 0.63 -> 0.68 (KB3781) with the annotated copies kept; a quarter fewer rescued loci. `ms` >= 0.98 x best is not better. On real BAMs the pools are small: AS 0.98 admits 1.8% of secondary alignments, `ms` within 10 0.5%.
+- **Open:** confirmation on A119b and HG002 running (jobs 4504337, 4504338); not the default; the rule would have to move into the assembler. **Show:** `docs/PREREG_ms_seed_pool_2026-11-24.md`; `bench/o2_families/pool_bam.py IN.bam TABLE OUT.bam --rule msgap:10`.
+
+### N3. IsoCon's logic, ported
+- `bench/o2_families/recurrence_test.py` is IsoCon 0.3.3's test (support = reads carrying every separating variant; per-read error probability from the read's own errors, homopolymer-aware; Raghavan bound; correction for placement; merge at 0.01), applied to the genome alignments of each group of tied loci, per intron chain.
+- Planted samples with per-copy variants, unseen seeds: the count of distinct expressed sequences is exact in 0.80 of cells; IsoCon run on the same groups 0.57; IsoCon with the true read pools 0.48; best constant 0.50; the control without variants never over-counts (row 1926).
+- **Limits:** with two alleles per copy the count is exact in 0.53 of cells and over-counts copies in 140 of 199 (row 1927): it counts SEQUENCES, and alleles cannot be told from copies without the individual's genome. IsoCon's base-quality model and correlation clustering as the candidate step were both tried and are not better (rows 1933, 1932). Hypervariable loci (HG002 immunoglobulin lambda: 4,922 patterns) are skipped and listed.
+- **Show:** `RUSTLE_O2_SEQUENCES=1` -> `PREFIX.o2.sequences.tsv`, column `tied_sequences` of `PREFIX.o2.copies.tsv`.
+
+### N4. Are the sequences real?
+- Each recurrent non-reference sequence was looked up site by site in the individual's own maternal and paternal assemblies. HG002: 476 of 648 in the DNA (0.735), 98 nowhere (0.151). KB3781: 52 of 107 (0.49) and 0.44 nowhere, but 29 of the 47 unexplained are at CD99 in the pseudoautosomal region, where the assemblies hold one sequence and the male has two alleles, and 8 at one locus at X:62.25 Mb; without those two loci 0.79 / 0.15.
+- Ruled out as the cause of the rest: sequencing-error context, RNA editing, chimeric molecules, PCR duplicates, a lower-ranked true origin (rows 1929, 1930). **Open:** the 15%, and the X:62.25 Mb locus. **Show:** workspace `r1931_hg002_sequences/explain.py`.
+
+### N5. Other aligners and settings
+- **DuploMap** (PSVs per read): the 36 decidable TBC1D3 reads have a median of 79 reliable PSVs under them but 3 between its two best copies; 34 of 36 touch no unique sequence (its anchor step); 29 of 36 come back in pieces (no intron model). PSVs per read fail for every method, ours included (rows 1777, 1778, 1783); PSVs across reads work per copy (row 1870).
+- **Winnowmap:** 605 right against minimap2's 639 of 711 decidable near ties (HG002 on CHM13); in satellite arrays its measured gain is confidence, not placement (27 against 30 wrong of 2,000 reads; row 1938).
+- **VACmap:** no splice model; worse than the primary on every arm, penalties tuned (row 1936).
+- **minimap2 settings:** 32 cells of a one-at-a-time sweep; none avoids the ties (3,513-5,046 exactly tied reads against 3,684) and none decides them (40-54 wrong of 600 against 47) (row 1940). Say "no setting of the grid".
+- **The part no parameter can change:** 4,249 of 7,770 near ties on HG002 tie on its own haplotypes too. **Show:** page "Why Winnowmap does not untie multi-copy reads" (artifact 688f0fe1-...), `docs/WINNOWMAP_AND_FAMILY_TIES_2026-11-18.md`.
+
+### N6. The other members must be available
+- Nothing is dropped: every transcript keeps a label. Planted, by pre-registered rule: 86-92 units available against 75-76 for the next tool; 0-2 expressed units mislabelled; 79-91% of the silent units that get a transcript are labelled `homology_only`. Real samples: 701 annotated copies modelled against StringTie's 587 over four ape testis samples at junction precision 0.732 against 0.699.
+- **Concede:** available is not expressed (CT47A1-4: 125-131 reads each, none supports them at a distinguishing base; row 1870), and labels on real samples have no truth.
+
+### N7. Silent genes through their pseudogenes
+- Planted (row 1909): a gene's reads reach 70% of its silent processed pseudogenes; pseudogenes' reads reach 81% of their silent gene; almost never as near ties (the copies differ too much). Real HG002 (row 1825): 51 places are reached only by near-tied secondaries; 6 hold reads truly from them (CBWD4P, NUDT4P2, POTEB, LRRC37A4P), each dominated by another copy's reads.
+- **Say:** the relative is reachable and reported; its reads are the other copy's. The slim mapping mode (`-p 0.8`) loses this evidence (20 of 292), which is why the default keeps `-p 0.1`.
+
+### N8. Do unresolvable ties make wrong transcripts?
+- Planted, half the copies silent, false units: every near tie taken 24; other tools 9-16; Rustle's mode with the EM labels 3; recently diverged silent copies called 1 against StringTie 9. Known error: one 113 kb single-exon model over the TAF11L array (row 1881). Isoform precision with secondaries is the weak point (0.63 against 0.74-0.80 for StringTie / FLAIR).
+
+### N9. What is new against the other assemblers
+- Planted isoforms at 60 reads per copy: Rustle 0.82, FLAIR 0.73-0.82, bambu 0.70-0.75, StringTie 0.66, IsoQuant 0.59; at 3 reads 0.67 against 0.31 (rows 1917-1918).
+- Real, multi-copy genes only, 12 samples (row 1941): more precise than StringTie and FLAIR on 12; most correct chains on 9 with tied secondaries (on 1 with primaries only; the registered bar was 10); secondaries add 4-29% correct chains there against 0.1-1.0% genome-wide.
+- **Do not say** "more expressed copies" or "better than all others". bambu and IsoQuant under-call; they do not invent transcripts.
+
+### N10. Where each read went
+- `rustle_pipeline.sh provenance` -> `PREFIX.provenance.reads.tsv.gz` (per read: its transcript, exact or partial, junctions replaced old>new, short-exon rewrite, near tie, label, sequence, and when no transcript carries it the reason), `PREFIX.provenance.transcripts.tsv`, `PREFIX.provenance.family_reads.tsv.gz`. OR6737: 0.69 of reads are an exact chain of a transcript; 0.80 of transcripts equal the assembler's own read count.
+- Why a chain was removed is exact: the assembler writes `PREFIX.polish_reasons.tsv` (rule per removed transcript). The rules themselves are readable in `tools/polish_rules.py` (fuzzy, ism, ism_mono, floor, shadow, frac, ret, in the assembler's order), equal to the Rust on every rule's count on OR6737.
+- How the EM divided each tied read: `RUSTLE_O2_SHARES=1` -> `PREFIX.o2.shares.tsv.gz` (read, locus, `ms` gap, share; OR6737 14,364 tied reads). A share is a division between loci the read cannot tell apart, not an origin.
+- **Inferred, marked so in the file:** junction replacements.
+
+### N11. Correlation clustering
+- For phasing reads of a locus against HG002's haplotype truth: no improvement (row 1823). As the candidate step of the sequence test: equal counts, lower purity, 1.5 x slower; stopped at development (row 1932). IsoCon is not correlation clustering (nearest-neighbour graph, consensus, sequential pairwise tests).
+
+### N12. Luck or overfitting
+- Every row above has a `docs/PREREG_*.md` written before the run, with the rule and my prediction; seeds or samples not used for the choice; failures kept in the register (this week: rows 1922 primary accuracy, 1924, 1927, 1928 measure withdrawn, 1929 all three predictions, 1932, 1933, 1935). One incident is recorded (a shared score table overwritten on 2026-11-24, restored, nothing to rerun). The planted benchmark has known traps, listed before any comparison is trusted (ragged ends, sample != reference, favourable seeds).
+
+### Not answered yet (say so)
+1. Whether the `ms` pool holds on A119b and HG002 (running). 2. Alleles against copies without the individual's genome. 3. The 15% of recurrent sequences in neither haplotype; X:62.25 Mb on KB3781. 4. Labels on real samples (no truth). 5. A sample that lacks or gains a copy, on planted reads. 6. Strongly supported non-canonical junctions (GOLGA6L2 / GOLGA8Q). 7. Member discovery on real data (0.23 pair precision).
+
 ## Current state (2026-11-03)
 
 - **Defaults unchanged** for families; assembly gained `--polish-tss rescue` and the `final.gtf` sub-chain drop (r1485, r1498). O2 assign judges exact AS ties by default; the ms gate and the primary-on-family guard are opt-in and measured.

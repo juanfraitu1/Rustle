@@ -286,6 +286,12 @@ while writing it and when reading it, and identical to the stage's earlier table
 identical. Time: labels 142 s (OR6737) / 269 s (KB3781) when they make the pass, 8 s / 7 s when they read the table; the
 sequence test 6 s / 11 s reading it, against 157 s / 282 s when it made its own pass.
 
+## The EM's share of each tied read (opt-in, 2026-11-25)
+`RUSTLE_O2_SHARES=1` (or `em_filter.py --shares FILE.tsv.gz`, with the weighted EM) writes `PREFIX.o2.shares.tsv.gz`: one
+row per tied read and candidate locus with the `ms` gap and the share of the read the EM gives that locus (shares of a
+read sum to 1). OR6737: 14,364 tied reads, 35,088 rows; labels and GTF unchanged by the option. A share is how the EM
+divides a read between loci it cannot tell apart, not where the read came from.
+
 ## Where each read went (opt-in stage `provenance`, 2026-11-23)
 `tools/rustle_pipeline.sh provenance --bam B --fasta G --out PREFIX` (after `assemble`; uses `PREFIX.o2.gtf` when it is
 there) writes, with `tools/read_provenance.py`:
