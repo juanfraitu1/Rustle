@@ -1006,7 +1006,13 @@ stage_assemble() {
   fi
   # set -e ends the stage when the base run fails: the background layered run must not outlive it holding memory and threads
   local rc=0
-  env "${seed_env[@]}" RUSTLE_REGION_READ_BUDGET="$ASM_BUDGET" "$BIN/copy_assign" --assemble-only --region-threads "${RUSTLE_REGION_THREADS:-$ASM_REGIONS}" "${scope[@]}" --assembly-junctions strict $POLISH --gtf-tpm \
+  # PREFIX.polish_reasons.tsv (2026-11-24, user): every transcript the polishing removed, with the rule that removed it, written
+  # by the assembler itself (exact, unlike tools/polish_rules.py on a file made with polishing off). Read by stage `provenance`.
+  # RUSTLE_POLISH_REASONS=0 = no table; a binary built before the option is detected and simply gets no such argument.
+  local reasons=(); rm -f "$OUT.polish_reasons.tsv"
+  if [ "${RUSTLE_POLISH_REASONS:-1}" != 0 ] && [ "${RUSTLE_ASSEMBLY_POLISH:-full}" = full ] && "$BIN/copy_assign" --help 2>/dev/null | grep -q -- '--polish-reasons'; then
+    reasons=(--polish-reasons "$OUT.polish_reasons.tsv"); fi
+  env "${seed_env[@]}" RUSTLE_REGION_READ_BUDGET="$ASM_BUDGET" "$BIN/copy_assign" --assemble-only --region-threads "${RUSTLE_REGION_THREADS:-$ASM_REGIONS}" "${scope[@]}" --assembly-junctions strict $POLISH "${reasons[@]}" --gtf-tpm \
     --bam "$BAM" --fasta "$FASTA" --out "$OUT" > "$OUT.assemble.log" 2>&1 || rc=$?
   if [ "$rc" != 0 ]; then
     if [ -n "$fin_pid" ]; then pkill -P "$fin_pid" 2>/dev/null || true; kill "$fin_pid" 2>/dev/null || true; wait "$fin_pid" 2>/dev/null || true; rm -f "$OUT".final_run.*; fi
@@ -1791,6 +1797,7 @@ stage_provenance() {
   local tab=$OUT.molecules.tsv; [ -s "$tab" ] || tab=$BAM.as_table.tsv; local a=(); [ ! -s "$tab" ] || a+=(--as-table "$tab")
   [ ! -s "${FASTA:-}" ] || a+=(--fasta "$FASTA"); [ ! -s "$OUT.shortexons.reads.tsv" ] || a+=(--shortexons "$OUT.shortexons.reads.tsv")
   [ ! -s "$OUT.o2.sequences.tsv" ] || a+=(--sequences "$OUT.o2.sequences.tsv"); [ ! -s "$OUT.fam.copies.tsv" ] || a+=(--copies "$OUT.fam.copies.tsv")
+  [ ! -s "$OUT.polish_reasons.tsv" ] || a+=(--polish-reasons "$OUT.polish_reasons.tsv")
   "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/read_provenance.py" "$gtf" "$BAM" "$OUT.provenance" "${a[@]}" --threads "$JOB_THREADS" > "$OUT.provenance.log" 2>&1 \
     || { echo "[rustle_pipeline] provenance failed (see $OUT.provenance.log); no other product is affected" >&2; exit 1; }
   say "$(tail -1 "$OUT.provenance.log" | sed 's/ -> .*//') -> $OUT.provenance.reads.tsv.gz, $OUT.provenance.transcripts.tsv (on $gtf)"

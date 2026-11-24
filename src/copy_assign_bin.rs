@@ -565,6 +565,14 @@ struct Args {
     /// indexed `--bam`. 0 (default) = off, byte-identical.
     #[arg(long, default_value_t = 0.0)]
     polish_spliced_share: f64,
+    /// POLISH REASONS, opt-in (2026-11-24): write one row per transcript that the polishing removed, with the rule that
+    /// removed it, to this file: `transcript  contig  strand  exons  reads  rule`. `exons` = 1-based closed `a-b,a-b`, as
+    /// the transcript stood when the rules ran (after --polish-junction-snap). Rules: `spliced_share`, the steps of the
+    /// drop set (`fuzzy`, `ism`, `ism_mono`, `floor`, `shadow`, `frac`, `ret`), `mono_primed`, and `collapsed_or_other`
+    /// for a transcript that left by another route (its chain re-placed onto another's by --polish-junction-ratio, a 5'
+    /// split). A transcript the 5' rescue re-admitted is not listed. No other output changes.
+    #[arg(long)]
+    polish_reasons: Option<String>,
 
     /// JUNCTION REPLACEMENT BY SUPPORT RATIO for `--assembly-polish`, opt-in (register 1819): after every polish step
     /// of a contig, an intron K is re-placed by the best-supported intron J of the same strand whose donor and
@@ -3710,6 +3718,33 @@ fn mono_pair_attrs(
     got.into_iter()
         .map(|(t, (n, r))| (t.to_string(), format!(" frag3_models \"{n}\"; frag3_reads \"{r}\";")))
         .collect()
+}
+
+/// `--polish-reasons`: transcript -> (strand, exons as 1-based closed pairs sorted, reads) of the GTF lines of one contig.
+fn tx_snapshot(lines: &[String]) -> DetHashMap<String, (String, Vec<(i64, i64)>, u64)> {
+    let mut out: DetHashMap<String, (String, Vec<(i64, i64)>, u64)> = DetHashMap::default();
+    for line in lines.iter() {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 9 {
+            continue;
+        }
+        let Some(tid) = re_attr(f[8], "transcript_id") else {
+            continue;
+        };
+        let e = out.entry(tid).or_insert_with(|| (f[6].to_string(), Vec::new(), 0));
+        if let Some(r) = re_attr(f[8], "reads").and_then(|v| v.parse::<u64>().ok()) {
+            e.2 = e.2.max(r);
+        }
+        if f[2] == "exon" {
+            if let (Ok(a), Ok(b)) = (f[3].parse::<i64>(), f[4].parse::<i64>()) {
+                e.1.push((a, b));
+            }
+        }
+    }
+    for v in out.values_mut() {
+        v.1.sort_unstable();
+    }
+    out
 }
 
 fn retain_transcripts(lines: &mut Vec<String>, drop: &DetHashSet<String>) {
@@ -11405,6 +11440,7 @@ fn main() -> Result<()> {
             type ContigPolish = (
                 Vec<String>, (usize, usize, usize, usize), Vec<u64>, DetHashMap<String, String>, DetHashSet<String>,
                 Vec<TssStats>, Vec<TesStats>, Vec<(usize, usize)>, DetHashMap<String, String>, Vec<SnapStats>, String,
+                Vec<String>,
             );
             let work: Vec<(&String, Vec<String>, rustle::denovo_assemble::TssEvidence)> = contigs
                 .iter()
@@ -11469,6 +11505,9 @@ fn main() -> Result<()> {
                     snap_stats.push(st);
                 }
                 // --polish-spliced-share: on the polish INPUT, after the snap and before every polish step (0: never entered)
+                let want_reasons = args.polish_reasons.is_some();
+                let snap0 = if want_reasons { tx_snapshot(&part) } else { DetHashMap::default() };
+                let mut rule_of: DetHashMap<String, &'static str> = DetHashMap::default();
                 if args.polish_spliced_share > 0.0 {
                     let t0 = std::time::Instant::now();
                     let introns = spliced_share_introns(&part);
@@ -11480,6 +11519,11 @@ fn main() -> Result<()> {
                         args.polish_spliced_share, c, introns.len(), counts.iter().filter(|x| x.0 > 0).count(),
                         gone.len(), t0.elapsed().as_secs_f64()
                     );
+                    if want_reasons {
+                        for t in gone.iter() {
+                            rule_of.entry(t.clone()).or_insert("spliced_share");
+                        }
+                    }
                     retain_transcripts(&mut part, &gone);
                 }
                 // the contig's end evidence (--polish-tss / --polish-tes; empty and never read when both are off)
@@ -11509,6 +11553,11 @@ fn main() -> Result<()> {
                         args.polish_ism_ratio_3p,
                         args.polish_mono_shadow_spare,
                     );
+                    if want_reasons {
+                        for (t, st) in sites.iter() {
+                            rule_of.entry(t.clone()).or_insert(*st);
+                        }
+                    }
                     if args.polish_mono_pair {
                         for (tid, v) in mono_pair_attrs(&part, &drop0, &sites) {
                             tss_attrs.entry(tid).or_default().push_str(&v);
@@ -11546,6 +11595,11 @@ fn main() -> Result<()> {
                     n_frac += d;
                     n_ret += e;
                     floors.push(floor);
+                    if want_reasons {
+                        for (t, st) in sites.iter() {
+                            rule_of.entry(t.clone()).or_insert(*st);
+                        }
+                    }
                     let out = tss_decide(c, &part, &drop0, &sites, &recs, &args.polish_tss);
                     let pair = if args.polish_mono_pair { mono_pair_attrs(&part, &drop0, &sites) } else { Default::default() };
                     let (on, _off, _twins) = tss_emit(&part, &drop0, &out);
@@ -11695,6 +11749,11 @@ fn main() -> Result<()> {
                         .filter(|(_, x)| x.0 > 0 && x.1 as f64 / x.0 as f64 >= MONO_PRIMED_SHARE)
                         .map(|(m, _)| m.2.as_str())
                         .collect();
+                    if want_reasons {
+                        for t in drop.iter() {
+                            rule_of.entry((*t).to_string()).or_insert("mono_primed");
+                        }
+                    }
                     let n_drop = drop.len();
                     part.retain(|l| {
                         re_attr(l, "transcript_id").map_or(true, |t| !drop.contains(t.as_str()))
@@ -11736,13 +11795,35 @@ fn main() -> Result<()> {
                         a.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
                     }
                 }
-                Ok((part, (n_ism, n_mono, n_frac, n_ret), floors, tss_attrs, tss_protect, tss_stats, tes_stats, mono_primed_stats, tes_attrs, snap_stats, log))
+                let mut reasons: Vec<String> = Vec::new();
+                if want_reasons {
+                    let alive: DetHashSet<String> = part
+                        .iter()
+                        .filter(|l| l.contains("\ttranscript\t"))
+                        .filter_map(|l| l.split('\t').nth(8).and_then(|a| re_attr(a, "transcript_id")))
+                        .collect();
+                    for (tid, (strand, ex, reads)) in snap0.iter() {
+                        if alive.contains(tid) || ex.is_empty() {
+                            continue;
+                        }
+                        let exs: Vec<String> = ex.iter().map(|(a, b)| format!("{a}-{b}")).collect();
+                        reasons.push(format!(
+                            "{tid}\t{c}\t{strand}\t{}\t{reads}\t{}",
+                            exs.join(","),
+                            rule_of.get(tid).copied().unwrap_or("collapsed_or_other")
+                        ));
+                    }
+                    reasons.sort_unstable();
+                }
+                Ok((part, (n_ism, n_mono, n_frac, n_ret), floors, tss_attrs, tss_protect, tss_stats, tes_stats, mono_primed_stats, tes_attrs, snap_stats, log, reasons))
             };
             let done: Vec<Result<ContigPolish>> = {
                 work.into_par_iter().map(polish_one).collect()
             };
+            let mut reasons_all: Vec<String> = Vec::new();
             for r in done {
-                let (part, n, fl, ta, tp, ts, es, mp, ea, ss, log) = r?;
+                let (part, n, fl, ta, tp, ts, es, mp, ea, ss, log, rs) = r?;
+                reasons_all.extend(rs);
                 eprint!("{log}");
                 n_ism += n.0;
                 n_mono += n.1;
@@ -11757,6 +11838,15 @@ fn main() -> Result<()> {
                 tes_attrs.extend(ea);
                 snap_stats.extend(ss);
                 polished.extend(part);
+            }
+            if let Some(path) = &args.polish_reasons {
+                let mut body = String::from("transcript\tcontig\tstrand\texons\treads\trule\n");
+                for r in reasons_all.iter() {
+                    body.push_str(r);
+                    body.push('\n');
+                }
+                std::fs::write(path, body).with_context(|| format!("writing --polish-reasons {path}"))?;
+                eprintln!("[copy_assign] POLISH REASONS: {} removed transcripts with their rule -> {path}", reasons_all.len());
             }
             let comments: Vec<String> = gtf_lines
                 .iter()

@@ -311,7 +311,17 @@ Python rules too, which keep 1,566 more.
 With `read_provenance.py --unpolished U.gtf --reasons R.tsv` the reads whose chain "passed the floor but has no
 transcript" get the rule by name: on OR6737 108,044 of 121,013 such reads (frac 96,115; ret 10,928; ism 1,001); 12,969
 stay "removed by a later rule". These reasons come from the rules applied before snapping, so they are close, not
-exact; exact ones need the assembler to write its own decisions (it computes them; a change to the Rust code).
+exact.
+**Exact reasons from the assembler (2026-11-24, user: rebuild the shared binary).** `copy_assign --polish-reasons FILE`
+writes one row per transcript the polishing removed (name, contig, strand, exons as they stood when the rules ran,
+reads, rule: `spliced_share`, `ism`, `ism_mono`, `floor`, `shadow`, `frac`, `ret`, `mono_primed`, `collapsed_or_other`).
+The assemble stage asks for it as `PREFIX.polish_reasons.tsv` (`RUSTLE_POLISH_REASONS=0` = no table; a binary without
+the option is detected and left alone) and stage `provenance` reads it. No other output changes: `PREFIX.gtf` and
+`PREFIX.final.gtf` byte-identical on a planted set and on OR6737. OR6737: 118,353 removed transcripts, their counts
+per rule equal to the assembler's log (sub-chain 58,440; floor + shadow 28,642; fraction 26,782; retained 2,375; plus
+spliced share 1,134, internal priming 89, other 891). Provenance with it: of the reads whose chain passed the floor
+and has no transcript, fraction 93,534, retained 10,868, spliced share 4,568, sub-chain 943; 11,103 remain unnamed
+(their chain was never a transcript: merged by snapping, or removed before the rules).
 
 ## Where things are (Fritz workspace `/anvme/workspace/v138da13-rustle`)
 | row | directory | what |
