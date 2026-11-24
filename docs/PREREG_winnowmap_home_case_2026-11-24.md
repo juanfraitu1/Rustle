@@ -1,7 +1,7 @@
 # PREREG: Winnowmap on its own target, as a positive control for the page (row 1938, 2026-11-24)
 
 ## Current state
-Run 2026-11-24 (job 4499135): NOT REPRODUCED by the registered bar; Winnowmap's gain on its target is in mapping quality, not in where the primary lands. Outcome at the end.
+Run 2026-11-24 (job 4499135): NOT REPRODUCED at 0.5%, 5% or 10% errors (addendum, job 4499166); Winnowmap reports higher mapping quality, it does not place more reads right. Outcomes at the end.
 
 User (2026-11-24): "make it clear why winnowmap works for certain conditions but not for multi-copy gene families".
 Every Winnowmap number we have is on transcript reads at gene families (rows 1775, 1782, 1784). That it works on its own
@@ -65,3 +65,21 @@ words anything as "helps".
 - Prediction (mine): uncertain. If there is a placement gain anywhere it is at 10%; I expect minimap2 wrong on a few
   percent there and Winnowmap fewer, but not by half. If neither rate shows it, the page will say that we could not
   reproduce a placement gain and show the confidence difference as the only measured effect.
+
+### Outcome of the addendum (job 4499166, 10 min; `noisy.score.txt`)
+
+| errors | class | minimap2 map-ont right / wrong | Winnowmap map-ont right / wrong | wrong with MAPQ >= 30, mm / wm |
+|---|---|---|---|---|
+| 5% | SAT10 | 1,946 / 54 | 1,941 / 59 | 0 / 7 |
+| 5% | FAM10 | 1,963 / 37 | 1,969 / 31 | 0 / 2 |
+| 10% | SAT10 | 1,819 / 181 | 1,742 / 258 | 0 / 27 |
+| 10% | FAM10 | 1,925 / 75 | 1,941 / 59 | 0 / 2 |
+
+- **NOT REPRODUCED at either rate.** In the arrays Winnowmap is level at 5% and WORSE at 10% (258 against 181 wrong), and
+  it gives MAPQ >= 30 to 27 of its wrong reads where minimap2 gives it to none. My prediction (a gain at 10%, short of
+  half) was wrong in direction.
+- Confidence on right satellite reads stays far higher with Winnowmap (1,478 and 1,200 against 423 and 307).
+- Not checked: whether minimap2 2.30 has closed the gap the Winnowmap paper measured against an older minimap2; real
+  satellite variation (these reads equal the reference). So: in our hands no condition shows a placement gain.
+- The page was corrected (user: "the numbers don't look that much different where it supposedly helps"): no card says
+  "helps"; the satellite claim is attributed to the paper.
