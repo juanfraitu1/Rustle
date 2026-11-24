@@ -72,6 +72,7 @@
 #             RUSTLE_O2_SEQUENCES=1 (opt-in, register 1926; needs --fasta): how many distinct sequences the tied reads
 #             show among copies the reference cannot separate (IsoCon's test on genome alignments) ->
 #             PREFIX.o2.sequences.tsv and the report column tied_sequences. Sequences, not copies: alleles count.
+#             Its collected reads are cached in PREFIX.o2.sequences.cache (RUSTLE_O2_SEQUENCES_CACHE=0 turns that off).
 #             Nothing is dropped: a family member that is found stays available. RUSTLE_O2_DROP=1 drops the
 #             homology_only loci instead. Costs a second assembly at a floor of one read, a families run on the
 #             candidates and one BAM pass (gorilla OR6737: about 7 min). If it fails, the report is made on PREFIX.gtf
@@ -81,6 +82,11 @@
 #             families of the annotation (famtruth environment, human CHM13). Without --gff: this run's own families
 #             (PREFIX.gtf + PREFIX.fam.copies.tsv, any genome; needs FASTA.fai). Scenarios RUSTLE_O2BENCH_SCENARIOS
 #             (default E,D,S), reads per copy RUSTLE_O2BENCH_READS (default 60 named / 30 own families).
+#   provenance OPT-IN, never in `all`: where each read went -> PREFIX.provenance.reads.tsv.gz (one row per primary alignment:
+#             the transcript it supports and how: exact, after a junction replacement, as a shorter read, none and why;
+#             short-exon rewrite, near tie, label, sequence), PREFIX.provenance.transcripts.tsv (the reads behind every
+#             transcript), PREFIX.provenance.family_reads.tsv.gz. Reconstructed from the BAM and PREFIX.o2.gtf (or
+#             PREFIX.gtf); what is inferred is marked in tools/read_provenance.py.
 #   members   OPT-IN, never in `all` (register 1910): the relatives of every assembled locus through ALL of its reads'
 #             alignments, not only the near ties (tools/member_discovery.py; RUSTLE_MEMBERS_MIN_READS 5,
 #             RUSTLE_MEMBERS_MIN_RATIO 0.3) -> PREFIX.members.tsv (place, source locus, reads, score ratio, the assembled
@@ -1055,6 +1061,16 @@ final_chainscore() {
 # ($OUT.oneread.d/) and one BAM pass. $OUT.gtf and the families input are untouched.
 # $OUT.oneread.ranked.gtf (register 1806) = ALL one-read chains the default lacks, best oneread_score first (bench/famcmp/oneread_tier.py,
 # model tools/data/oneread_r1899.json, RUSTLE_ONEREAD_MODEL=r1806 = the model before): a separate tier to browse, not a filter; one more BAM pass.
+# One floor-1 assembly for both the one-read tiers and the multi-copy stage (register 1937, user 2026-11-24). The two stages
+# asked for the same run but for the pooling-guard bypass; with RUSTLE_MULTICOPY_GATE now 1 by default they are the same
+# command, and whichever stage runs second takes the first one's GTF. f1_settings = everything the run depends on that a
+# stage chooses; a floor-1 GTF is reused only when its recorded settings equal the caller's and it is newer than $OUT.gtf.
+# RUSTLE_F1_SHARE=0 = each stage assembles for itself, as before.
+f1_settings() { printf 'gate=%s mono=%s dup=%s pool=%s ratio=%s contig=%s astable=%s bam=%s polish=%s\n' "$1" "$2" "${RP_DUP_COUNT_USER:-0}" "$SEED_POOL" "$SEED_RATIO" "${CONTIG:-}" "${AS_TABLE:-}" "$BAM" "$POLISH"; }
+f1_shared() {  # f1_shared OTHER_DIR SETTINGS -> prints OTHER_DIR/f1.gtf when it can stand for this stage's run
+  [ "${RUSTLE_F1_SHARE:-1}" != 0 ] && [ -s "$1/f1.gtf" ] && [ -s "$1/f1.settings" ] && [ "$1/f1.gtf" -nt "$OUT.gtf" ] && [ "$(cat "$1/f1.settings")" = "$2" ] && echo "$1/f1.gtf"
+  return 0
+}
 stage_oneread() {
   [ -s "$OUT.gtf" ] && [ -s "$BAM" ] && [ -s "$FASTA" ] || { echo "[rustle_pipeline] oneread needs $OUT.gtf (run assemble first), --bam and --fasta" >&2; return 2; }
   mkdir -p "$OUT.oneread.d"
@@ -1063,9 +1079,15 @@ stage_oneread() {
   # long genes) is a candidate too. Row 1866: 65-99% more correct promoted chains at 0.01-0.03 lower precision; the stage runs 5-39% longer
   local gate1=(); case "${RUSTLE_ONEREAD_GATE:-1}" in 0) ;; 1) gate1=(RUSTLE_GATE_MIN_READS=1) ;;
     *) echo "[rustle_pipeline] RUSTLE_ONEREAD_GATE must be 0 or 1 (got '$RUSTLE_ONEREAD_GATE')" >&2; return 2 ;; esac
-  { env "${gate1[@]}" RUSTLE_DUP_COUNT="${RP_DUP_COUNT_USER:-0}" RUSTLE_MIN_CHAIN_READS=1 RUSTLE_ASSEMBLY_LAYERS=off RUSTLE_ONEREAD=0 RUSTLE_SEED_POOL="$SEED_POOL" RUSTLE_SEED_AS_RATIO="$SEED_RATIO" bash "$0" assemble --bam "$BAM" --fasta "$FASTA" \
-      --out "$OUT.oneread.d/f1" --threads "$THREADS" ${BIN:+--bin "$BIN"} ${CONTIG:+--contig "$CONTIG"} ${AS_TABLE:+--as-table "$AS_TABLE"} \
-      && ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/oneread.py" "$OUT.gtf" "$OUT.oneread.d/f1.gtf" "$BAM" "$FASTA" "$OUT.oneread.gtf.tmp"; } > "$OUT.oneread.log" 2>&1 \
+  local f1set f1have; f1set=$(f1_settings "${RUSTLE_ONEREAD_GATE:-1}" 0); f1have=$(f1_shared "$OUT.multicopy.d" "$f1set")
+  { if [ -n "$f1have" ]; then
+      ln -sf "$(cd "$(dirname "$f1have")" && pwd)/f1.gtf" "$OUT.oneread.d/f1.gtf"; printf '%s\n' "$f1set" > "$OUT.oneread.d/f1.settings"
+      echo "[rustle_pipeline] oneread: floor-1 assembly taken from $f1have (the multi-copy stage made it with the same settings)"
+    else
+      rm -f "$OUT.oneread.d/f1.gtf" "$OUT.oneread.d/f1.settings"
+      env "${gate1[@]}" RUSTLE_DUP_COUNT="${RP_DUP_COUNT_USER:-0}" RUSTLE_MIN_CHAIN_READS=1 RUSTLE_ASSEMBLY_LAYERS=off RUSTLE_ONEREAD=0 RUSTLE_SEED_POOL="$SEED_POOL" RUSTLE_SEED_AS_RATIO="$SEED_RATIO" bash "$0" assemble --bam "$BAM" --fasta "$FASTA" \
+        --out "$OUT.oneread.d/f1" --threads "$THREADS" ${BIN:+--bin "$BIN"} ${CONTIG:+--contig "$CONTIG"} ${AS_TABLE:+--as-table "$AS_TABLE"} && printf '%s\n' "$f1set" > "$OUT.oneread.d/f1.settings"
+    fi && ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/oneread.py" "$OUT.gtf" "$OUT.oneread.d/f1.gtf" "$BAM" "$FASTA" "$OUT.oneread.gtf.tmp"; } > "$OUT.oneread.log" 2>&1 \
     || { echo "[rustle_pipeline] oneread failed (see $OUT.oneread.log); $OUT.gtf is unaffected" >&2; rm -f "$OUT.oneread.gtf.tmp"; return 1; }
   mv -f "$OUT.oneread.gtf.tmp" "$OUT.oneread.gtf"
   # register 1806: every one-read chain the default lacks, ranked (a ranking, not a filter; never appended to final.gtf)
@@ -1174,13 +1196,24 @@ stage_multicopy() {
     [ -s "$RUSTLE_MULTICOPY_F1" ] || { echo "[rustle_pipeline] RUSTLE_MULTICOPY_F1=$RUSTLE_MULTICOPY_F1: no such non-empty file" >&2; exit 2; }
     f1=$RUSTLE_MULTICOPY_F1; say "multicopy: floor-1 assembly taken from $f1"
   else
-    # the floor-1 run of stage oneread WITHOUT its pooling-guard bypass: rows 1865 / 1867 / 1869 judged that. RUSTLE_MULTICOPY_GATE=1
-    # (unset = 0) adds the bypass (RUSTLE_GATE_MIN_READS=1, row 1866): 2.4 x the candidates on OR6737, not judged for this mode
-    local gate1=(); case "${RUSTLE_MULTICOPY_GATE:-0}" in 0) ;; 1) gate1=(RUSTLE_GATE_MIN_READS=1) ;;
+    # the floor-1 run of stage oneread, with its pooling-guard bypass (RUSTLE_GATE_MIN_READS=1, row 1866). Rows 1865 / 1867 / 1869
+    # judged the mode WITHOUT the bypass; row 1937 judged it with: same units and labels on planted reads, more annotated copies at
+    # equal junction precision on OR6737 and KB3781, 3-4 x the rescued loci (all labelled).
+    # Since 2026-11-24 (user, register 1937) RUSTLE_MULTICOPY_GATE is 1 when unset: the run is then the one-read stage's, and one
+    # of the two is reused (f1_shared above). 0 = the run without the bypass, as rows 1865-1869 judged the mode.
+    local gate1=(); case "${RUSTLE_MULTICOPY_GATE:-1}" in 0) ;; 1) gate1=(RUSTLE_GATE_MIN_READS=1) ;;
       *) echo "[rustle_pipeline] RUSTLE_MULTICOPY_GATE must be 0 or 1 (got '$RUSTLE_MULTICOPY_GATE')" >&2; exit 2 ;; esac
-    env "${gate1[@]}" "${monoenv[@]}" RUSTLE_DUP_COUNT="${RP_DUP_COUNT_USER:-0}" RUSTLE_MIN_CHAIN_READS=1 RUSTLE_ASSEMBLY_LAYERS=off RUSTLE_ONEREAD=0 RUSTLE_SEED_POOL="$SEED_POOL" RUSTLE_SEED_AS_RATIO="$SEED_RATIO" \
-        bash "$0" assemble --bam "$BAM" --fasta "$FASTA" --out "$d/f1" --threads "$THREADS" ${BIN:+--bin "$BIN"} ${CONTIG:+--contig "$CONTIG"} ${AS_TABLE:+--as-table "$AS_TABLE"} > "$OUT.multicopy.log" 2>&1 \
-      || { echo "[rustle_pipeline] multicopy: the floor-1 assembly failed (see $OUT.multicopy.log); $OUT.gtf is unaffected" >&2; exit 1; }
+    local f1set f1have; f1set=$(f1_settings "${RUSTLE_MULTICOPY_GATE:-1}" "${RUSTLE_MULTICOPY_MONO:-0}"); f1have=$(f1_shared "$OUT.oneread.d" "$f1set")
+    # (register 1935: giving this run only the alignments at empty places is NOT equivalent, 63% extra candidates; not offered)
+    if [ -n "$f1have" ]; then
+      f1=$f1have; : > "$OUT.multicopy.log"; say "multicopy: floor-1 assembly taken from $f1 (the one-read stage made it with the same settings)"
+    else
+      rm -f "$d/f1.gtf" "$d/f1.settings"
+      env "${gate1[@]}" "${monoenv[@]}" RUSTLE_DUP_COUNT="${RP_DUP_COUNT_USER:-0}" RUSTLE_MIN_CHAIN_READS=1 RUSTLE_ASSEMBLY_LAYERS=off RUSTLE_ONEREAD=0 RUSTLE_SEED_POOL="$SEED_POOL" RUSTLE_SEED_AS_RATIO="$SEED_RATIO" \
+          bash "$0" assemble --bam "$BAM" --fasta "$FASTA" --out "$d/f1" --threads "$THREADS" ${BIN:+--bin "$BIN"} ${CONTIG:+--contig "$CONTIG"} ${AS_TABLE:+--as-table "$AS_TABLE"} > "$OUT.multicopy.log" 2>&1 \
+        || { echo "[rustle_pipeline] multicopy: the floor-1 assembly failed (see $OUT.multicopy.log); $OUT.gtf is unaffected" >&2; exit 1; }
+      printf '%s\n' "$f1set" > "$d/f1.settings"
+    fi
   fi
   $py "$RP_DRIVER_DIR/multicopy_rescue.py" candidates "$OUT.gtf" "$f1" "$d/cand.gtf" "${monoarg[@]}" >> "$OUT.multicopy.log" 2>&1 \
     || { echo "[rustle_pipeline] multicopy: candidates failed (see $OUT.multicopy.log)" >&2; exit 1; }
@@ -1676,12 +1709,14 @@ stage_o2() {
     else
       mv -f "$OUT.o2.tmp.gtf" "$OUT.o2.gtf"; mv -f "$OUT.o2.tmp.em.tsv" "$OUT.o2.em.tsv"
       say "o2: $(tail -1 "$OUT.o2.em.log" | sed 's/ -> .*//') -> $OUT.o2.gtf"
+      # The reads it collects are kept in PREFIX.o2.sequences.cache (RUSTLE_O2_SEQUENCES_CACHE=0 = no cache file): a rerun of
+      # the tool on the same inputs with other options takes seconds to minutes (user 2026-11-23: keep runs re-runnable).
       # RUSTLE_O2_SEQUENCES=1 (opt-in, register 1926): IsoCon's test on the tied reads of each group of copies the reference
       # cannot separate -> PREFIX.o2.sequences.tsv and the column tied_sequences of the report. Never fails the stage.
       rm -f "$OUT.o2.sequences.tsv"
       if [ "${RUSTLE_O2_SEQUENCES:-0}" = 1 ]; then
         if [ ! -s "${FASTA:-}" ]; then say "o2: RUSTLE_O2_SEQUENCES needs --fasta; skipped"
-        elif ! "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/../bench/o2_families/recurrence_test.py" "$OUT.multicopy.gtf" "$BAM" "$tab" "$FASTA" "$OUT.o2.sequences.tsv" --threads "$JOB_THREADS" > "$OUT.o2.sequences.log" 2>&1; then
+        elif ! "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/../bench/o2_families/recurrence_test.py" "$OUT.multicopy.gtf" "$BAM" "$tab" "$FASTA" "$OUT.o2.sequences.tsv" --threads "$JOB_THREADS" $([ "${RUSTLE_O2_SEQUENCES_CACHE:-1}" = 0 ] || echo --cache "$OUT.o2.sequences.cache") > "$OUT.o2.sequences.log" 2>&1; then
           say "o2: the sequence test FAILED (see $OUT.o2.sequences.log); the report has no tied_sequences column"; rm -f "$OUT.o2.sequences.tsv" "$OUT.o2.sequences.tsv.tmp"
         else say "o2: $(tail -1 "$OUT.o2.sequences.log" | sed 's/ -> .*//') -> $OUT.o2.sequences.tsv"; fi
       fi
@@ -1731,6 +1766,18 @@ stage_members() {
     || { echo "[rustle_pipeline] members failed (see $OUT.members.log); no other product is affected" >&2; rm -f "$OUT.members.tmp".*; exit 1; }
   mv -f "$OUT.members.tmp.members.tsv" "$OUT.members.tsv"; mv -f "$OUT.members.tmp.members.gtf" "$OUT.members.gtf"
   say "$(tail -1 "$OUT.members.log" | sed 's/ -> .*//') -> $OUT.members.tsv, $OUT.members.gtf"
+}
+# provenance (opt-in, never in `all`; advisor's request 2026-11-23): where each read went. Reconstructed after the run from
+# the BAM and the assembly (the assembler keeps no per-read record): tools/read_provenance.py.
+stage_provenance() {
+  local gtf=$OUT.o2.gtf; [ -s "$gtf" ] || gtf=$OUT.gtf
+  [ -s "$gtf" ] || { echo "[rustle_pipeline] provenance needs $OUT.gtf (run assemble first)" >&2; exit 2; }
+  local tab=$OUT.molecules.tsv; [ -s "$tab" ] || tab=$BAM.as_table.tsv; local a=(); [ ! -s "$tab" ] || a+=(--as-table "$tab")
+  [ ! -s "${FASTA:-}" ] || a+=(--fasta "$FASTA"); [ ! -s "$OUT.shortexons.reads.tsv" ] || a+=(--shortexons "$OUT.shortexons.reads.tsv")
+  [ ! -s "$OUT.o2.sequences.tsv" ] || a+=(--sequences "$OUT.o2.sequences.tsv"); [ ! -s "$OUT.fam.copies.tsv" ] || a+=(--copies "$OUT.fam.copies.tsv")
+  "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/read_provenance.py" "$gtf" "$BAM" "$OUT.provenance" "${a[@]}" --threads "$JOB_THREADS" > "$OUT.provenance.log" 2>&1 \
+    || { echo "[rustle_pipeline] provenance failed (see $OUT.provenance.log); no other product is affected" >&2; exit 1; }
+  say "$(tail -1 "$OUT.provenance.log" | sed 's/ -> .*//') -> $OUT.provenance.reads.tsv.gz, $OUT.provenance.transcripts.tsv (on $gtf)"
 }
 stage_assign() {
   unset RUSTLE_READTHROUGH_JUNCTIONS   # assemble-only: copy_assign refuses it on every assign call (round-23 audit)
@@ -2291,7 +2338,7 @@ stage_all() {
 case "$STAGE" in
   merged) stage_merged;;
   assemble) stage_assemble; if [ -n "${GUIDE:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_guided; fi; if [ -n "${NAMES:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_names; fi;; guided) stage_guided;; names) stage_names;; eqclasses) stage_eqclasses;; famwise) stage_famwise;; psi) stage_psi;; multicopy) stage_multicopy;; siblings) stage_siblings;; oneread) stage_oneread || exit $?;; flairlike) stage_flairlike;; altends) stage_altends;; trunc5) stage_trunc5;; chainscore) stage_chainscore;; shiftdrop) stage_shiftdrop;; shortexons) stage_shortexons;; capstarts) stage_capstarts;; earlyends) stage_earlyends;; repeatloci) stage_repeatloci;; exonmap) stage_exonmap;; relatives) stage_relatives;; sdcore) stage_sdcore;; famreps) stage_famreps;; families) stage_families;; candidates) stage_candidates;; catalog) stage_catalog;;
-  assign) stage_assign;; o2) stage_o2;; o2bench) stage_o2bench;; members) stage_members;; flag) stage_flag;; flag_scan) stage_flag_scan;; index) stage_index;;
+  assign) stage_assign;; o2) stage_o2;; o2bench) stage_o2bench;; members) stage_members;; provenance) stage_provenance;; flag) stage_flag;; flag_scan) stage_flag_scan;; index) stage_index;;
   # `all`'s background flag stage: the scan, then align + verdict, whose wall goes to PREFIX.flag.time
   flag_bg) stage_flag_scan; export RP_FLAG_SCAN_DONE=1; fb0=$SECONDS; stage_flag; printf 'wall_s\t%s\n' "$(( SECONDS - fb0 ))" > "$OUT.flag.time.tmp";;
   # --legacy-catalog: `assign` reads the legacy catalog, so `all` builds it; --candidates: `all` runs the (opt-in) candidates stage

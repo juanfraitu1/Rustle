@@ -14,6 +14,8 @@ isoforms of known multi-copy families does it report, and are they the expressed
   scores inside (candidates within 10 `ms`, weight exp(-gap)), `RUSTLE_O2_EM_WEIGHT=0` = the counts-only EM of before;
   opt-in `RUSTLE_O2_SEQUENCES=1` (register 1926, needs `--fasta`) adds `PREFIX.o2.sequences.tsv` and the report column
   `tied_sequences`: the distinct sequences the tied reads show among copies the reference cannot separate;
+  since 2026-11-24 (register 1937) the extension's one-read-floor assembly is the one-read tiers' (with the guard bypass;
+  `RUSTLE_MULTICOPY_GATE=0` = before, `RUSTLE_F1_SHARE=0` = no sharing): 3-4 x the rescued loci on real samples, all labelled;
   a failure of the extension leaves the report on `PREFIX.gtf` and the
   stage still succeeds. `PREFIX.gtf` is never changed. `assign` is in no plan of `all`.
 - **Validation.** Planted reads of known origin, opt-in stage `o2bench` and `bench/o2_families/` (planting is the
@@ -46,6 +48,7 @@ tools/rustle_pipeline.sh all     --bam B --fasta G --out PREFIX     # ... famili
 tools/rustle_pipeline.sh o2      --bam B --fasta G --out PREFIX     # extension + labels + family report
 tools/rustle_pipeline.sh o2bench [--gff ANNOT.gff3.gz] --bam B --fasta G --out PREFIX   # planted benchmark (opt-in)
 tools/rustle_pipeline.sh members --bam B --fasta G --out PREFIX     # relatives through all secondaries (opt-in)
+tools/rustle_pipeline.sh provenance --bam B --fasta G --out PREFIX  # where each read went (opt-in; MULTICOPY_MODE.md)
 ```
 `o2bench` with `--gff`: the named human families (famtruth environment, CHM13); without: the run's own families, any
 genome. The pieces (`bench/o2_families/`):
@@ -282,6 +285,9 @@ locus with exactly two reads and a similar relative one substitution away is whe
   individual's assembled DNA (459 at the best hit, 58 at one lower place), 74 partly, 98 nowhere (0.14). The gorilla's
   0.44 unexplained was specific to that sample. The pair measure of row 1928 is too coarse and is withdrawn; quote the
   site-by-site lookup. On HG002 a recurrent non-reference sequence among tied copies is real three times out of four.
+- **Correlation clustering as the candidate step (row 1932):** stopped at development; on spent seeds it equals the
+  folding on every count and is slightly below on purity. The impurity comes from reads that cover no separating
+  site, which no clustering objective resolves. `--cluster cc` stays as an option, off.
 Pre-registrations: `PREREG_minimap_wrong_calls_2026-11-23.md` (1922), `PREREG_error_context_2026-11-23.md` (1923),
 `PREREG_sample_psv_2026-11-23.md` (1924), `PREREG_isocon_groups_2026-11-23.md` (1925), `PREREG_isocon_port_2026-11-23.md`
 (1926), `PREREG_het_alleles_2026-11-23.md` (1927).

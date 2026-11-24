@@ -266,6 +266,33 @@ that sample). Read the column as recurrent sequences with that confirmation rate
 library the test adds about an hour.
 `PREREG_isocon_port_2026-11-23.md`.
 
+## One floor-1 assembly for two stages (row 1937, default since 2026-11-24)
+The multi-copy stage takes its candidates from a one-read-floor assembly made WITH the pooling-guard bypass
+(`RUSTLE_MULTICOPY_GATE` unset = 1; 0 = before), which is the run the one-read tiers make. Whichever of the two stages
+runs second reuses the other's GTF when the recorded settings are equal (`RUSTLE_F1_SHARE=0` = no sharing). Judged on
+planted reads (units and labels unchanged; the extra rescued silent units are all `homology_only`) and on OR6737 /
+KB3781 (annotated copies 34 -> 37 and 27 -> 28 at equal junction precision; rescued loci 445 -> 1,688 and 161 -> 514).
+Saves one whole-genome assembly per sample (about 1.9 h of 5 on HG002). `PREREG_shared_floor1_2026-11-24.md`.
+
+## Where each read went (opt-in stage `provenance`, 2026-11-23)
+`tools/rustle_pipeline.sh provenance --bam B --fasta G --out PREFIX` (after `assemble`; uses `PREFIX.o2.gtf` when it is
+there) writes, with `tools/read_provenance.py`:
+- `PREFIX.provenance.reads.tsv.gz`: one row per primary alignment: the transcript the read supports and how (exact;
+  exact after a junction replacement, old > new; a shorter read of one transcript; a piece of several; unspliced; none
+  and why), whether the short-exon repair rewrote it, whether it is a near-tied multimapper, its gene's `o2_status`, and
+  for a tied read the sequence it supports.
+- `PREFIX.provenance.transcripts.tsv`: the reads behind every transcript by kind, beside the assembler's own count.
+- `PREFIX.provenance.family_reads.tsv.gz`: the rows of multi-copy families and near-tied reads.
+It is RECONSTRUCTED from the BAM and the assembly: the assembler keeps no per-read record. Exact: the alignment, the
+match to a transcript, the rewrite, the tie flag, the label, the sequence. Inferred from the outcome: junction
+replacements, and the reason a chain gave no transcript (non-canonical junction; under the read floor; "removed by a
+later rule", not resolved further). A tied read is never given a copy of origin.
+Check against the assembler's read counts (assemblies from primary alignments; workspace `provenance_2026-11-23`):
+planted human families 260 of 267 transcripts equal, all within 10%; gorilla OR6737 55,061 of 68,847 equal (0.80),
+67,267 within 10% or one read (0.98), 219 with no read found. OR6737, 4.4 M reads: 0.69 exact, 0.015 exact after a
+replacement, 0.035 a shorter read of one transcript, 0.062 a piece of several, 0.055 unspliced, 0.145 none. About one
+minute on 72 threads.
+
 ## Where things are (Fritz workspace `/anvme/workspace/v138da13-rustle`)
 | row | directory | what |
 |---|---|---|

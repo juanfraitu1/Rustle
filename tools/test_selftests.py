@@ -4,7 +4,7 @@ import pytest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOOLS = ["locus_reps", "piece_merge", "piece_attach", "reps_table", "gtf_ptc", "oneread", "check_reads", "gtf_exclude_bed",
-         "copy_table_check", "multicopy_rescue", "o2_family_report"]
+         "copy_table_check", "multicopy_rescue", "o2_family_report", "read_provenance", "empty_place_bam"]
 
 @pytest.mark.parametrize("tool", TOOLS)
 def test_selftest(tool):
