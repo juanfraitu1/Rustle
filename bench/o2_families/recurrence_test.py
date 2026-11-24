@@ -303,7 +303,7 @@ def main():
     if sys.argv[1:] == ['--selftest']: return selftest()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('gtf'); ap.add_argument('bam'); ap.add_argument('tab'); ap.add_argument('fasta'); ap.add_argument('out')
-    ap.add_argument('--alpha', type=float, default=0.01); ap.add_argument('--min-test-ratio', type=float, default=5); ap.add_argument('--threads', type=int, default=8); ap.add_argument('--min-reads', type=int, default=2); ap.add_argument('--cluster', choices=('fold', 'cc'), default='fold'); ap.add_argument('--qual', choices=('none', 'isocon', 'phred'), default='none'); ap.add_argument('--cache', metavar='PATH'); ap.add_argument('--max-patterns', type=int, default=1000)
+    ap.add_argument('--alpha', type=float, default=0.01); ap.add_argument('--min-test-ratio', type=float, default=5); ap.add_argument('--threads', type=int, default=8); ap.add_argument('--min-reads', type=int, default=2); ap.add_argument('--cluster', choices=('fold', 'cc'), default='fold'); ap.add_argument('--qual', choices=('none', 'isocon', 'phred'), default='none'); ap.add_argument('--cache', metavar='PATH'); ap.add_argument('--max-patterns', type=int, default=1000); ap.add_argument('--ties', metavar='FILE', help='the shared tie table (tools/tie_table.py)')
     a = ap.parse_args()
     units, ngroups = collect(a)
     _W['units'] = units; _W['a'] = a
@@ -384,7 +384,7 @@ def collect(a):
                 print(f'recurrence_test: reads taken from the cache {a.cache}', file=sys.stderr); return d['units'], d['groups']
             print(f'recurrence_test: cache {a.cache} is for other inputs; collecting again', file=sys.stderr)
         except Exception as e: print(f'recurrence_test: cache {a.cache} unreadable ({e}); collecting again', file=sys.stderr)
-    meta, sets, groups, gr = S.tie_groups(a.gtf, a.bam, a.tab, a.threads)
+    meta, sets, groups, gr = S.tie_groups(a.gtf, a.bam, a.tab, a.threads, a.ties)
     wq = a.qual != 'none' or bool(a.cache)
     _W.update(meta=meta, sets=sets, groups=groups, gr=gr, a=a, wq=wq)
     keys = sorted(groups, key=lambda k: (meta[k][0], meta[k][1])); big = sorted(keys, key=lambda k: -len(gr[k]))

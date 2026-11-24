@@ -18,24 +18,7 @@ here alone but the EM still leaves >= --min-em: indistinguishable from its partn
 import sys, os, re, argparse, collections, multiprocessing
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'tools'))
 import eq_classes as E
-
-def scan_w(contig):
-    """as E.scan, but every candidate within the band is kept with its ms gap to the read's best: -> placed, [(q, g, gap)]"""
-    import pysam
-    placed, pairs = collections.Counter(), []
-    idx = {s: ([x for x, _, _ in E.G_GEX[(contig, s)]], max(b - x for x, b, _ in E.G_GEX[(contig, s)])) for s in "+-" if (contig, s) in E.G_GEX}
-    for r in pysam.AlignmentFile(E.G_BAM).fetch(contig):
-        if r.is_unmapped or r.is_supplementary: continue
-        best = E.G_TIES.get(r.query_name)
-        if best is None:
-            if r.is_secondary: continue
-        elif r.is_secondary and r.get_tag(E.G_TAG) < E.G_FLOOR(best): continue
-        s = E.tx_strand(r)
-        ov = E.overlap_genes([(x + 1, b) for x, b in r.get_blocks()], E.G_GEX[(contig, s)], *idx[s]) if s in idx else None
-        g = max(ov, key=lambda k: (ov[k], k)) if ov else E.OUTSIDE
-        if best is None: placed[g] += 1
-        else: pairs.append((r.query_name, g, 0 if not r.is_secondary else max(0, best - r.get_tag(E.G_TAG))))
-    return placed, pairs
+import tie_table as TT
 
 def em_w(classes, placed, T, rounds=500, tol=1e-6):
     """EM with alignment weights: classes {frozenset((locus, gap)): n}; share = theta x exp(-gap / T)."""
@@ -78,20 +61,14 @@ def main():
     if sys.argv[1:] == ['--selftest']: return selftest()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('gtf'); ap.add_argument('bam'); ap.add_argument('tab'); ap.add_argument('out')
-    ap.add_argument('--min-em', type=float, default=2); ap.add_argument('--pooled', action='store_true'); ap.add_argument('--label', action='store_true'); ap.add_argument('--threads', type=int, default=8); ap.add_argument('--weighted', type=float, default=None, metavar='T')
+    ap.add_argument('--min-em', type=float, default=2); ap.add_argument('--pooled', action='store_true'); ap.add_argument('--label', action='store_true'); ap.add_argument('--threads', type=int, default=8); ap.add_argument('--weighted', type=float, default=None, metavar='T'); ap.add_argument('--ties', metavar='FILE', help='the shared tie table (tools/tie_table.py): read when it matches the inputs, else written')
     a = ap.parse_args()
-    import pysam
-    meta, E.G_GEX = E.load_loci(a.gtf)
-    E.G_FLOOR = E.floor_fn(10); E.G_BAM, E.G_TAG, E.G_TIES = a.bam, 'ms', E.load_ties(a.tab, E.G_FLOOR, 'ms')
-    with multiprocessing.get_context('fork').Pool(a.threads) as pool:
-        res = pool.map(scan_w if a.weighted else E.scan, list(pysam.AlignmentFile(a.bam).references), chunksize=1)
-    placed, sets = collections.Counter(), collections.defaultdict(set)
+    meta, placed0, pairs, _ = TT.get(a.gtf, a.bam, a.tab, a.threads, a.ties)      # the shared pass (tools/tie_table.py)
+    placed, sets = collections.Counter(placed0), collections.defaultdict(set)
     gaps = collections.defaultdict(dict)
-    for pl, pairs, *_ in res:
-        placed.update(pl)
-        for q, g, exact, *x in pairs:
-            if a.weighted: gaps[q][g] = min(exact, gaps[q].get(g, exact)); exact = exact == 0
-            if exact: sets[q].add(g)
+    for q, g, gap in pairs:
+        if a.weighted: gaps[q][g] = min(gap, gaps[q].get(g, gap))
+        if gap == 0: sets[q].add(g)
     placed.pop(E.OUTSIDE, None); classes = collections.Counter()
     if a.weighted:
         solo = collections.Counter(); wcl = collections.Counter()      # solo = reads whose best score is at one locus alone

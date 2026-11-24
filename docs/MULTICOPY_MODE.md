@@ -275,6 +275,16 @@ planted reads (units and labels unchanged; the extra rescued silent units are al
 KB3781 (annotated copies 34 -> 37 and 27 -> 28 at equal junction precision; rescued loci 445 -> 1,688 and 161 -> 514).
 Saves one whole-genome assembly per sample (about 1.9 h of 5 on HG002). `PREREG_shared_floor1_2026-11-24.md`.
 
+## One pass for the tie-based steps (`tools/tie_table.py`, 2026-11-24)
+The labels and the sequence test both need, for every read with a second alignment within 10 `ms` of its best, the loci
+its alignments fall on. That pass over the BAM is now made once, by whichever step runs first, and written as
+`PREFIX.o2.ties.tsv.gz` (read, locus, `ms` gap to the read's best, best `ms`) with `PREFIX.o2.ties.tsv.gz.placed.tsv`
+(per locus, the reads placed there with no rival); both steps take `--ties FILE`, and a table made from other inputs
+is ignored and rewritten. Outputs unchanged (workspace `tie_table_2026-11-24`): labels identical without the table,
+while writing it and when reading it, and identical to the stage's earlier tables on OR6737 and KB3781; sequences
+identical. Time: labels 142 s (OR6737) / 269 s (KB3781) when they make the pass, 8 s / 7 s when they read the table; the
+sequence test 6 s / 11 s reading it, against 157 s / 282 s when it made its own pass.
+
 ## Where each read went (opt-in stage `provenance`, 2026-11-23)
 `tools/rustle_pipeline.sh provenance --bam B --fasta G --out PREFIX` (after `assemble`; uses `PREFIX.o2.gtf` when it is
 there) writes, with `tools/read_provenance.py`:

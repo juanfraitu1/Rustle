@@ -75,6 +75,9 @@
 #             Its collected reads are cached in PREFIX.o2.sequences.cache (RUSTLE_O2_SEQUENCES_CACHE=0 turns that off).
 #             An isoform with more than 1,000 distinct variant patterns (immunoglobulin, T-cell receptor) is not tested:
 #             PREFIX.o2.sequences.skipped.tsv.
+#             The pass over the BAM that finds, for every multimapping read, the loci it can sit at is made once
+#             (tools/tie_table.py -> PREFIX.o2.ties.tsv.gz, readable: read, locus, ms gap, best ms) and read by the
+#             labels and by the sequence test.
 #             Nothing is dropped: a family member that is found stays available. RUSTLE_O2_DROP=1 drops the
 #             homology_only loci instead. Costs a second assembly at a floor of one read, a families run on the
 #             candidates and one BAM pass (gorilla OR6737: about 7 min). If it fails, the report is made on PREFIX.gtf
@@ -1726,7 +1729,7 @@ stage_o2() {
     local tab=$OUT.molecules.tsv; [ -s "$tab" ] || tab=$BAM.as_table.tsv
     if ! ( RUSTLE_MULTICOPY_EQ=${RUSTLE_MULTICOPY_EQ:-0} stage_multicopy ); then
       say "o2: the multi-copy extension FAILED (see $OUT.multicopy.log); the report is on $OUT.gtf"; ext=0
-    elif ! "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/../bench/o2_families/em_filter.py" "$OUT.multicopy.gtf" "$BAM" "$tab" "$OUT.o2.tmp" --min-em "${RUSTLE_O2_MIN_EM:-2}" $([ "${RUSTLE_O2_DROP:-0}" = 1 ] || echo --label) $([ "${RUSTLE_O2_EM_WEIGHT:-1}" = 0 ] || echo --weighted "${RUSTLE_O2_EM_WEIGHT:-1}") --threads "$JOB_THREADS" > "$OUT.o2.em.log" 2>&1; then
+    elif ! "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/../bench/o2_families/em_filter.py" "$OUT.multicopy.gtf" "$BAM" "$tab" "$OUT.o2.tmp" --min-em "${RUSTLE_O2_MIN_EM:-2}" $([ "${RUSTLE_O2_DROP:-0}" = 1 ] || echo --label) $([ "${RUSTLE_O2_EM_WEIGHT:-1}" = 0 ] || echo --weighted "${RUSTLE_O2_EM_WEIGHT:-1}") --ties "$OUT.o2.ties.tsv.gz" --threads "$JOB_THREADS" > "$OUT.o2.em.log" 2>&1; then
       say "o2: the provenance test FAILED (see $OUT.o2.em.log); the report is on $OUT.gtf"; rm -f "$OUT.o2.tmp".*; ext=0
     else
       mv -f "$OUT.o2.tmp.gtf" "$OUT.o2.gtf"; mv -f "$OUT.o2.tmp.em.tsv" "$OUT.o2.em.tsv"
@@ -1738,7 +1741,7 @@ stage_o2() {
       rm -f "$OUT.o2.sequences.tsv"
       if [ "${RUSTLE_O2_SEQUENCES:-0}" = 1 ]; then
         if [ ! -s "${FASTA:-}" ]; then say "o2: RUSTLE_O2_SEQUENCES needs --fasta; skipped"
-        elif ! "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/../bench/o2_families/recurrence_test.py" "$OUT.multicopy.gtf" "$BAM" "$tab" "$FASTA" "$OUT.o2.sequences.tsv" --threads "$JOB_THREADS" $([ "${RUSTLE_O2_SEQUENCES_CACHE:-1}" = 0 ] || echo --cache "$OUT.o2.sequences.cache") > "$OUT.o2.sequences.log" 2>&1; then
+        elif ! "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/../bench/o2_families/recurrence_test.py" "$OUT.multicopy.gtf" "$BAM" "$tab" "$FASTA" "$OUT.o2.sequences.tsv" --threads "$JOB_THREADS" $([ "${RUSTLE_O2_SEQUENCES_CACHE:-1}" = 0 ] || echo --cache "$OUT.o2.sequences.cache") --ties "$OUT.o2.ties.tsv.gz" > "$OUT.o2.sequences.log" 2>&1; then
           say "o2: the sequence test FAILED (see $OUT.o2.sequences.log); the report has no tied_sequences column"; rm -f "$OUT.o2.sequences.tsv" "$OUT.o2.sequences.tsv.tmp"
         else say "o2: $(tail -1 "$OUT.o2.sequences.log" | sed 's/ -> .*//') -> $OUT.o2.sequences.tsv"; fi
       fi

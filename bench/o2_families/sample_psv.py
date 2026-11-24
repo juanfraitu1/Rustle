@@ -50,17 +50,14 @@ def haplotypes(reads, min_reads, min_share):
         else: haps.append([dict(vec[q]), [q]])
     return sites, [h[1] for h in haps]
 
-def tie_groups(gtf, bam, tab, threads=8):
-    """-> meta, {read: loci it is exactly tied between}, {group: loci}, {group: tied reads}; a group = loci joined by tied reads"""
-    import pysam
-    meta, E.G_GEX = E.load_loci(gtf)
-    E.G_FLOOR = E.floor_fn(10); E.G_BAM, E.G_TAG, E.G_TIES = bam, 'ms', E.load_ties(tab, E.G_FLOOR, 'ms')
-    with multiprocessing.get_context('fork').Pool(threads) as pool:
-        res = pool.map(E.scan, list(pysam.AlignmentFile(bam).references), chunksize=1)
+def tie_groups(gtf, bam, tab, threads=8, ties=None):
+    """-> meta, {read: loci it is exactly tied between}, {group: loci}, {group: tied reads}; a group = loci joined by tied reads.
+    The pass over the BAM is the shared one (tools/tie_table.py; `ties` = its table, read when it matches the inputs)."""
+    import tie_table as TT
+    meta, _, pairs, _ = TT.get(gtf, bam, tab, threads, ties)
     sets = collections.defaultdict(set)
-    for _, pairs, _ in res:
-        for q, g, exact, *x in pairs:
-            if exact and g != E.OUTSIDE: sets[q].add(g)
+    for q, g, gap in pairs:
+        if gap == 0 and g != E.OUTSIDE: sets[q].add(g)
     parent = {}
     def find(x):
         while parent.setdefault(x, x) != x: parent[x] = parent[parent[x]]; x = parent[x]
