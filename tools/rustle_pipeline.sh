@@ -106,7 +106,7 @@
 #        [--to STAGE] [--from STAGE] [--low-mem] [--index-gb N] [--max-window-records N] [--no-flag] [--no-resume] [--cache]
 #        (stage `index` = the shared splice index alone, needs --fasta and --out; `flag_scan` / `flag_bg` are internal to `all`;
 #         RUSTLE_EXTEND_TRANSFRAGS=1 adds --extend-transfrags to assemble, default off since register 1812)
-#        [--guide ANNOT.gtf]   assemble / all also write PREFIX.guided.gtf (stage `guided` alone rewrites it from PREFIX.gtf;
+#        [--guide ANNOT.gtf]   assemble / all also write PREFIX.guided.gtf (stage `guided` alone rewrites it from PREFIX.final.gtf;
 #                              the de novo PREFIX.gtf and every later stage are unchanged; register 1622)
 #        [--names ANNOT.gff3|gtf[.gz]]   assemble / all also write PREFIX.named.gtf (and PREFIX.final.named.gtf): the same
 #                              transcripts with ref_gene_name / ref_gene_id / ref_transcript_id / ref_match attributes from the
@@ -266,7 +266,8 @@
 #   --guide ANNOTATION.gtf[.gz] (assemble; opt-in, register 1622): also write PREFIX.guided.gtf = the de novo assembly with the
 #   guide's transcripts that have a full-chain primary alignment added, and without de novo chains that are fragments or
 #   intron-retaining versions of guide chains, have a new intron beside guide introns and < 10 reads, or lie outside the guide
-#   with < 3 reads (`utilities guide`, src/guide.rs). PREFIX.gtf and every later stage stay de novo.
+#   with < 3 reads (`utilities guide`, src/guide.rs). PREFIX.gtf and every later stage stay de novo. Since register 1934
+#   (2026-11-24) the rule reads PREFIX.final.gtf (PREFIX.gtf when there is none); RUSTLE_GUIDED_INPUT=raw = PREFIX.gtf as before.
 #   the BAM. --contig NAME[,NAME...] (assemble) assembles those contigs only, copy_assign --region NAME:0-LEN (--regions FILE for
 #   several) with LEN from FASTA.fai, in place of --genome-wide: the products equal the genome-wide run's on that contig (docs/archive/2026-09/CONTAINER_HEADROOM_2026-09-30.md) and it
 #   makes a pool comparison on one contig a matter of minutes; the families, assign and flag stages read whatever assembly is there.
@@ -1503,7 +1504,13 @@ stage_names() {
 stage_guided() {
   [ -n "$GUIDE" ] || { echo "[rustle_pipeline] guided needs --guide GTF" >&2; exit 2; }
   [ -s "$OUT.gtf" ] || { echo "[rustle_pipeline] guided needs $OUT.gtf (run assemble first)" >&2; exit 2; }
-  "$BIN/utilities" guide --gtf "$OUT.gtf" --guide "$GUIDE" --bam "$BAM" --threads "$THREADS" --out "$OUT.guided.gtf.tmp" 2> "$OUT.guided.log" \
+  # register 1934 (user 2026-11-24): the rule reads the layered, chain-score-filtered assembly $OUT.final.gtf (10 of 10 judging
+  # samples: fewer wrong chains, 1-31 hidden transcripts lost); $OUT.gtf when there is no layered assembly, or RUSTLE_GUIDED_INPUT=raw
+  local gin="$OUT.final.gtf"
+  if [ "${RUSTLE_GUIDED_INPUT:-final}" = raw ] || [ ! -s "$gin" ]; then gin="$OUT.gtf"; fi
+  case "${RUSTLE_GUIDED_INPUT:-final}" in final|raw) ;; *) echo "[rustle_pipeline] RUSTLE_GUIDED_INPUT must be final or raw" >&2; exit 2;; esac
+  say "guided: rule applied to $gin"
+  "$BIN/utilities" guide --gtf "$gin" --guide "$GUIDE" --bam "$BAM" --threads "$THREADS" --out "$OUT.guided.gtf.tmp" 2> "$OUT.guided.log" \
     || { echo "[rustle_pipeline] --guide failed (see $OUT.guided.log); $OUT.gtf is unaffected" >&2; rm -f "$OUT.guided.gtf.tmp"; exit 1; }
   mv -f "$OUT.guided.gtf.tmp" "$OUT.guided.gtf"
   say "guided: $(awk -F'\t' '$3=="transcript"' "$OUT.guided.gtf" | wc -l) transcripts in the guided assembly $OUT.guided.gtf ($(tail -1 "$OUT.guided.log" | cut -c1-300))"
@@ -2212,7 +2219,8 @@ stage_all() {
   }
   all_guided() {
     guided_due=0
-    if [ ! -s "$OUT.guided.gtf" ] || [ "$OUT.guided.gtf" -ot "$OUT.gtf" ] || [ "$OUT.guided.gtf" -ot "$GUIDE" ]; then
+    all_layers_wait   # register 1934: the guided rule reads $OUT.final.gtf, so the layered assembly has to be whole first
+    if [ ! -s "$OUT.guided.gtf" ] || [ "$OUT.guided.gtf" -ot "$OUT.gtf" ] || [ "$OUT.guided.gtf" -ot "$GUIDE" ] || { [ -s "$OUT.final.gtf" ] && [ "$OUT.guided.gtf" -ot "$OUT.final.gtf" ]; }; then
       say "all: guided"; bash "$0" guided "${args[@]}" || { all_bg_stop; say "all: guided FAILED; see $OUT.guided.log"; exit 1; }
     fi
   }

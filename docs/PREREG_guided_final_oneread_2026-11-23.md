@@ -81,3 +81,11 @@ OR6737 and A119b are the development samples, the other ten judge.
   (+12% to +40%).
 - Not done, the user's call: port arm A to `src/guide.rs`; arm B as an opt-in "sensitive" guided output (it is a trade, not a
   gain by the registered bar); a stricter class inside B (e.g. two reads) would be a new row.
+
+## Port of arm A (2026-11-24, user: "yes port arm A")
+`tools/rustle_pipeline.sh` stage `guided`: `utilities guide --gtf PREFIX.final.gtf` (was `PREFIX.gtf`); falls back to
+`PREFIX.gtf` when no layered assembly exists; `RUSTLE_GUIDED_INPUT=raw` restores the former input. Under `all` the guided
+step now waits for the layered assembly and is redone when `PREFIX.final.gtf` is newer. `src/guide.rs` is unchanged (the
+rule is the same, only its input moved). Checked on OR6737: the driver's product has exactly arm A's 38,714 chains (0 only
+in either), `RUSTLE_GUIDED_INPUT=raw` reproduces the former `x.guided.gtf` line for line; dispatch tests 27 of 27.
+Arm B with a two-read floor: row 1939.
