@@ -57,3 +57,8 @@ Per variant position: 0.989 match at the best hit (KB3781 0.71).
 - What can be said about the opt-in output now: on HG002 a recurrent non-reference sequence among tied copies is in
   the individual's DNA three times out of four (517 of 689), partly in one of ten, absent in one of seven.
 - Cost: the sequence test took 57 minutes on this library (python, one group at a time); the three stages 5 hours.
+
+**Amendment 2026-11-24 (row 1933):** with the hypervariable guard (`--max-patterns 1000`; the immunoglobulin lambda locus is no
+longer tested) HG002 has 648 non-reference sequences: 476 in the DNA (0.735), 74 partly, 98 nowhere (0.151). The 41
+removed sequences were all confirmed, so the share found nowhere is ON the 0.15 line of the reading above, not under
+it. Say "0.15 on HG002 against 0.44 on the gorilla", not "specific to KB3781" as a verdict.

@@ -281,10 +281,15 @@ locus with exactly two reads and a similar relative one substitution away is whe
 - **A lower-scoring origin does not explain them (row 1930):** with the haplotype candidate list opened wide, 5 of the 60
   unconfirmed sequences are explained by one lower-ranked place; 47 are in neither assembly anywhere the read aligns.
   Final count on KB3781: 52 of 107 non-reference sequences in the animal's assembled DNA, 8 partly, 47 not.
-- **HG002 (row 1931, the second sample with both haplotypes):** 517 of 689 non-reference sequences are in the
-  individual's assembled DNA (459 at the best hit, 58 at one lower place), 74 partly, 98 nowhere (0.14). The gorilla's
-  0.44 unexplained was specific to that sample. The pair measure of row 1928 is too coarse and is withdrawn; quote the
+- **HG002 (rows 1931, 1933; the second sample with both haplotypes):** with the hypervariable guard, 476 of 648
+  non-reference sequences are in the individual's assembled DNA (0.735), 74 partly, 98 nowhere (0.15), against 0.44 on
+  the gorilla. (Before the guard: 517 of 689, 0.14.) The pair measure of row 1928 is too coarse and is withdrawn; quote the
   site-by-site lookup. On HG002 a recurrent non-reference sequence among tied copies is real three times out of four.
+- **Hypervariable loci are not tested (`--max-patterns 1000`, default):** an isoform with more than 1,000 distinct
+  variant patterns (HG002's immunoglobulin lambda locus: 26,776 tied reads, 4,922 patterns) is listed in
+  `PREFIX.o2.sequences.skipped.tsv`. Rearranged, mutated loci are not copies; that one isoform also took 43 of 47 minutes.
+- **IsoCon's quality model (row 1933):** neither form is better than the error counts on the two samples with truth;
+  options `--qual isocon|phred`, off.
 - **Correlation clustering as the candidate step (row 1932):** stopped at development; on spent seeds it equals the
   folding on every count and is slightly below on purity. The impurity comes from reads that cover no separating
   site, which no clustering objective resolves. `--cluster cc` stays as an option, off.

@@ -23,13 +23,17 @@ What is taken from IsoCon (Sahlin et al. 2018; modules hypothesis_test_module.py
     step 1 (pairwise log-likelihood ratio of one sequence against two over shared sites; see correlation_clusters).
  2b. --qual isocon|phred (register 1933, opt-in): IsoCon's quality model in place of the error counts: the probability of
     each variant from the read's base quality there, and no placement factor (see p_read_qual).
+ 0b. --max-patterns N (default 1000; 0 = no limit): an isoform whose reads show more than N distinct variant patterns is
+    not tested and is listed in OUT.skipped.tsv. Such a locus is hypervariable (immunoglobulin and T-cell receptor genes
+    are rearranged and mutated in every clone): its many sequences are real and are not copies. HG002's lambda light
+    chain locus has 26,776 tied reads with 4,778 patterns in one isoform and took 43 of the tool's 47 minutes.
  3. c is kept when every such test gives p < --alpha; otherwise its reads go to its nearest candidate and the tests
     are repeated until nothing changes.
 Not taken: IsoCon's all-against-all alignment and consensus (the genome alignment at one locus replaces them).
 OUT.tsv: group, loci, read_at, candidate, reads, sites (its alleles), p (largest of its tests, NA untested), ambiguous
 reads of the locus, read names, isoform (index of the intron chain at that locus).
 It says how many different sequences are expressed among copies the reference cannot separate, never which copy."""
-import sys, os, argparse, collections, math, multiprocessing
+import sys, os, re, argparse, collections, math, multiprocessing
 from decimal import Decimal, getcontext
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import sample_psv as S
@@ -157,17 +161,24 @@ def p_read_qual(qb, D, mult, ratios, mode, max_q=43):
         p *= e if mult.get(x, 1) > 1 else e * ratios[0] / 3.0 if x[1] == 'S' else e * ratios[1] / 4.0 if x[1] == 'I' else e * ratios[2]
     return min(max(p, 1e-300), 0.99999)
 
-def decide(reads, mult, alpha=0.01, ratio=5, cluster='fold', qinfo=None, qmode=None):
+def decide(reads, mult, alpha=0.01, ratio=5, cluster='fold', qinfo=None, qmode=None, max_patterns=0):
     """reads {name: (variants, blocks)} -> candidates [{'cov': frozenset, 'pat': {site: bool}, 'reads': [..], 'p': float|None}], n ambiguous"""
     sup = collections.Counter(x for v, _ in reads.values() for x in v)
     sites = sorted(x for x, n in sup.items() if n >= 2)
-    def covered(bl, pos): return any(a <= pos < b for a, b in bl)
+    import bisect
+    spos = [x[0] for x in sites]
     pat = {}; err = {}; length = {}
     for q, (v, bl) in reads.items():
-        pat[q] = {x: (x in v) for x in sites if covered(bl, x[0])}
+        p = {}
+        for a0, b0 in bl:          # the sites inside each aligned block, by position (blocks are in order and do not overlap)
+            for x in sites[bisect.bisect_left(spos, a0):bisect.bisect_left(spos, b0)]: p[x] = x in v
+        pat[q] = p
         e = [x for x in v if sup[x] < 2]
         err[q] = (sum(1 for x in e if x[1] == 'I'), sum(1 for x in e if x[1] == 'D'), sum(1 for x in e if x[1] == 'S'))
         length[q] = max(1, sum(b - a for a, b in bl))
+    if max_patterns:            # a hypervariable locus (immunoglobulin, T-cell receptor): thousands of real sequences, not copies
+        npat = len({(frozenset(p), tuple(sorted(p.items()))) for p in pat.values()})
+        if npat > max_patterns: return None, npat, sites
     if cluster == 'cc':
         groups, blank = correlation_clusters(pat, err, length, mult, sites); amb = len(blank)
         def consensus(qs):
@@ -283,13 +294,16 @@ def selftest():
     hi = {q: ([(0, 1500, 0)], [90] * 1500) for q in G}; lo = {q: ([(0, 1500, 0)], [8] * 1500) for q in G}
     assert len(decide(G, {}, qinfo=hi, qmode='phred')[0]) == 2 and len(decide(G, {}, qinfo=lo, qmode='phred')[0]) == 1
     assert qual_at(([(0, 10, 0), (12, 20, 10)], list(range(18))), 11) == 9 and qual_at(([(0, 10, 0)], list(range(10))), 3) == 3
+    hv = {f'h{i}': ({(10 * i, 'S', 'A'), (10 * i + 5, 'S', 'C')} if i % 2 else {(10 * (i - 1), 'S', 'A'), (10 * (i - 1) + 5, 'S', 'C')}, [(0, 1500)]) for i in range(40)}   # 20 patterns, 2 reads each
+    r0 = decide(hv, {}, max_patterns=10); assert r0[0] is None and r0[1] == 20, r0[:2]
+    assert decide(hv, {}, max_patterns=0)[0] is not None and decide(hv, {}, max_patterns=1000)[0] is not None
     print('recurrence_test selftest ok')
 
 def main():
     if sys.argv[1:] == ['--selftest']: return selftest()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('gtf'); ap.add_argument('bam'); ap.add_argument('tab'); ap.add_argument('fasta'); ap.add_argument('out')
-    ap.add_argument('--alpha', type=float, default=0.01); ap.add_argument('--min-test-ratio', type=float, default=5); ap.add_argument('--threads', type=int, default=8); ap.add_argument('--min-reads', type=int, default=2); ap.add_argument('--cluster', choices=('fold', 'cc'), default='fold'); ap.add_argument('--qual', choices=('none', 'isocon', 'phred'), default='none'); ap.add_argument('--cache', metavar='PATH')
+    ap.add_argument('--alpha', type=float, default=0.01); ap.add_argument('--min-test-ratio', type=float, default=5); ap.add_argument('--threads', type=int, default=8); ap.add_argument('--min-reads', type=int, default=2); ap.add_argument('--cluster', choices=('fold', 'cc'), default='fold'); ap.add_argument('--qual', choices=('none', 'isocon', 'phred'), default='none'); ap.add_argument('--cache', metavar='PATH'); ap.add_argument('--max-patterns', type=int, default=1000)
     a = ap.parse_args()
     units, ngroups = collect(a)
     _W['units'] = units; _W['a'] = a
@@ -300,9 +314,11 @@ def main():
     n = 0
     with open(a.out + '.tmp', 'w') as w:
         w.write('group\tloci\tread_at\tcandidate\treads\talleles\tp\tambiguous_reads\tread_names\tisoform\n')
-        for i in range(len(units)): w.writelines(res[i]); n += len(res[i])
+        for i in range(len(units)): w.writelines(res[i][0]); n += len(res[i][0])
     os.replace(a.out + '.tmp', a.out)
-    print(f'recurrence_test: {ngroups} groups, {n} sequences kept -> {a.out}')
+    sk = [l for i in range(len(units)) for l in res[i][1]]; skp = re.sub(r'\.tsv$', '', a.out) + '.skipped.tsv'
+    with open(skp, 'w') as w: w.write('group\tloci\tread_at\tisoform\treads\tsites\tpatterns\treason\n'); w.writelines(sk)
+    print(f'recurrence_test: {ngroups} groups, {n} sequences kept' + (f', {len(sk)} isoforms not tested as hypervariable ({skp})' if sk else '') + f' -> {a.out}')
 
 _W = {}
 
@@ -312,16 +328,18 @@ def _decide_unit(i):
     iso, amb_iso = by_isoform({q: v[2] for q, v in rd.items()})
     qinfo = {q: v[3] for q, v in rd.items()} if a.qual != 'none' else None
     reads = {q: v[:2] for q, v in rd.items()}
-    cands = []; amb = len(amb_iso)
+    cands = []; amb = len(amb_iso); skipped = []
     for ci, ch in enumerate(sorted(iso), 1):           # one decision per isoform (intron chain)
-        cs, am, _ = decide({q: reads[q] for q in iso[ch]}, mult, a.alpha, a.min_test_ratio, a.cluster, qinfo, None if a.qual == 'none' else a.qual); amb += am
+        cs, am, st = decide({q: reads[q] for q in iso[ch]}, mult, a.alpha, a.min_test_ratio, a.cluster, qinfo, None if a.qual == 'none' else a.qual, a.max_patterns)
+        if cs is None: skipped.append(f"{k}\t{loci}\t{rep}\t{ci}\t{len(iso[ch])}\t{len(st)}\t{am}\thypervariable: more than {a.max_patterns} distinct variant patterns in one isoform\n"); continue
+        amb += am
         for x in cs: x['iso'] = ci
         cands += [x for x in cs if len(x['reads']) >= a.min_reads]
     out = []
     for i, cd in enumerate(sorted(cands, key=lambda x: -len(x['reads'])), 1):
         al = ','.join(f'{x[0] + 1}{x[1]}{x[2]}' for x in sorted(cd['pat']) if cd['pat'][x]) or 'reference'
         out.append(f"{k}\t{loci}\t{rep}\t{i}\t{len(cd['reads'])}\t{al}\t{'NA' if cd['p'] is None else format(cd['p'], '.3g')}\t{amb}\t{','.join(cd['reads'])}\t{cd['iso']}\n")
-    return out
+    return out, skipped
 
 def _collect_group(k):
     """the tied reads of one group, read at as many of its loci as it takes to cover them -> [(group, loci, locus, reads, mult)]"""

@@ -261,7 +261,8 @@ the count is exact in 0.80 of (unit, isoform) cells on unseen seeds, against 0.5
 and on a planted heterozygous sample the count is exact on haplotypes in 0.53 of cells and over-counts copies in 140 of
 199 (row 1927); it never says which copy. Real OR6737: 392 sequences at 194 loci, 116 of 379 families.
 Real samples with both haplotypes (rows 1928-1931): the non-reference sequences are in the individual's own DNA for
-517 of 689 on HG002 (0.75; 0.14 nowhere) and 52 of 107 on KB3781 (0.49; 0.44 nowhere, unexplained and specific to
+476 of 648 on HG002 (0.735; 0.15 nowhere; hypervariable loci such as the immunoglobulin lambda locus are not tested and
+are listed in `PREFIX.o2.sequences.skipped.tsv`) and 52 of 107 on KB3781 (0.49; 0.44 nowhere, unexplained and specific to
 that sample). Read the column as recurrent sequences with that confirmation rate, not as copies. On a deep human
 library the test adds about an hour.
 `PREREG_isocon_port_2026-11-23.md`.

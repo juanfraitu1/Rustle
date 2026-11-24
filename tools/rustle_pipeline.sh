@@ -73,6 +73,8 @@
 #             show among copies the reference cannot separate (IsoCon's test on genome alignments) ->
 #             PREFIX.o2.sequences.tsv and the report column tied_sequences. Sequences, not copies: alleles count.
 #             Its collected reads are cached in PREFIX.o2.sequences.cache (RUSTLE_O2_SEQUENCES_CACHE=0 turns that off).
+#             An isoform with more than 1,000 distinct variant patterns (immunoglobulin, T-cell receptor) is not tested:
+#             PREFIX.o2.sequences.skipped.tsv.
 #             Nothing is dropped: a family member that is found stays available. RUSTLE_O2_DROP=1 drops the
 #             homology_only loci instead. Costs a second assembly at a floor of one read, a families run on the
 #             candidates and one BAM pass (gorilla OR6737: about 7 min). If it fails, the report is made on PREFIX.gtf
