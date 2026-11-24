@@ -1,7 +1,7 @@
 # PREREG: VACmap on Iso-Seq reads, against the genome and against isoform sequences (row 1936, 2026-11-24)
 
 ## Current state
-Run 2026-11-24 (job 4499072, 13 min): NO GAIN on every arm, the padded-read addendum included (job 4499085). Outcomes at the end.
+Run 2026-11-24 (job 4499072, 13 min): NO GAIN on every arm, all three addenda included (jobs 4499085, 4499086, 4499089). Outcomes at the end.
 
 User (2026-11-24): the advisor asked for VACmap as well; "we both know it does not work with spliced alignment but what if
 we can force it, maybe an option in vacmap or what if we extracted the loci with all isoforms". Written before any VACmap
@@ -118,3 +118,19 @@ of one jump of the chain (a "variation": an intron, or a move to another copy); 
 - Predictions (mine): fewer wrong with higher penalties (fewer jumps between copies), the chosen cell at or near the
   top of the grid; NO GAIN on the judging half, still well above the primary's wrong count, because a high jump cost
   also makes introns expensive.
+
+### Outcome of addendum 2 (job 4499086, 5 min; `{P1R,P2R}.score.txt`)
+- P1R: near ties 545 / 55 (fixes 1, breaks 9), the primary's locus on 589 of 600; clear-lead wrong 37 (primary 18). NO GAIN.
+- P2R: near ties 175 / 425, the runner-up's locus on 438 of 600 (73%), the primary's on 137; median 3 records per read;
+  407 of its 425 wrong picks carry MAPQ 60. TBC1D3: P1R 15 / 21.
+- Both predictions held (>= 90%, >= 70%; less obedient to the padding than mode L's 87%, not better placed).
+
+### Outcome of addendum 3 (job 4499089, 47 min; `tune/grid.txt`)
+Wrong decidable near ties of 300 per half, tuning / judging (primary 29 / 18), by global penalty, local 59:
+20: 119 / 130; 40 (default): 119 / 129; 80: 135 / 146; 160: 169 / 189; 320: 195 / 210. The local penalty moves the
+near ties by at most 3 reads and the clear-lead reads by about 15%. Chosen on the tuning half: global 20, local 30.
+Judging half: near ties 127 wrong (primary 18), clear-lead 742 wrong of 7,123 (primary 11). **NO GAIN.**
+- My prediction of the direction was WRONG: higher penalties are worse, not better (a costlier jump makes introns
+  costlier and more of the read is lost or misplaced); "NO GAIN, well above the primary" held.
+- The default cell reproduces arm G (119 + 129 = 248). Not tried: penalties below 20, `-globalmaxdiff` / `-localmaxdiff`,
+  tuning in mode R.
