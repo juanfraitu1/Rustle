@@ -50,9 +50,9 @@ OR6737 and A119b are development; the other ten judge.
 - **FAIL: both bars on 4 of the 10 judging samples** (HG002, chimp testis, chimp cell line, bonobo testis). B1 (precision
   of the added chains) holds on 5 of 10, B2 (yield) on 8 of 10.
 - What the two-read floor does: the added chains are now about as precise as arm A's own chains outside the guide (share
-  minus arm A's precision between -0.030 and +0.130, 7 of 10 within 0.025), so the overall precision moves by at most
+  minus arm A's precision between -0.030 and +0.130, 6 of 10 within 0.025), so the overall precision moves by at most
   0.009; the yield is +1.2% to +11.7% hidden transcripts (one read: +13% to +40%).
-- At three reads (no bar): 5 of 10 would pass; the two testis samples that pass at two reads fail the yield bar at three.
+- At three reads (no bar): 4 of 10 would pass; the two testis samples that pass at two reads fail the yield bar at three.
 - Predictions: "B1 on 7 or more" WRONG (5); "B2 on most, close to the floor" held (8, two below); overall FAIL as leaned.
 - Reading: the class has no floor at which it is both clearly more precise than the guided assembly and large enough to
   matter on every sample. At two reads it is precision-neutral and small. Not added to the guided product.
