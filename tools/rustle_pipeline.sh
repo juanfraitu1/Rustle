@@ -586,7 +586,14 @@ fi
 # RUSTLE_POLISH_ISOFORM_FRACTION (unset = 0.02, the value this command always had): the isoform fraction of the polish. A switch only so
 # that the relaxed assembly of RUSTLE_RANKED_TAIL=1 can turn the rule off (0); no other value has been judged as a default (rows 1837, 1876).
 case "${RUSTLE_POLISH_ISOFORM_FRACTION:-0.02}" in ""|*[!0-9.]*|*.*.*) echo "[rustle_pipeline] RUSTLE_POLISH_ISOFORM_FRACTION must be a number >= 0 (got '${RUSTLE_POLISH_ISOFORM_FRACTION:-}')" >&2; exit 2 ;; esac
-POLISH="--assembly-polish full --polish-isoform-fraction ${RUSTLE_POLISH_ISOFORM_FRACTION:-0.02} --polish-mono-shadow --polish-mono-quantile ${RUSTLE_POLISH_MONO_QUANTILE:-0.82} --polish-ism-ratio ${RUSTLE_POLISH_ISM_RATIO:-0.3} --polish-retained-ratio ${RUSTLE_POLISH_RETAINED_RATIO:-10}"
+# RUSTLE_ASSEMBLY_POLISH=none (default full): the transcripts before the polishing rules, the input of tools/polish_rules.py
+# (the Python version of those rules, for reading and for the reasons in the provenance tables); never for a real run.
+# The assembler refuses junction snapping, the 5' rescue and junction replacement without its polishing (they run around
+# it), so `none` switches those three off: the file is the transcripts BEFORE snapping, not the exact input of the rules in a
+# normal run (there snapping comes first). Exact per-transcript reasons of a normal run would need the assembler to write them.
+if [ "${RUSTLE_ASSEMBLY_POLISH:-full}" = none ]; then RUSTLE_POLISH_JUNCTION_SNAP=off; RUSTLE_POLISH_JUNCTION_RATIO=0; RUSTLE_POLISH_TSS=off; fi
+case "${RUSTLE_ASSEMBLY_POLISH:-full}" in full|none) ;; *) echo "[rustle_pipeline] RUSTLE_ASSEMBLY_POLISH must be full or none (got '$RUSTLE_ASSEMBLY_POLISH')" >&2; exit 2 ;; esac
+POLISH="--assembly-polish ${RUSTLE_ASSEMBLY_POLISH:-full} --polish-isoform-fraction ${RUSTLE_POLISH_ISOFORM_FRACTION:-0.02} --polish-mono-shadow --polish-mono-quantile ${RUSTLE_POLISH_MONO_QUANTILE:-0.82} --polish-ism-ratio ${RUSTLE_POLISH_ISM_RATIO:-0.3} --polish-retained-ratio ${RUSTLE_POLISH_RETAINED_RATIO:-10}"
 # RUSTLE_POLISH_ISM_RATIO=R (register 1810; unset = 0.3 since 2026-11-18, 0.7 = the command before): a transcript whose intron chain is a
 # contiguous part of a longer assembled chain is kept when it has at least R times that chain's reads. 0.7 was overfit to the primate
 # samples (register 1793: it cost 9-10% of the correct chains on mouse); 0.1 is the non-primate choice of register 1800.

@@ -294,6 +294,25 @@ planted human families 260 of 267 transcripts equal, all within 10%; gorilla OR6
 replacement, 0.035 a shorter read of one transcript, 0.062 a piece of several, 0.055 unspliced, 0.145 none. About one
 minute on 72 threads.
 
+## The polishing rules in Python (`tools/polish_rules.py`, 2026-11-24)
+A line-by-line port of the assembler's polishing routine (`polish_drop_set_with`, `src/copy_assign_bin.rs`), written to
+be read: one short block per rule, in the assembler's order (sub-chain collapse `ism`, single exon inside a spliced span
+`ism_mono`, single-exon read floor `floor`, `shadow`, isoform fraction `frac`, retained intron `ret`), and a table naming
+the rule that removed each transcript. `RUSTLE_ASSEMBLY_POLISH=none` makes `assemble` write the transcripts before the
+rules (it also switches off junction snapping, the 5' rescue and junction replacement, which the assembler refuses
+without its polishing: the file is the transcripts BEFORE snapping).
+Parity, those steps off on both sides (workspace `polish_parity_2026-11-24`): planted sets 267 = 267 and 301 = 301
+transcripts kept; gorilla OR6737 every rule's count equal to the assembler's (sub-chain 58,333; floor + shadow 28,772;
+fraction 28,907; retained 2,392), the kept sets equal but for 92 single-exon transcripts removed by the internal-priming
+test, a separate rule that needs the reads. One fact the port brought out: the assembler applies its per-gene rules
+BEFORE it regroups genes (ids ending `.rgN`, `.fusN`); the script judges each transcript in the gene it had then.
+Against a normal run (snapping, spliced share, rescue, replacement on): 70,124 of its 70,181 transcripts are kept by the
+Python rules too, which keep 1,566 more.
+With `read_provenance.py --unpolished U.gtf --reasons R.tsv` the reads whose chain "passed the floor but has no
+transcript" get the rule by name: on OR6737 108,044 of 121,013 such reads (frac 96,115; ret 10,928; ism 1,001); 12,969
+stay "removed by a later rule". These reasons come from the rules applied before snapping, so they are close, not
+exact; exact ones need the assembler to write its own decisions (it computes them; a change to the Rust code).
+
 ## Where things are (Fritz workspace `/anvme/workspace/v138da13-rustle`)
 | row | directory | what |
 |---|---|---|

@@ -285,6 +285,11 @@ locus with exactly two reads and a similar relative one substitution away is whe
   non-reference sequences are in the individual's assembled DNA (0.735), 74 partly, 98 nowhere (0.15), against 0.44 on
   the gorilla. (Before the guard: 517 of 689, 0.14.) The pair measure of row 1928 is too coarse and is withdrawn; quote the
   site-by-site lookup. On HG002 a recurrent non-reference sequence among tied copies is real three times out of four.
+- **Why the gorilla looked worse (2026-11-24):** 29 of its 47 unexplained sequences are at CD99 in the pseudoautosomal
+  region, where the maternal and paternal assemblies carry one identical sequence while the reads show several (the
+  male's two alleles, not phased by the assembly); 8 more at one X-linked repeat. Without those two loci KB3781 has
+  0.79 in the DNA and 0.15 unexplained, as HG002. On both samples about three quarters of the recurrent non-reference
+  sequences are confirmed and about 15% are not.
 - **Hypervariable loci are not tested (`--max-patterns 1000`, default):** an isoform with more than 1,000 distinct
   variant patterns (HG002's immunoglobulin lambda locus: 26,776 tied reads, 4,922 patterns) is listed in
   `PREFIX.o2.sequences.skipped.tsv`. Rearranged, mutated loci are not copies; that one isoform also took 43 of 47 minutes.

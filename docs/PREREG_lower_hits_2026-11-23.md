@@ -45,3 +45,27 @@ up to 329, so the candidate list was open.
   substitutions with the spectrum of related copies. With mosaics, duplicates, sequencing-error context and a
   lower-ranked origin all tested and removed, what is left is a sequence the two assemblies do not contain, or a
   property of the library not thought of. It cannot be settled without the animal's genomic reads.
+
+## Why KB3781 has 0.44 unexplained and HG002 0.15 (2026-11-24, descriptive, post hoc; workspace `kb_unexplained_2026-11-24`)
+Per-sequence breakdown of the same lookup (`explain_detail.py`): 42 of the 47 unexplained sequences are on chromosome X
+(NC_073247.2), 29 of them at ONE locus, X:11.95-12.00 Mb = **CD99, in the pseudoautosomal region**, tied with its copy
+on chromosome Y (NC_073248.2); 8 more at X:62.25 Mb (a MAGED4-like gene in an X-linked repeat).
+
+| KB3781 non-reference sequences | n | in the DNA | partly | nowhere |
+|---|---|---|---|---|
+| all | 107 | 52 (0.49) | 8 | 47 (0.44) |
+| the CD99 group alone | 33 | 0 | 4 | 29 (0.88) |
+| without CD99 | 74 | 52 (0.70) | 4 | 18 (0.24) |
+| without CD99 and the X:62.25 Mb group | 66 | 52 (0.79) | 4 | 10 (0.15) |
+
+At CD99 all 729 tied reads cost exactly the same on the maternal haplotype (its X) and on the paternal one (its Y): the
+two haplotype assemblies carry ONE and the same sequence for this pseudoautosomal stretch, while the reads show several
+(417 reads with the reference pattern, the rest with variants). KB3781 is a male; the X and Y copies of a
+pseudoautosomal gene are his two alleles, and the assemblies do not hold them apart. So what the lookup called
+"nowhere" at CD99 is most simply the second allele of a region the assembly did not phase, i.e. a limit of the truth,
+not of the reads. The X:62.25 Mb locus is unexplained (a hemizygous X-linked duplicate in a male; an assembly collapse
+is one possibility, not shown).
+**Without those two X loci the gorilla has 0.15 unexplained and 0.79 in the DNA, the same as HG002 (0.15, 0.735).** The
+difference between the two samples was two loci, not the method, the library or the assemblies at large. HG002 has no
+such concentration (its unexplained sequences are spread over 27 groups; the largest, at chr16:30.5 Mb, also has 27
+confirmed ones).

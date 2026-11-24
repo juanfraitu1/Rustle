@@ -27,6 +27,8 @@ OUT_PREFIX.reads.tsv.gz
   reason         for relation none, why no transcript carries the chain:                                              [inferred]
                  non-canonical junction   an intron that is not GT-AG, GC-AG or AT-AC (the assembler's strict gate; --fasta)
                  under the read floor     fewer than 2 distinct alignments (start, end) share this chain on the contig
+                 removed by the rule R    with --unpolished and --reasons: the chain was a transcript before polishing
+                                          and tools/polish_rules.py names the rule that removed it (ism, frac, ret, ...)  [exact]
                  removed by a later rule  the chain had N distinct alignments and passed the floor: isoform fraction,
                                           retained intron, spliced share or the final filter removed it (not resolved)
                  unspliced, no model here
@@ -152,6 +154,7 @@ def work(contig):
                     canon[key] = ok
         rows.append((r.query_name, a, b, s, len(ch), rel, tids, rep, key))
     part = f"{G['out']}.part.{G['order'][contig]:06d}.gz"; fam = G['family']; tie = G['ties']; se = G['shortexons']; sq = G['sequences']
+    rl = G.get('rules', {}).get(contig, {})
     agg = collections.defaultdict(lambda: collections.Counter()); reps = collections.defaultdict(collections.Counter)
     with gzip.open(part, 'wt', compresslevel=3) as o, (gzip.open(part + '.fam', 'wt', compresslevel=3) if fam is not None else open(os.devnull, 'w')) as of:
         for q, a, b, s, n, rel, tids, rep, key in rows:
@@ -160,6 +163,7 @@ def work(contig):
             if rel == 'none':
                 if key is None: reason = 'unspliced, no model here'
                 elif canon.get(key) is False: reason = 'non-canonical junction'
+                elif key in rl: reason = 'removed by the rule ' + rl[key] + ' (polish_rules.py)'
                 elif len(ends[key]) < 2: reason = 'under the read floor (1 distinct alignment)'
                 else: reason = f'removed by a later rule ({len(ends[key])} distinct alignments)'
             rv = '.' if tie is None else 'yes' if q in tie else 'no'
@@ -206,6 +210,18 @@ def run(a):
             h = f.readline().rstrip('\n').split('\t'); i = h.index('gene_id')
             for l in f: fam.add(l.split('\t')[i])
     G['family'] = fam
+    # exact rule per removed chain (polish_rules.py on the unpolished assembly of the same run): {contig: {(strand, chain): rule}}
+    rules = collections.defaultdict(dict)
+    if getattr(a, 'unpolished', None) and getattr(a, 'reasons', None):
+        why = {}
+        with open(a.reasons) as f:
+            f.readline()
+            for l in f:
+                x = l.rstrip('\n').split('\t'); why[x[0]] = x[2]
+        for c, txs in load_gtf(a.unpolished).items():
+            for t, s_, g, rd, lab, e, ch in txs:
+                if ch and t in why: rules[c].setdefault((s_, ch), why[t])
+    G['rules'] = rules
     with multiprocessing.get_context('fork').Pool(a.threads) as pool: res = pool.map(work, refs, chunksize=1)
     tot = collections.Counter()
     with open(a.out + '.reads.tsv.gz.tmp', 'wb') as o, open(a.out + '.transcripts.tsv.tmp', 'w') as t, (open(a.out + '.family_reads.tsv.gz.tmp', 'wb') if fam is not None else open(os.devnull, 'wb')) as of:
@@ -258,6 +274,7 @@ def main():
     ap.add_argument('gtf'); ap.add_argument('bam'); ap.add_argument('out')
     ap.add_argument('--fasta'); ap.add_argument('--as-table'); ap.add_argument('--shortexons'); ap.add_argument('--sequences'); ap.add_argument('--copies')
     ap.add_argument('--window', type=int, default=10); ap.add_argument('--threads', type=int, default=8)
+    ap.add_argument('--unpolished', help='the same run assembled with RUSTLE_ASSEMBLY_POLISH=none'); ap.add_argument('--reasons', help='polish_rules.py reasons table of --unpolished')
     run(ap.parse_args())
 
 if __name__ == '__main__':
