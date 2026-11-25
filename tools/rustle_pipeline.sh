@@ -1750,7 +1750,7 @@ stage_o2() {
   # RUSTLE_O2_SHARES=1 (opt-in, 2026-11-25): PREFIX.o2.shares.tsv.gz = per tied read, the share the EM gives each candidate locus.
   local ext=${RUSTLE_O2_EXTEND:-1}
   if [ "$ext" = 1 ]; then
-    rm -f "$OUT.o2.gtf" "$OUT.o2.em.tsv" "$OUT.o2.shares.tsv.gz"
+    rm -f "$OUT.o2.gtf" "$OUT.o2.em.tsv" "$OUT.o2.shares.tsv.gz" "$OUT.o2.primary.gtf" "$OUT.o2.tied.gtf" "$OUT.o2.layers.tsv"
     local tab=$OUT.molecules.tsv; [ -s "$tab" ] || tab=$BAM.as_table.tsv
     if ! ( RUSTLE_MULTICOPY_EQ=${RUSTLE_MULTICOPY_EQ:-0} stage_multicopy ); then
       say "o2: the multi-copy extension FAILED (see $OUT.multicopy.log); the report is on $OUT.gtf"; ext=0
@@ -1776,12 +1776,17 @@ stage_o2() {
       # reads per copy, and the primary ones have isoform precision 0.80-0.82 at the same recall (whole mode 0.65).
       # It runs the provenance pass (stage `provenance`, one more pass over the BAM; its tables are written as that stage
       # writes them) and bench/o2_families/support_tier.py. A failure is reported and leaves PREFIX.o2.gtf without the tag.
+      # Layers (user 2026-11-25): layer "primary" = >= 2 primary alignments carry the chain (it stands without tied reads)
+      # -> PREFIX.o2.primary.gtf, the primaries-only product; "tied_support" (1 primary, tied reads lifted it over the
+      # floor) and "tied_only" -> PREFIX.o2.tied.gtf, what the near-tied multimappers add; PREFIX.o2.layers.tsv = per layer
+      # transcripts, loci and labels, and of the near-tied reads how many each layer carries and how many nothing carries.
       case "${RUSTLE_O2_SUPPORT:-1}" in
         0) ;;
         1) if ( stage_provenance ) > "$OUT.o2.support.log" 2>&1 \
-              && "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/../bench/o2_families/support_tier.py" "$OUT.o2.gtf" "$OUT.provenance.transcripts.tsv" "$OUT.o2.support.tmp" >> "$OUT.o2.support.log" 2>&1; then
-             mv -f "$OUT.o2.support.tmp.gtf" "$OUT.o2.gtf"; rm -f "$OUT.o2.support.tmp".*
-             say "o2: $(tail -1 "$OUT.o2.support.log" | sed 's/ -> .*//') (attribute support in $OUT.o2.gtf)"
+              && "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/../bench/o2_families/support_tier.py" "$OUT.o2.gtf" "$OUT.provenance.transcripts.tsv" "$OUT.o2.support.tmp" --reads "$OUT.provenance.reads.tsv.gz" >> "$OUT.o2.support.log" 2>&1; then
+             mv -f "$OUT.o2.support.tmp.gtf" "$OUT.o2.gtf"; mv -f "$OUT.o2.support.tmp.primary.gtf" "$OUT.o2.primary.gtf"
+             mv -f "$OUT.o2.support.tmp.tied.gtf" "$OUT.o2.tied.gtf"; mv -f "$OUT.o2.support.tmp.layers.tsv" "$OUT.o2.layers.tsv"; rm -f "$OUT.o2.support.tmp".*
+             say "o2: $(tail -1 "$OUT.o2.support.log" | sed 's/ -> .*//') (attributes support, primary_reads, layer in $OUT.o2.gtf; layers $OUT.o2.primary.gtf, $OUT.o2.tied.gtf; summary $OUT.o2.layers.tsv)"
            else rm -f "$OUT.o2.support.tmp".*; say "o2: the support tag FAILED (see $OUT.o2.support.log); $OUT.o2.gtf has no support attribute"; fi ;;
         *) echo "[rustle_pipeline] RUSTLE_O2_SUPPORT must be 0 or 1 (got '$RUSTLE_O2_SUPPORT')" >&2; exit 2 ;;
       esac

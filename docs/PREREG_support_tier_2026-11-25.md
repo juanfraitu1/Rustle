@@ -62,3 +62,47 @@ whole mode 37 / 0.67 / 176; `primary` tier 35 / 0.68 / 125; `tied_only` tier 19 
   and 2-9 units if left out.
 - Not decided, not wired: the tier is a tag made after the run by `support_tier.py` from the provenance table. Whether the
   tag becomes part of stage `o2`, and whether any product should show only the `primary` tier, is the user's call.
+
+## Addendum, written before running it (2026-11-25): three layers, and what stays unexplained
+User: "an option for primaries only, and another layer for near tied multimappers to show how much it improves or what is
+still left unexplained". The `primary` tier is split by how many primary alignments carry the chain (the provenance
+table's count; the assembler's read floor is 2):
+- `layer "primary"`: at least 2 primary alignments. The transcript stands without any tied read.
+- `layer "tied_support"`: exactly 1. A primary alignment carries the chain and tied reads lifted it over the floor.
+- `layer "tied_only"`: none.
+Products: `PREFIX.o2.primary.gtf` (the first layer), `PREFIX.o2.tied.gtf` (the other two, tagged), `PREFIX.o2.layers.tsv`
+(transcripts, loci and labels per layer; and of the reads with a rival within 10 `ms`, how many a transcript of each
+layer carries and how many no transcript carries, by reason).
+A DESCRIPTION on the nine sets of this row (no decision rule; the split into three is new and its numbers were not
+looked at). What I expect: at 3 reads per copy `tied_support` holds most of what the tied reads add, about 60 of the
+140-146 exact isoforms of the two primary-carried layers, at a precision between the other two layers; at 60 reads it is
+nearly empty.
+
+### Result of the addendum (job 4504877; the nine sets of this row, and OR6737)
+| | `primary` | `tied_support` | `tied_only` | primaries-only ASSEMBLY, for reference |
+|---|---|---|---|---|
+| exact isoforms at 3 reads (seeds 1967 / 1968 / 1969) | 82, 69, 72 | 60, 71, 74 | 24, 22, 22 | 83, 70, 72 |
+| isoform precision at 3 reads | 0.95, 0.93, 0.94 | 0.71, 0.73, 0.72 | 0.48, 0.42, 0.47 | 0.95, 0.92, 0.94 |
+| expressed units found at 3 reads, cumulative (of 108) | 65, 63, 65 | 94, 97, 101 | 103, 103, 103 | 66, 65, 64 |
+| transcripts at 60 reads, all expressed (exact) | 239 (197), 236 (197), 243 (196) | 4 (0), 3 (0), 2 (1) | 58 (0), 62 (0), 54 (0) | 236 (196), 238 (197), 240 (195) |
+| false units, half silent, cumulative | 8, 11, 6 | 13, 13, 9 | 29, 34, 23 | 8, 12, 7 |
+
+- The expectation held: at 3 reads `tied_support` holds 60-74 exact isoforms (as many as the `primary` layer) at
+  precision 0.71-0.73, between the two others; at 60 reads it is nearly empty (2-12 transcripts).
+- **The `primary` layer reproduces the primaries-only assembly** (82 / 69 / 72 exact against 83 / 70 / 72; 0.93-0.95
+  precision either way) without a second run: it is the primaries-only product.
+- **What the near ties add, in one line per coverage:** at 3 reads per copy they double the exact isoforms through
+  `tied_support` (+60 to +74, precision 0.72) and add 22-24 more through `tied_only` (precision 0.45); at 60 reads they
+  add nothing correct.
+- **What stays unexplained** (reads with a rival within 10 `ms`, by where their primary alignment sits). Planted, seed
+  1967, all expressed, 60 reads: 5,078 near-tied reads, 4,488 in a `primary`-layer transcript, 50 in the two tied layers,
+  287 unspliced inside an exon, and 253 carried by no transcript (108 non-canonical junction, 84 unspliced with no model,
+  the rest under the floor or removed by a rule). Gorilla OR6737: 16,275 near-tied reads; 10,455 in a `primary`-layer
+  transcript (64%), 581 in `tied_support`, 66 in `tied_only`, 1,030 unspliced inside an exon, and 4,143 carried by no
+  transcript (25%: 2,058 unspliced with no model there, 1,049 under the read floor, 900 with a non-canonical junction, 136
+  removed by a later rule). On OR6737 the layers hold 68,674 / 2,044 / 2,455 transcripts; `tied_support` adds 1,010 loci
+  that have no `primary`-layer transcript and `tied_only` 1,240 more.
+- Reading note: a near-tied read is counted where its PRIMARY alignment sits. A `tied_only` transcript is built from
+  secondary alignments of reads whose primaries are at another copy, which is why few reads are "carried" by that layer.
+- Wired into stage `o2` (same switch `RUSTLE_O2_SUPPORT`): `PREFIX.o2.primary.gtf`, `PREFIX.o2.tied.gtf`,
+  `PREFIX.o2.layers.tsv`; checked by a real run of the stage and the full test suite.

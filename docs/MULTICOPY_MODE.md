@@ -300,6 +300,19 @@ isoforms at 0.42-0.48. On gorilla OR6737 2,455 of 73,173 transcripts are `tied_o
 copies cannot tell the tiers apart (a paralog's isoform laid onto a copy has that copy's junctions): do not use it to
 argue that `tied_only` transcripts are expressed.
 
+**Three layers and their products (user 2026-11-25).** The same step also writes `primary_reads "N"` (primary alignments
+that carry the chain) and `layer`: `primary` (N >= 2: stands without tied reads), `tied_support` (N = 1: tied reads lifted
+it over the read floor), `tied_only` (N = 0). Products:
+- `PREFIX.o2.primary.gtf`: the primaries-only product (layer `primary`). On planted reads it reproduces a primaries-only
+  assembly (82 / 69 / 72 exact isoforms at 3 reads per copy against 83 / 70 / 72) without a second run.
+- `PREFIX.o2.tied.gtf`: what the near-tied multimappers add (layers `tied_support` and `tied_only`, tagged). At 3 reads per
+  copy `tied_support` doubles the exact isoforms (+60 to +74 at precision 0.72) and `tied_only` adds 22-24 at 0.45; at 60
+  reads per copy the two hold nothing correct.
+- `PREFIX.o2.layers.tsv`: per layer the transcripts, loci and labels, the loci each tied layer adds, and what happens to
+  the near-tied reads (in which layer's transcript their primary sits, or why no transcript carries them). Gorilla OR6737:
+  of 16,275 near-tied reads 64% sit in a `primary`-layer transcript, 4% in a tied layer, and 25% are carried by no
+  transcript (unspliced with no model there, under the read floor, non-canonical junction).
+
 ## The EM's share of each tied read (opt-in, 2026-11-25)
 `RUSTLE_O2_SHARES=1` (or `em_filter.py --shares FILE.tsv.gz`, with the weighted EM) writes `PREFIX.o2.shares.tsv.gz`: one
 row per tied read and candidate locus with the `ms` gap and the share of the read the EM gives that locus (shares of a
