@@ -288,6 +288,18 @@ while writing it and when reading it, and identical to the stage's earlier table
 identical. Time: labels 142 s (OR6737) / 269 s (KB3781) when they make the pass, 8 s / 7 s when they read the table; the
 sequence test 6 s / 11 s reading it, against 157 s / 282 s when it made its own pass.
 
+## Which transcripts a primary alignment carries (default tag, 2026-11-25, register 1952)
+Stage `o2` tags every transcript line of `PREFIX.o2.gtf` with `support "primary"` (at least one primary alignment has its
+intron chain; for a single-exon transcript, lies inside it) or `support "tied_only"` (none: the transcript rests on
+near-tied secondary alignments alone). Nothing is dropped. `RUSTLE_O2_SUPPORT=0` switches it off. It costs the provenance
+pass over the BAM and writes that stage's tables (`PREFIX.provenance.*`); tool `bench/o2_families/support_tier.py`.
+Why (row 1952, three fresh planted seeds): at 60 reads per copy the `tied_only` transcripts are 0% exact (0 of 364) and
+the `primary` ones have isoform precision 0.80-0.82 at the same recall (whole mode 0.65; FLAIR 0.73-0.77); at 3 reads the
+`primary` ones keep 0.59-0.61 isoform recall at 0.81-0.84 precision and the `tied_only` ones add 13-15% of the exact
+isoforms at 0.42-0.48. On gorilla OR6737 2,455 of 73,173 transcripts are `tied_only`. Junction precision at annotated
+copies cannot tell the tiers apart (a paralog's isoform laid onto a copy has that copy's junctions): do not use it to
+argue that `tied_only` transcripts are expressed.
+
 ## The EM's share of each tied read (opt-in, 2026-11-25)
 `RUSTLE_O2_SHARES=1` (or `em_filter.py --shares FILE.tsv.gz`, with the weighted EM) writes `PREFIX.o2.shares.tsv.gz`: one
 row per tied read and candidate locus with the `ms` gap and the share of the read the EM gives that locus (shares of a

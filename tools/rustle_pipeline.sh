@@ -1770,6 +1770,21 @@ stage_o2() {
           say "o2: the sequence test FAILED (see $OUT.o2.sequences.log); the report has no tied_sequences column"; rm -f "$OUT.o2.sequences.tsv" "$OUT.o2.sequences.tsv.tmp"
         else say "o2: $(tail -1 "$OUT.o2.sequences.log" | sed 's/ -> .*//') -> $OUT.o2.sequences.tsv"; fi
       fi
+      # RUSTLE_O2_SUPPORT (unset = 1, user 2026-11-25, register 1952; 0 = off): every transcript line of PREFIX.o2.gtf gets
+      # support "primary" (a primary alignment has its intron chain) or "tied_only" (none: it rests on near-tied secondary
+      # alignments alone). A tag, nothing is dropped. Row 1952: on planted reads the tied_only transcripts are 0% exact at 60
+      # reads per copy, and the primary ones have isoform precision 0.80-0.82 at the same recall (whole mode 0.65).
+      # It runs the provenance pass (stage `provenance`, one more pass over the BAM; its tables are written as that stage
+      # writes them) and bench/o2_families/support_tier.py. A failure is reported and leaves PREFIX.o2.gtf without the tag.
+      case "${RUSTLE_O2_SUPPORT:-1}" in
+        0) ;;
+        1) if ( stage_provenance ) > "$OUT.o2.support.log" 2>&1 \
+              && "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/../bench/o2_families/support_tier.py" "$OUT.o2.gtf" "$OUT.provenance.transcripts.tsv" "$OUT.o2.support.tmp" >> "$OUT.o2.support.log" 2>&1; then
+             mv -f "$OUT.o2.support.tmp.gtf" "$OUT.o2.gtf"; rm -f "$OUT.o2.support.tmp".*
+             say "o2: $(tail -1 "$OUT.o2.support.log" | sed 's/ -> .*//') (attribute support in $OUT.o2.gtf)"
+           else rm -f "$OUT.o2.support.tmp".*; say "o2: the support tag FAILED (see $OUT.o2.support.log); $OUT.o2.gtf has no support attribute"; fi ;;
+        *) echo "[rustle_pipeline] RUSTLE_O2_SUPPORT must be 0 or 1 (got '$RUSTLE_O2_SUPPORT')" >&2; exit 2 ;;
+      esac
     fi
   fi
   local gtf=${FAM_GTF:-$OUT.gtf}; [ -s "$gtf" ] || gtf=$OUT.gtf

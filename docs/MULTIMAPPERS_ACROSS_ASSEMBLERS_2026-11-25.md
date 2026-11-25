@@ -196,5 +196,13 @@ what rests on ties.
   which any tool can lower; the difference in kind is that Rustle builds from tied secondaries (isoforms) and labels what
   rests on ties.
 
-## 10. Still open
+## 10. What was learned from the others, applied (row 1952, `docs/PREREG_support_tier_2026-11-25.md`)
+FLAIR builds isoforms from primary alignments and lets tied reads support them. Tagging Rustle's transcripts the same way
+(`primary` = a primary alignment carries the chain, `tied_only` = none; nothing dropped) shows where the mode's precision
+goes: at 60 reads per copy the `tied_only` tier holds no exact isoform at all (0 of 364 over six sets), and the `primary`
+tier alone has precision 0.80-0.82 at full recall (whole mode 0.65; FLAIR 0.73-0.77). At 3 reads the `primary` tier keeps
+0.59-0.61 isoform recall at 0.81-0.84 precision; the `tied_only` tier adds 13-15% of the exact isoforms at 0.42-0.48.
+So tied alignments earn their place mostly as SUPPORT for chains a primary carries, not as the only evidence for a chain.
+
+## 11. Still open
 - Real-sample arms of the tuned FLAIR, and other real samples, were not run (one sample, FLAIR at support 3).
