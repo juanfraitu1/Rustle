@@ -143,5 +143,9 @@ annotated pseudogene 27 (1%). They form 1,243 loci: 987 hold one read, 52 hold f
   intronless copy look like a clear winner for a read that fits the spliced parent equally well base for base.
 - In 14% of all these reads (31% of the non-canonical group) the primary has a LOWER `ms` than a secondary: minimap2
   orders hits on an adjusted segment score, which the `ms` tag (the unadjusted one) does not always reproduce.
-- Not checked: how many of the parent alignments of that class fall outside the assembler's AS-based seeding pool (AS >=
-  0.98 x best); with a lead of 24 per intron most of them should.
+- **Checked (job 4504922, `pool.py`): ALL 207 parent alignments of that class are outside the assembler's seeding pool**
+  (AS >= 0.98 x the read's genome-wide best AS): their AS is a median 0.79 of the best. So for these reads, which tie
+  exactly on `ms`, the assembler never sees the alignment at the spliced parent. For the other unexplained near-tied reads
+  the two definitions mostly agree: the tied secondary is inside the AS pool for 1,030 of 1,049 under the floor, 136 of 136
+  removed by a rule, 757 of 900 with a non-canonical junction, and 1,832 of 2,058 unspliced ones (of the 226 outside, 207
+  are this class). Over all 4,143: 3,755 inside (91%), 388 outside.
