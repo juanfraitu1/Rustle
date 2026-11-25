@@ -13,6 +13,24 @@ breaks exact ties by a hash, so at identical copies the primary is at an arbitra
 planted reads). It writes no `NH` tag. Its mapping quality is low where copies tie: on the planted set of the test (half the
 copies silent) 46% of primary alignments have MAPQ 0 and 66% are below 30.
 
+### 1b. Where those properties come from in minimap2's own source (2.30; `hit.c`, `format.c`, `minimap.h`)
+- **Which alignments become secondary:** after alignment the hits of a read are sorted by score, and a hit that overlaps a
+  better one on the read is its secondary. It is kept when its score is at least `-p` x the primary's and fewer than `-N`
+  are kept already (`mm_select_sub`, `hit.c:265`). Our `-p 0.1 -N 50` therefore keeps almost everything, down to a tenth
+  of the best score; minimap2's own defaults (`-p 0.8 -N 5`) would keep few. This is why 98% of our secondary
+  alignments are far from ties and every tool is right to ignore THOSE.
+- **Which of two equal hits is primary:** the sort key is `score << 32 | hash` (`mm_hit_sort`, `hit.c:203`), where the hash
+  is derived from the hit's anchors and a per-read seed (`hit.c:64`). Equal scores are ordered by that hash: deterministic
+  for a given read and index, arbitrary with respect to biology. This is the "coin toss".
+- **The score that is compared** is `dp_max`, the best-scoring segment of the alignment; it is written as the tag `ms`
+  (`dp_max0`), while `AS` is the full dynamic-programming score `dp_score`, which in splice mode also pays for introns
+  (`format.c:403`, `minimap.h:105-106`). Hence "say which score": two hits can tie on `ms` and differ on `AS`.
+- **Mapping quality** is computed for the primary only from the gap to the best alternative: with `x = dp_max2 * subsc /
+  (dp_max * score0)` it is proportional to `(1 - x^2)`, capped by a second formula `6.02 x identity^2 x (dp_max - dp_max2)`,
+  then reduced by `4.343 x ln(number of suboptimal hits + 1)` (`mm_set_mapq2`, `hit.c:444-482`). An exact tie gives 0; every
+  secondary alignment gets 0 (`hit.c:482`). So a tool that filters on mapping quality (IsoQuant) is filtering on exactly
+  this gap, and a tool that ignores it (StringTie, bambu, FLAIR at threshold 0) treats a tied primary like a unique one.
+
 ## 2. Tool by tool (version; the deciding lines)
 
 **StringTie 3.0.3, long-read mode (`-L`)** (`stringtie.cpp`, `rlink.cpp`; the modified copy `~/stringtie_modded` is 3.0.1 with
@@ -75,7 +93,7 @@ Every one of the four gives the same assembly whether the secondary alignments a
 Their own switches, on the same reads:
 - FLAIR `--allow_paralogs`: 216 transcripts, all 203 of the default plus 13.
 - IsoQuant `--use_secondary`: 30 transcripts instead of 123 (12 in common). Turning secondaries on flags most family reads
-  as multimappers, and those build nothing.
+  as multimappers, and those build nothing. (Registered afterwards on nine fresh sets, row 1947: section 8.)
 
 On a real sample StringTie's output does change slightly with the secondaries in the file (row 1870, chimpanzee testis:
 62,418 transcripts with, 62,494 without, 61,268 shared, named families identical). The source explains it: they move
@@ -148,8 +166,24 @@ Row 1870 concluded "StringTie USES secondaries" from a 2% difference in its outp
 stands; the reading was wrong. The source drops secondary and supplementary alignments in long-read mode before the
 splice graph, and the difference comes from bundle boundaries. Statements in `docs/MULTICOPY_MODE.md` are corrected.
 
-## 8. Not done
-- FLAIR with `--allow_paralogs` and IsoQuant with `--use_secondary` as registered arms of the planted benchmark (one set
-  each above, for context only). The FLAIR arm is the fairest "other tool with its own multimapper option" comparison.
-- bambu keeps supplementary alignments; whether that matters at family loci was not measured.
-- The aligner side (what minimap2 calls a secondary and how MAPQ is set) is taken from rows 1922 and 1940, not re-derived here.
+## 8. The items first listed as not done, now closed
+- **FLAIR `--allow_paralogs` as a registered arm (row 1946, three fresh seeds):** at 3 reads per copy it lifts FLAIR from
+  44 / 40 / 40 to 54 / 48 / 47 expressed units of 108 and adds 5 false units at 60 reads; Rustle's mode finds 104 / 102 / 104,
+  and its labels leave 4 / 3 / 4 silent units called against FLAIR's 19 / 15 / 17. FLAIR needs 3 supporting reads, so the
+  3-read rows sit at its own floor; the comparison that isolates the option is FLAIR against FLAIR.
+- **IsoQuant `--use_secondary` as a registered arm (row 1947, the same nine sets):** it finds about a third of the units it
+  finds by default (102 / 99 / 100 -> 35 / 33 / 37 of 108; isoform recall 0.60 -> 0.14). Reading the secondary alignments
+  makes IsoQuant flag the family reads as multimappers, and flagged reads build nothing.
+- **bambu's supplementary alignments (row 1947, gorilla OR6737):** 0.8% of primary alignments genome-wide, 1.3% at the
+  family loci; removing them changes 49 of about 1,870 bambu models there (30 lost, 19 gained). A small difference, and a
+  supplementary alignment is a second piece of a split read, not a second placement.
+- **The aligner side:** section 1b, from minimap2's source.
+
+So the two tools that HAVE a switch for multi-mapping reads use it in opposite ways: FLAIR counts a tied read at every tied
+isoform and gains a little; IsoQuant excludes reads with several placements and loses most of the family. Neither labels
+what rests on ties.
+
+## 9. Still open
+- The other tools were run at their benchmark settings; a tuned FLAIR (`--support 2` with `--allow_paralogs`) was not tried.
+- All direct runs here are on planted human families plus one gorilla sample for bambu; no real-sample arm of FLAIR
+  `--allow_paralogs` was run.
