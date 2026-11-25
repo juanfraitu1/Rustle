@@ -853,6 +853,9 @@ stage_assemble() {
   # $OUT.shortexons.units.tsv / .reads.tsv / .log. A failed repair stops the stage: RUSTLE_SHORTEXONS=0 assembles without it.
   local se="${RUSTLE_SHORTEXONS:-}"; if [ -z "$se" ]; then if [ -n "${RP_ALL:-}" ]; then se=0; else se=1; fi; fi
   case "$se" in 0|1) ;; *) echo "[rustle_pipeline] RUSTLE_SHORTEXONS must be 0 or 1 (got '$se')" >&2; exit 2 ;; esac
+  # an assembly WITHOUT the repair must not keep the tables of an earlier one with it: `provenance` would mark reads as rewritten
+  # and tools/rustle_reassemble.sh would refuse pass 2 (found by the audit of 2026-11-25)
+  if [ "$se" = 0 ] && [ -z "${RP_SHORTEXONS_FROM:-}" ]; then rm -f "$OUT.shortexons.units.tsv" "$OUT.shortexons.reads.tsv" "$OUT.shortexons.log"; fi
   if [ "$se" = 1 ] && [ -z "${RP_SHORTEXONS_FROM:-}" ]; then
     local sd="$OUT.shortexons.d" rc=0; mkdir -p "$sd"
     say "assemble: short-exon repair of $BAM (RUSTLE_SHORTEXONS=0 = off)"
@@ -861,6 +864,8 @@ stage_assemble() {
     say "assemble: $(tail -1 "$OUT.shortexons.log")"
     ( export RP_SHORTEXONS_FROM="$BAM"; BAM="$sd/reads.bam"; stage_assemble ) || rc=$?
     [ -n "${RUSTLE_SHORTEXONS_KEEP:-}" ] || rm -rf "${sd:?}"
+    # the run's score table was written beside the rewritten BAM: with that folder gone PREFIX.molecules.tsv would be a dangling link
+    local l; for l in "$OUT.molecules.tsv" "$OUT.molecules.tsv.asbin"; do if [ -L "$l" ] && [ ! -e "$l" ]; then rm -f "$l"; fi; done
     [ "$rc" = 0 ] || exit "$rc"
     return 0
   fi
@@ -906,21 +911,33 @@ stage_assemble() {
     # older than the BAM; otherwise rebuilt under a temporary name and renamed into place (a concurrent run never reads
     # a half-written table; rename keeps the inode and mtime the .asbin sidecar is keyed on).
     local table=${AS_TABLE:-}
-    as_table_ok() { head -1 "$1" 2>/dev/null | grep -qF "bam=$(readlink -f "$BAM")$(printf '\t')bam_bytes=$(stat -Lc %s "$BAM")$(printf '\t')" && [ ! "$1" -ot "$BAM" ]; }
+    # tbam = the BAM the table belongs to. Under the short-exon repair $BAM is the rewritten copy in a folder that is removed after
+    # the run: the repair changes CIGARs and no score, so the table of the ORIGINAL BAM is the right one, and the shared one is
+    # reused (2026-11-25; before, every such run made a table for the copy, one more pass over the BAM, and threw it away).
+    local tbam=${RP_SHORTEXONS_FROM:-$BAM}
+    as_table_ok() { head -1 "$1" 2>/dev/null | grep -qF "bam=$(readlink -f "$tbam")$(printf '\t')bam_bytes=$(stat -Lc %s "$tbam")$(printf '\t')" && [ ! "$1" -ot "$tbam" ]; }
     if [ -z "$table" ]; then
       # next to the BAM when a valid table is there or the directory takes a new file (-w alone misses a full file quota);
       # otherwise PREFIX.molecules.tsv, which the check below then reuses like any other table
-      local probe="$BAM.as_table.probe.$$"
+      local probe="$tbam.as_table.probe.$$"
       table="$OUT.molecules.tsv"
-      if as_table_ok "$BAM.as_table.tsv" || { : > "$probe"; } 2>/dev/null; then table="$BAM.as_table.tsv"; fi
+      if as_table_ok "$tbam.as_table.tsv" || { : > "$probe"; } 2>/dev/null; then table="$tbam.as_table.tsv"; fi
       rm -f "$probe"
     fi
     if as_table_ok "$table"; then
       say "assemble: genome-wide best-AS table: reusing $table"
     else   # absent, truncated, from another BAM, or older than the BAM
+      # a table NAMED with --as-table that belongs to another BAM which still exists is that BAM's live table: rebuilding would
+      # overwrite it for every run on that BAM (2026-11-24: a shared table was lost this way). Refused; a table whose BAM is gone is rebuilt.
+      if [ -n "${AS_TABLE:-}" ] && [ -s "$table" ]; then
+        local owner; owner=$(head -1 "$table" | sed -n 's/^#as_table\tbam=\([^\t]*\)\t.*/\1/p')
+        if [ -n "$owner" ] && [ "$owner" != "$(readlink -f "$tbam")" ] && [ -e "$owner" ]; then
+          echo "[rustle_pipeline] --as-table $table was made for $owner, which exists: not overwritten for $tbam. Name another file, or drop --as-table" >&2; exit 2
+        fi
+      fi
       say "assemble: genome-wide best-AS table -> $table (one pass over the BAM)"
       local tmp="$table.tmp.$$"
-      if "$BIN/as_table" --bam "$BAM" --out "$tmp" --threads "$JOB_THREADS" > "$OUT.as_table.log" 2>&1 && [ -s "$tmp" ]; then
+      if "$BIN/as_table" --bam "$tbam" --out "$tmp" --threads "$JOB_THREADS" > "$OUT.as_table.log" 2>&1 && [ -s "$tmp" ]; then
         [ -e "$tmp.asbin" ] && mv -f "$tmp.asbin" "$table.asbin"
         mv -f "$tmp" "$table"
       else
@@ -945,6 +962,9 @@ stage_assemble() {
   # complete truth families 204 -> 209, 3,031 placeholder-strand models now shadowed by their same-strand spliced model.
   # After the pool branches on purpose: they reassign seed_env wholesale (the first ship, b8d29f0d, was inert for the good pool).
   seed_env+=("RUSTLE_READ_STRAND=${RUSTLE_READ_STRAND:-1}")
+  # the read-count setting of this stage (row 1850) belongs to the record too: tools/rustle_reassemble.sh's pass 2 read the
+  # record, got the binary's own default instead, and reported other read counts than pass 1 (found by a real run, 2026-11-25)
+  seed_env+=("RUSTLE_DUP_COUNT=$RUSTLE_DUP_COUNT")
   # the exact flags of this run, for tools/rustle_reassemble.sh's pass 2 (it must not re-derive them from the defaults)
   printf '%s\n' "$POLISH" > "$OUT.assemble.polish"
   # ... and its seeding environment and contig scope, one word per line (pass 2 must seed and scope as pass 1 did)
@@ -1244,7 +1264,10 @@ stage_multicopy() {
   [ -s "$d/u.fam.copies.tsv" ] || { echo "[rustle_pipeline] multicopy: the families run on the candidates failed (see $OUT.multicopy.log); $OUT.gtf is unaffected" >&2; exit 1; }
   $py "$RP_DRIVER_DIR/multicopy_rescue.py" select "$OUT.gtf" "$d/cand.gtf" "$d/u.fam.copies.tsv" "$OUT.multicopy.gtf.tmp" "$OUT.multicopy.tsv.tmp" >> "$OUT.multicopy.log" 2>&1 \
     || { echo "[rustle_pipeline] multicopy: select failed (see $OUT.multicopy.log)" >&2; rm -f "$OUT.multicopy.gtf.tmp" "$OUT.multicopy.tsv.tmp"; exit 1; }
-  mv -f "$OUT.multicopy.tsv.tmp" "$OUT.multicopy.tsv"; mv -f "$OUT.multicopy.gtf.tmp" "$OUT.multicopy.gtf"
+  mv -f "$OUT.multicopy.tsv.tmp" "$OUT.multicopy.tsv"
+  # an unchanged product keeps its file (and time): the tie table and the sequence cache of stage o2 are keyed on it, and a
+  # rerun that rewrote identical bytes made both be rebuilt (found by a real second run, 2026-11-25)
+  if cmp -s "$OUT.multicopy.gtf.tmp" "$OUT.multicopy.gtf"; then rm -f "$OUT.multicopy.gtf.tmp"; else mv -f "$OUT.multicopy.gtf.tmp" "$OUT.multicopy.gtf"; fi
   say "multicopy: $(tail -1 "$OUT.multicopy.log") -> $OUT.multicopy.gtf"
   # Counts that do not multiply over indistinguishable copies (row 1871; RUSTLE_MULTICOPY_EQ=0 skips it). A secondary puts one
   # molecule on every near-identical copy, so `reads` is the same molecules at each (three identical TSPY10 copies: 72, 72, 72).
@@ -1620,7 +1643,8 @@ stage_families() {
   local fth=$MM_THREADS
   say "families: $fth threads"
   "$BIN/mcl_families" --from-gtf "$FAM_GTF" --fasta "$FASTA" --threads "$fth" \
-    --min-exonic-bp 1 "${edge[@]}" "${copies[@]}" "${FAM_EXTRA[@]}" "${FAM_REL[@]}" "${FAM_COV[@]}" "${rep[@]}" "${sd[@]}" --out "$OUT.fam" > "$OUT.families.log" 2>&1
+    --min-exonic-bp 1 "${edge[@]}" "${copies[@]}" "${FAM_EXTRA[@]}" "${FAM_REL[@]}" "${FAM_COV[@]}" "${rep[@]}" "${sd[@]}" --out "$OUT.fam" > "$OUT.families.log" 2>&1 \
+    || { local rc=$?; echo "[rustle_pipeline] families: mcl_families failed (exit $rc, see $OUT.families.log)" >&2; exit "$rc"; }   # said here: under set -e the stage ended without a word, and inside `if ! ( ... )` it did not end at all
   # without minimap2-gate on PATH (or RUSTLE_MINIMAP2) every locus pair is aligned: same families, ~5x the wall (audit round 1)
   if grep -q 'has no --gate' "$OUT.families.log"; then
     say "families: WARNING no minimap2-gate on PATH: every pair was aligned (~5x slower); build it with tools/minimap2_gate/build.sh"
@@ -1764,13 +1788,18 @@ stage_o2bench() {
   local b=$RP_DRIVER_DIR/../bench/o2_families d=$OUT.o2bench.d sc rc=0 scs=${RUSTLE_O2BENCH_SCENARIOS:-E,D,S}
   [ -s "$FASTA" ] || { echo "[rustle_pipeline] o2bench needs --fasta" >&2; exit 2; }
   mkdir -p "$d"
-  if [ ! -s "$d/plant/plan.tsv" ]; then
+  # the planted set is reused only when it was finished with the same settings: before, any plan.tsv was taken, so another
+  # RUSTLE_O2BENCH_READS / scenario list / annotation, or a planting that died midway, went on with the old or half-made set
+  local pset; pset="gff=${GFF:-} run=$([ -n "${GFF:-}" ] || stat -Lc '%s %Y' "$OUT.gtf" "$OUT.fam.copies.tsv" 2>/dev/null | tr '\n' ' ') scenarios=$scs reads=${RUSTLE_O2BENCH_READS:-} fasta=$FASTA"
+  if [ ! -s "$d/plant/plan.tsv" ] || [ "$(cat "$d/plant.settings" 2>/dev/null)" != "$pset" ]; then
+    rm -rf "$d/plant" "$d/plant.settings"; for sc in ${scs//,/ }; do rm -rf "${d:?}/$sc"; done
     if [ -n "${GFF:-}" ]; then
       "${RUSTLE_PYTHON:-python3}" "$b/plant.py" "$GFF" "$FASTA" "$d/plant" --scenarios "$scs" --reads "${RUSTLE_O2BENCH_READS:-60}" > "$d/plant.log" 2>&1
     else
       [ -s "$OUT.gtf" ] && [ -s "$OUT.fam.copies.tsv" ] || { echo "[rustle_pipeline] o2bench without --gff plants at this run's own families: it needs $OUT.gtf and $OUT.fam.copies.tsv" >&2; exit 2; }
       "${RUSTLE_PYTHON:-python3}" "$b/plant.py" --from-run "$OUT.gtf" "$OUT.fam.copies.tsv" "$FASTA" "$d/plant" --scenarios "$scs" --reads "${RUSTLE_O2BENCH_READS:-30}" > "$d/plant.log" 2>&1
     fi || { echo "[rustle_pipeline] o2bench: planting failed (see $d/plant.log)" >&2; exit 1; }
+    printf '%s\n' "$pset" > "$d/plant.settings"
   fi
   for sc in ${scs//,/ }; do
     # the child assemblies are runs of their own: none of this run's stage switches reach them
@@ -2082,7 +2111,8 @@ stage_flag_scan() {
   local LOCI=${GFF:-$FAM_GTF}
   say "flag: scan $BAM on $LOCI"
   "$BIN/missing_copy_flag" --bam "$BAM" --fasta "$FASTA" --loci "$LOCI" ${GFF:+--gff "$GFF"} --index x --threads "$JOB_THREADS" \
-    --out "$OUT.flag_scan" --scan-only > "$OUT.flag_scan.log" 2>&1
+    --out "$OUT.flag_scan" --scan-only > "$OUT.flag_scan.log" 2>&1 \
+    || { local rc=$?; echo "[rustle_pipeline] flag: the scan failed (exit $rc, see $OUT.flag_scan.log)" >&2; exit "$rc"; }
 }
 stage_flag() {
   [ -n "$INDEX" ] || { echo "flag needs --index (splice .mmi of the primary genome)" >&2; exit 2; }
@@ -2102,7 +2132,8 @@ stage_flag() {
   local igb=()
   case "$INDEX" in *.mmi) ;; *) igb=(--index-gb "$INDEX_GB");; esac
   "$BIN/missing_copy_flag" --bam "$BAM" --fasta "$FASTA" --loci "$LOCI" --index "$INDEX" --threads "$MM_THREADS" "${igb[@]}" \
-    "${CONFIRM[@]}" "${FOREIGN[@]}" "${cand[@]}" --out "$OUT.flag" --from-scan "$OUT.flag_scan" > "$OUT.flag.log" 2>&1
+    "${CONFIRM[@]}" "${FOREIGN[@]}" "${cand[@]}" --out "$OUT.flag" --from-scan "$OUT.flag_scan" > "$OUT.flag.log" 2>&1 \
+    || { local rc=$?; echo "[rustle_pipeline] flag: align + verdict failed (exit $rc, see $OUT.flag.log)" >&2; exit "$rc"; }
   say "flag: $(grep -o 'verdicts: .*' "$OUT.flag.log")"
   if [ ${#cand[@]} -gt 0 ]; then say "flag: $(grep -o '[0-9]* flagged candidates with a nearest locus; [0-9]* rows name one' "$OUT.flag.log") (o3_candidate column)"; fi
 }

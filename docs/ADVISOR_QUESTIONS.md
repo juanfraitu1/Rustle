@@ -13,7 +13,7 @@ beside it); "sequences", not copies, for the sequence count; copies are MODELED,
 | # | Question | Answer in one line | Source |
 |---|---|---|---|
 | N1 | Near-tied multimappers are a gap no tool uses well. Does Rustle solve it? | Not per read (nothing in one read decides); across reads it uses them in three measured ways. | rows 1921-1926 |
-| N2 | What is a near tie, and why 0.98 x AS and not `ms`? | Two rules exist; the `ms`-within-10 band is the better seeding pool on the samples tested, confirmation running. | row 1942 |
+| N2 | What is a near tie, and why 0.98 x AS and not `ms`? | Two rules exist; a pool on `ms` within 10 is more precise but loses copies on the deepest sample, so AS 0.98 stays. | rows 1942, 1942b |
 | N3 | IsoCon separates near-identical sequences. Port its logic. | Ported; exact count of expressed sequences in 0.80 of cells where IsoCon itself reaches 0.57. | rows 1926-1933 |
 | N4 | Are those sequences real? | About three quarters are in the individual's own DNA, about 15% are not. | rows 1930, 1931, 1933 |
 | N5 | DuploMap assigns by PSVs, so do we. Winnowmap, VACmap, other minimap2 settings? | None places the tied reads; reasons measured per tool. | rows 1844, 1936, 1938, 1940 |
@@ -34,7 +34,7 @@ beside it); "sequences", not copies, for the sequence count; copies are MODELED,
 - Two rules: the assembler's seeding pool (a secondary alignment helps build when its AS >= 0.98 x the read's best AS) and the near tie of the labels, the EM and the sequence test (`ms` within 10 of the best; 0 = exact tie). An intron costs about 24 on AS and nothing on `ms`, the score minimap2 ranks by.
 - Wider on AS (0.8) was tested and rejected: the additions are 1-16% correct and 70-75% of loci on secondaries alone are shadows (rows 1767, 1773).
 - `ms` instead (row 1942): pool = `ms` within 10 keeps planted units, labels and isoform recall and raises isoform precision (+0.012 mean, lower in two of three half-silent sets); real junction precision 0.67 -> 0.70 (OR6737) and 0.63 -> 0.68 (KB3781) with the annotated copies kept; a quarter fewer rescued loci. `ms` >= 0.98 x best is not better. On real BAMs the pools are small: AS 0.98 admits 1.8% of secondary alignments, `ms` within 10 0.5%.
-- **Open:** confirmation on A119b and HG002 running (jobs 4504337, 4504338); not the default; the rule would have to move into the assembler. **Show:** `docs/PREREG_ms_seed_pool_2026-11-24.md`; `bench/o2_families/pool_bam.py IN.bam TABLE OUT.bam --rule msgap:10`.
+- **Confirmation on unused samples (row 1942b): not confirmed.** A119b keeps its 127 annotated copies with junction precision 0.49 -> 0.51; HG002 drops from 37 to 34 copies (0.45 -> 0.47). On all four real samples the `ms` pool is more precise (+0.02 to +0.05) and rescues about a quarter fewer loci: a precision / recall trade. The pool stays AS 0.98; the stricter one is available as a filter. **Show:** `docs/PREREG_ms_seed_pool_2026-11-24.md`; `bench/o2_families/pool_bam.py IN.bam TABLE OUT.bam --rule msgap:10`.
 
 ### N3. IsoCon's logic, ported
 - `bench/o2_families/recurrence_test.py` is IsoCon 0.3.3's test (support = reads carrying every separating variant; per-read error probability from the read's own errors, homopolymer-aware; Raghavan bound; correction for placement; merge at 0.01), applied to the genome alignments of each group of tied loci, per intron chain.
@@ -51,6 +51,7 @@ beside it); "sequences", not copies, for the sequence count; copies are MODELED,
 - **Winnowmap:** 605 right against minimap2's 639 of 711 decidable near ties (HG002 on CHM13); in satellite arrays its measured gain is confidence, not placement (27 against 30 wrong of 2,000 reads; row 1938).
 - **VACmap:** no splice model; worse than the primary on every arm, penalties tuned (row 1936).
 - **minimap2 settings:** 32 cells of a one-at-a-time sweep; none avoids the ties (3,513-5,046 exactly tied reads against 3,684) and none decides them (40-54 wrong of 600 against 47) (row 1940). Say "no setting of the grid".
+- **A graph of the copies instead of secondary alignments** (row 1943, OR6737, step 0): aligning each transcript to the genome once names the places on OR6737 (95.5% of the tied secondary records, 370 of 445 rescued copies; on A119b, with its large arrays, only 60%) but not which reads are near-tied there (0.61 predicted in the band, 0.78 with the read's own bases; bar 0.90). Re-aligning the reads at those places would touch 31% of all reads. No splice-aware long-read graph aligner exists (vg mpmap / rpvg are short-read tools). A graph does not place reads better either (rows 1544, 1649, 1777). Assembly in the graph's coordinates (row 1944): a one-read chain kept when a sibling has the same chain of exon columns reproduces 3 of the 54 annotated chains the rescue step finds. **Say:** the graph is the model and the shared coordinates between copies, not a replacement for the alignments.
 - **The part no parameter can change:** 4,249 of 7,770 near ties on HG002 tie on its own haplotypes too. **Show:** page "Why Winnowmap does not untie multi-copy reads" (artifact 688f0fe1-...), `docs/WINNOWMAP_AND_FAMILY_TIES_2026-11-18.md`.
 
 ### N6. The other members must be available
@@ -82,7 +83,7 @@ beside it); "sequences", not copies, for the sequence count; copies are MODELED,
 - Every row above has a `docs/PREREG_*.md` written before the run, with the rule and my prediction; seeds or samples not used for the choice; failures kept in the register (this week: rows 1922 primary accuracy, 1924, 1927, 1928 measure withdrawn, 1929 all three predictions, 1932, 1933, 1935). One incident is recorded (a shared score table overwritten on 2026-11-24, restored, nothing to rerun). The planted benchmark has known traps, listed before any comparison is trusted (ragged ends, sample != reference, favourable seeds).
 
 ### Not answered yet (say so)
-1. Whether the `ms` pool holds on A119b and HG002 (running). 2. Alleles against copies without the individual's genome. 3. The 15% of recurrent sequences in neither haplotype; X:62.25 Mb on KB3781. 4. Labels on real samples (no truth). 5. A sample that lacks or gains a copy, on planted reads. 6. Strongly supported non-canonical junctions (GOLGA6L2 / GOLGA8Q). 7. Member discovery on real data (0.23 pair precision).
+1. (answered 2026-11-25: the `ms` pool did not confirm, N2.) 2. Alleles against copies without the individual's genome. 3. The 15% of recurrent sequences in neither haplotype; X:62.25 Mb on KB3781. 4. Labels on real samples (no truth). 5. A sample that lacks or gains a copy, on planted reads. 6. Strongly supported non-canonical junctions (GOLGA6L2 / GOLGA8Q). 7. Member discovery on real data (0.23 pair precision).
 
 ## Current state (2026-11-03)
 

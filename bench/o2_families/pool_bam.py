@@ -46,6 +46,8 @@ def run(bam, tab, out, rule, threads):
     import pysam
     kind, val = rule.split(':'); assert kind in ('as', 'ms', 'msgap'), rule
     G.update(bam=bam, out=out, rule=(kind, float(val)), best=load_best(tab, bam))
+    if kind != 'as' and not any(m is not None for _, m in G['best'].values()):      # an AS-only table: an ms rule would keep everything and say nothing
+        sys.exit(f'pool_bam: {tab} has no ms columns; --rule {rule} cannot be applied (rebuild the table with as_table)')
     refs = list(pysam.AlignmentFile(bam).references)
     with multiprocessing.get_context('fork').Pool(threads) as pool: res = pool.map(work, list(enumerate(refs)), chunksize=1)
     parts = [p for p, _, _ in res]; pysam.cat('-o', out + '.tmp', *parts)
@@ -73,6 +75,10 @@ def selftest():
     open(tab, 'w').write('#as_table\tbam=/some/other.bam\tbam_bytes=1\n')
     try: load_best(tab, bam); raise AssertionError('a table of another BAM was accepted')
     except SystemExit: pass
+    open(tab, 'w').write('#as_table\nr\t1000\t990\t4\tc\t1000\n')              # a table without ms columns
+    try: run(bam, tab, os.path.join(d, 'n.bam'), 'msgap:10', 1); raise AssertionError('an ms rule ran on a table without ms')
+    except SystemExit: pass
+    assert run(bam, tab, os.path.join(d, 'n.bam'), 'as:0.98', 1) == (4, 3)
     print('pool_bam selftest ok')
 
 if __name__ == '__main__':

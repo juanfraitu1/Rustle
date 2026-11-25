@@ -138,3 +138,17 @@ if __name__ == '__main__':
                 k = (m['in_default'] == 1) if kind == 'A' else np.ones(len(m['in_ref']), bool); Xs.append(design(m, key, k)[0]); ys.append(m['in_ref'][k])
             w = fit(np.vstack(Xs), np.concatenate(ys)); k = (d['in_default'] == 1) if kind == 'A' else np.ones(len(d['in_ref']), bool)
             (report_A(f'FROZEN pooled -> {n}', design(d, key, k)[0] @ w, d, k) if kind == 'A' else report_B(f'FROZEN pooled -> {n}', design(d, key, k)[0] @ w, d))
+
+COMP = str.maketrans('ACGT', 'TGCA')
+def intron_extras(d, keep, fa_p):
+    """per chain: introns that are not GT-AG on the model's strand, length of the shortest intron (genome only)"""
+    import pysam
+    fa = pysam.FastaFile(fa_p); nc = []; mi = []
+    for c, key, s in zip(d['chrom'][keep], d['key'][keep], d['strand'][keep]):
+        k = 0; m = 1 << 60
+        for iv in key.split(','):
+            a, b = map(int, iv.split('-')); m = min(m, b - a); dn = (fa.fetch(c, a, a + 2) + fa.fetch(c, b - 2, b)).upper()
+            if s == '-': dn = dn.translate(COMP)[::-1]
+            k += dn != 'GTAG'
+        nc.append(k); mi.append(m)
+    return np.array(nc, float), np.array(mi, float)

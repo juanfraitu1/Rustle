@@ -2,9 +2,9 @@
 import csv, sys, collections
 P = sys.argv[1]
 rd = lambda f: list(csv.DictReader(open(P + f), delimiter='\t'))
-if not __import__('os').path.exists(P + '.assign.assignments.tsv'):
-    sys.exit(f"check_run_tables: {P}.assign.assignments.tsv is missing. Since register 1903 (2026-11-22) `all` runs the family report `o2` instead of the legacy `assign`; these checks need the assign tables: run the stage by name (`rustle_pipeline.sh assign ...`); `all` no longer runs it.")
-cop, clu, asg, q, fam = rd('.fam.copies.tsv'), rd('.fam.clusters.tsv'), rd('.assign.assignments.tsv'), rd('.assign.quant.tsv'), rd('.assign.families.tsv')
+O2 = __import__('os').path.exists(P + '.assign.assignments.tsv')   # since register 1903 `all` runs the family report, not `assign`
+cop, clu = rd('.fam.copies.tsv'), rd('.fam.clusters.tsv')
+asg, q, fam = (rd('.assign.assignments.tsv'), rd('.assign.quant.tsv'), rd('.assign.families.tsv')) if O2 else ([], [], [])
 skip = set(l.strip() for l in open(P + '.assign.excluded.txt')) if __import__('os').path.exists(P + '.assign.excluded.txt') else set()
 def chk(name, bad, n): print(f"{'ok  ' if not bad else 'FAIL'} {name}: {len(bad)} of {n}" + (f"  e.g. {list(bad)[:3]}" if bad else ''))
 # O1
@@ -31,6 +31,8 @@ hdr = [l[1:].strip() for l in open(P + '.fam.copies.fa') if l.startswith('>')]
 want = [f"{r['family_id']}|{r['copy_idx']}|{r['chrom']}:{r['start']}-{r['end']}|{r['strand']}|nexon={r['n_exon']}" for r in cop]
 chk('copies.fa: one record per copy row, same order', [] if hdr == want else ['order or content differs'], len(cop))
 # O2
+if not O2:
+    print(f"info {P}.assign.assignments.tsv is absent (the legacy `assign` stage was not run): the family tables were checked, the assignment checks skipped"); sys.exit(0)
 ckey = {(r['family_id'], r['copy_idx']) for r in cop}
 qkey = collections.Counter((r['family_id'], r['copy_index']) for r in q)
 chk('quant: copy exists in the copy table', [k for k in qkey if k not in ckey], len(qkey))

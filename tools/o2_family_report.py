@@ -12,6 +12,10 @@ Writes OUT_PREFIX.families.tsv (one row per family) and OUT_PREFIX.copies.tsv (o
 the distinct sequences (per isoform) the reads show among copies they are exactly tied between, counted at the copy the
 tied reads were read at; in the family row their sum. A count of sequences, not of copies: two alleles of one copy are two.
 The same question for several tools, with planted truth: bench/o2_families/ (docs/O2_FAMILY_BENCHMARK.md).
+A copy named GENE.pK (an extra representative of a locus, added by the families stage's `famreps` step) is a group of
+the transcripts of GENE: each transcript of GENE is counted at the piece whose representative exons it shares the most
+bases with (as tools/locus_reps.py groups them). Tie groups and tied sequences are per locus, so they are reported at
+the first piece (.p1) only. Before 2026-11-25 such copies were reported with 0 transcripts (54 of 1,345 on OR6737).
 --selftest runs the pure parts."""
 import sys, os, re, csv, collections
 
@@ -29,12 +33,30 @@ def load_gtf(path):
             m = meta.setdefault(t.group(1), [g.group(1), 0.0, '.'])
             if r: m[1] = float(r.group(1))
             if n: m[2] = n.group(1)
-    out = collections.defaultdict(lambda: {'tx': 0, 'spliced': 0, 'chains': set(), 'reads': 0.0, 'name': '.'})
+    out = collections.defaultdict(new_gene); TX.clear()
     for t, e in ex.items():
-        g, r, n = meta[t]; e.sort(); d = out[g]; d['tx'] += 1; d['reads'] += r
-        if n != '.': d['name'] = n
-        if len(e) > 1: d['spliced'] += 1; d['chains'].add(tuple((a[1], b[0]) for a, b in zip(e, e[1:])))
+        g, r, n = meta[t]; e.sort(); add_tx(out[g], e, r, n); TX[g].append((e, r, n))
     return out
+
+TX = collections.defaultdict(list)      # gene -> [(exons, reads, name)] of the GTF last loaded, for the pieces of a locus
+def new_gene(): return {'tx': 0, 'spliced': 0, 'chains': set(), 'reads': 0.0, 'name': '.'}
+def add_tx(d, e, r, n):
+    d['tx'] += 1; d['reads'] += r
+    if n != '.': d['name'] = n
+    if len(e) > 1: d['spliced'] += 1; d['chains'].add(tuple((a[1], b[0]) for a, b in zip(e, e[1:])))
+
+PIECE = re.compile(r'\.p(\d+)$')
+def pieces(genes, copies):
+    """genes gets an entry for every copy GENE.pK: the transcripts of GENE that share the most exon bases with that piece"""
+    by = collections.defaultdict(dict)
+    for r in copies:
+        if PIECE.search(r['gene_id']) and r['gene_id'] not in genes and r.get('exons'):
+            by[PIECE.sub('', r['gene_id'])][r['gene_id']] = [(int(a) + 1, int(b)) for a, b in (x.split('-') for x in r['exons'].split(','))]   # the table is 0-based half-open
+    shared = lambda a, b: sum(max(0, min(e, e2) - max(s, s2) + 1) for s, e in a for s2, e2 in b)
+    for parent, ps in by.items():
+        for e, r, n in TX.get(parent, ()):
+            sh = {k: shared(e, x) for k, x in ps.items()}; k = max(sorted(sh), key=lambda k: sh[k])
+            if sh[k] > 0: add_tx(genes[k], e, r, n)
 
 def report(genes, copies, eq=None, sq=None):
     """copies: rows of fam.copies.tsv (dicts). -> family rows, copy rows"""
@@ -47,7 +69,8 @@ def report(genes, copies, eq=None, sq=None):
         nsq = 0; tx = sp = iso = 0; reads = 0.0; chroms = set(); names = set(); placed = mx = 0; groups = set(); lo = hi = 0
         for r in fam[f]:
             g = genes.get(r['gene_id'], {'tx': 0, 'spliced': 0, 'chains': set(), 'reads': 0.0, 'name': '.'})
-            e = (eq or {}).get(r['gene_id'])
+            first = PIECE.sub('', r['gene_id']) if r['gene_id'].endswith('.p1') else None      # per-locus tables: at the first piece only
+            e = (eq or {}).get(r['gene_id']) or (eq or {}).get(first)
             tx += g['tx']; sp += g['spliced'] > 0; iso += len(g['chains']); reads += g['reads']; chroms.add(r['chrom'])
             if g['name'] != '.': names.add(g['name'])
             row = [f, r['gene_id'], r['chrom'], r.get('locus_start', r['start']), r.get('locus_end', r['end']), r['strand'], g['name'], g['tx'], len(g['chains']), f"{g['reads']:g}"]
@@ -56,7 +79,7 @@ def report(genes, copies, eq=None, sq=None):
                 placed += p; mx += m; lo += p >= 2; hi += m > 0
                 if e and e['group'] != '.': groups.add(e['group'])
                 row += [p, m, e['em'] if e else '0.0', e['group'] if e else '.']
-            if sq is not None: row.append(sq.get(r['gene_id'], 0)); nsq += sq.get(r['gene_id'], 0)
+            if sq is not None: k = sq.get(r['gene_id'], 0) or sq.get(first, 0); row.append(k); nsq += k
             C.append(row)
         row = [f, len(fam[f]), sp, tx, iso, f'{reads:g}', len(chroms), ','.join(sorted(names)) or '.']
         if eq is not None: row += [placed, len(groups), max(1, lo) if hi else 0, hi]
@@ -93,6 +116,11 @@ def selftest():
     assert F[0][-1] == 3 and C[0][-1] == 3 and C[1][-1] == 0, (F, C)
     sp = os.path.join(d, 's.tsv'); open(sp, 'w').write('group\tloci\tread_at\tcandidate\treads\talleles\tp\tambiguous_reads\tread_names\tisoform\n' + 'G\tA,B\tA\t1\t9\treference\tNA\t0\t' + 'r' * 300000 + '\t1\nG\tA,B\tA\t2\t3\t5SA\t0.001\t0\tx,y,z\t1\n')
     assert read_sequences(sp) == {'A': 2}
+    # a locus cut into two pieces: A.p1 holds a1 / a2 (exons 1-100, 201-300), A.p2 would hold a transcript at 5001-5100 (none here)
+    g = load_gtf(p); cp2 = [dict(family_id='F0', gene_id='A.p1', chrom='c', start='0', end='300', strand='+', exons='0-100,200-300'),
+                            dict(family_id='F0', gene_id='A.p2', chrom='c', start='5000', end='5100', strand='+', exons='5000-5100')]
+    pieces(g, cp2); F, C = report(g, cp2, None, {'A': 3})
+    assert C[0][7:] == [2, 1, '7', 3] and C[1][7:] == [0, 0, '0', 0] and F[0][3] == 2, (F, C)
     print('o2_family_report selftest ok')
 
 def main():
@@ -102,10 +130,12 @@ def main():
     if '--eq' in a: i = a.index('--eq'); eqp = a[i + 1]; del a[i:i + 2]
     sqp = None
     if '--sequences' in a: i = a.index('--sequences'); sqp = a[i + 1]; del a[i:i + 2]
+    if len(a) != 3: sys.exit(__doc__)
     gtf, cop, out = a
     sq = read_sequences(sqp) if sqp else None
     eq = {r['locus']: r for r in csv.DictReader(open(eqp), delimiter='\t')} if eqp else None
-    F, C = report(load_gtf(gtf), list(csv.DictReader(open(cop), delimiter='\t')), eq, sq)
+    genes = load_gtf(gtf); copies = list(csv.DictReader(open(cop), delimiter='\t')); pieces(genes, copies)
+    F, C = report(genes, copies, eq, sq)
     fh = 'family_id\tcopies\tcopies_spliced\ttranscripts\tisoforms\treads\tchroms\tnames' + ('\treads_placed\ttie_groups\tmin_expressed\tmax_expressed' if eq is not None else '') + ('\ttied_sequences' if sq is not None else '')
     ch = 'family_id\tgene_id\tchrom\tstart\tend\tstrand\tname\ttranscripts\tisoforms\treads' + ('\treads_placed\treads_max\treads_em\ttie_group' if eq is not None else '') + ('\ttied_sequences' if sq is not None else '')
     for p, h, rows in ((out + '.families.tsv', fh, F), (out + '.copies.tsv', ch, C)):

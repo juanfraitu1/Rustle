@@ -29,15 +29,19 @@ def attach(a_rows, c_rows, linked):
     c_members = collections.defaultdict(set)
     for _, r in c_rows:
         c_members[r['family_id']].add(orig(r['gene_id']))
+    fams_of = collections.defaultdict(list)         # locus -> the A families holding it (one lookup per mate, not one pass over every family per piece)
+    for f, gs in a_members.items():
+        for g in gs: fams_of[g].append(f)
     placed = collections.defaultdict(list)          # (A family, parent locus) -> [(line, dict)] of pieces
     for line, r in c_rows:
         if not re.search(r'\.p\d+$', r['gene_id']):
             continue
         parent = orig(r['gene_id'])
         mates = c_members[r['family_id']] - {parent}
-        best = max(sorted(a_members), key=lambda f: len(a_members[f] & mates), default=None)
-        if best is None or not a_members[best] & mates:
+        n = collections.Counter(f for g in mates for f in fams_of.get(g, ()))
+        if not n:
             continue
+        best = min(n, key=lambda f: (-n[f], f))      # most shared mates; ties: the first family by name, as before
         placed[(best, parent)].append((line, r))
     replaced = set(placed)
     out = [line for line, r in a_rows if (r['family_id'], orig(r['gene_id'])) not in replaced]

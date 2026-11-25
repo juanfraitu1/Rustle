@@ -158,7 +158,10 @@ def main():
     if a.as_table:
         best = {}
         for l in open(a.as_table):
-            if l[0] != '#':
+            if l[0] == '#':       # the header records the BAM's size: the scores of another BAM give wrong ratios without any error
+                m = re.search(r'\tbam_bytes=(\d+)', l)
+                if m and int(m.group(1)) != os.path.getsize(a.bam): sys.exit(f'member_discovery: {a.as_table} was made from a BAM of {m.group(1)} bytes; {a.bam} has {os.path.getsize(a.bam)}')
+            else:
                 f = l.split('\t', 2); best[f[0]] = int(f[1]) if f[1].lstrip('-').isdigit() else 0
         G['best'] = best
     refs = list(pysam.AlignmentFile(a.bam).references)
@@ -176,12 +179,13 @@ def main():
         w.write('place\tchrom\tstart\tend\tstrand\tsource\treads\tbest_ratio\tmedian_ratio\tmax_bases\tlocus\tfootprint_bp\tfootprint\n')
         for r, _ in rows:
             fp = r[10]; w.write(f"M_{r[0]}_{r[1]}_{r[3]}\t{r[0]}\t{r[1]}\t{r[2]}\t{r[3]}\t{r[4]}\t{r[5]}\t{r[6]:.3f}\t{r[7]:.3f}\t{r[8]}\t{r[9]}\t{sum(b - a for a, b in fp)}\t{','.join(f'{x}-{y}' for x, y in fp[:400])}\n")
-    done = set(); nnew = 0
+    done = set(); nnew = 0; sources = collections.defaultdict(set)      # every source of a place, in one pass (was a scan of all rows per place, cut to one source past 200,000 rows)
+    for x, _ in rows: sources[(x[0], x[1], x[3])].add(x[4])
     with open(a.out + '.members.gtf', 'w') as w:
         for r, bl in rows:
             k = (r[0], r[1], r[3])
             if r[9] != '.' or k in done: continue
-            done.add(k); nnew += 1; srcs = sorted({x[0][4] for x in rows if (x[0][0], x[0][1], x[0][3]) == k}) if len(rows) < 200000 else [r[4]]
+            done.add(k); nnew += 1; srcs = sorted(sources[k])
             at = f'gene_id "M_{r[0]}_{r[1]}_{r[3]}"; transcript_id "M_{r[0]}_{r[1]}_{r[3]}.1"; o2_status "member_candidate"; sources "{",".join(srcs)}"; reads "{r[5]}"; best_ratio "{r[6]:.3f}";'
             w.write(f'{r[0]}\tmember_discovery\ttranscript\t{bl[0][0] + 1}\t{bl[-1][1]}\t.\t{r[3]}\t.\t{at}\n')
             for x, y in bl: w.write(f'{r[0]}\tmember_discovery\texon\t{x + 1}\t{y}\t.\t{r[3]}\t.\t{at}\n')

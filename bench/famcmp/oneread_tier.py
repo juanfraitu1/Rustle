@@ -18,7 +18,7 @@ import sys, os, re, json, collections
 import numpy as np
 B = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, B)
 import chain_rules as R
-src = open(f'{B}/chainscore.py').read(); exec(src[:src.index('\ncmd = ')])  # intron_extras (chainscore.py is a script)
+intron_extras = R.intron_extras
 
 def design(d, one, noncanon, min_intron):
     X0, names = R.design(d, 'default_reads', one)

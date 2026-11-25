@@ -83,3 +83,19 @@ multi-copy stage (the stage rerun with the bypass on the runs of rows 1920 / 193
 `ms within 10` through `pool_bam.py`. Measures as for the gorillas (`toolcompare.py --species human`).
 CONFIRMED when on both samples M2's annotated copies with a spliced transcript are not lower than A0's and its junction
 precision is not lower by more than 0.01. Prediction: confirmed, with junction precision up and fewer rescued loci.
+
+### Result of the confirmation (jobs 4504337 A119b, 4504338 HG002; 2026-11-25): NOT CONFIRMED
+`toolcompare.py --species human`, annotated copies with a spliced transcript / junction precision / spliced transcripts:
+
+| | A119b assembly | A119b with the mode | HG002 assembly | HG002 with the mode | rescued loci A119b / HG002 |
+|---|---|---|---|---|---|
+| A0, AS 0.98 | 123 / 0.49 / 1,079 | 127 / 0.49 / 1,096 | 24 / 0.42 / 417 | 37 / 0.45 / 442 | 4,398 / 1,584 |
+| M2, within 10 `ms` | 123 / 0.51 / 990 | 127 / 0.51 / 1,007 | 22 / 0.45 / 303 | 34 / 0.47 / 328 | 3,402 / 1,209 |
+
+A119b holds (127 = 127 copies, precision 0.49 -> 0.51). HG002 FAILS the registered condition: 34 annotated copies against
+37 (22 against 24 before the mode), although junction precision rises (0.45 -> 0.47). Secondaries admitted: A119b 2.8% of
+46.1 M, HG002 1.2% of 168.3 M. Transcripts shared with A0: 0.926 / 0.965 of the union.
+My prediction (confirmed) was wrong. Reading: the narrower pool is consistently more precise at the junction level on all four
+real samples (+0.02 to +0.05) and rescues about a quarter fewer loci, and on the deepest library it costs annotated copies.
+It is a precision / recall trade, not a free improvement: the pool stays AS 0.98; `ms` within 10 is not offered as the default.
+The filter (`pool_bam.py --rule msgap:10`) stays available as a stricter setting for a user who wants the precision.

@@ -84,12 +84,13 @@ def main():
         if gap == 0: sets[q].add(g)
     placed.pop(E.OUTSIDE, None); classes = collections.Counter()
     if a.weighted:
-        solo = collections.Counter(); wcl = collections.Counter()      # solo = reads whose best score is at one locus alone
+        solo = collections.Counter(); wcl = collections.Counter(); mem = {}      # solo = reads whose best score is at one locus alone
         for q, d in gaps.items():
             if len(d) == 1: placed.update(k for k in d if k != E.OUTSIDE); continue
             if len(sets[q]) == 1: solo.update(sets[q] - {E.OUTSIDE})
             out = 'outside#' + ','.join(sorted(k for k in d if k != E.OUTSIDE))
-            wcl[frozenset((out if (k == E.OUTSIDE and not a.pooled) else k, g) for k, g in d.items())] += 1
+            mem[q] = [(out if (k == E.OUTSIDE and not a.pooled) else k, g) for k, g in d.items()]      # the read's candidates, named once for the EM and the shares
+            wcl[frozenset(mem[q])] += 1
         theta = em_w(wcl, placed, a.weighted); mx = collections.Counter(placed)
         for c, n in wcl.items():
             for l, _ in c: mx[l] += n
@@ -98,10 +99,8 @@ def main():
             import gzip
             with gzip.open(a.shares + '.tmp', 'wt', compresslevel=3) as w:
                 w.write('read\tlocus\tgap\tshare\n')
-                for q, d in gaps.items():
-                    if len(d) < 2: continue
-                    out = 'outside#' + ','.join(sorted(k for k in d if k != E.OUTSIDE))
-                    for l, g, x in sorted(read_shares([(out if (k == E.OUTSIDE and not a.pooled) else k, g) for k, g in d.items()], theta, a.weighted), key=lambda z: -z[2]): w.write(f'{q}\t{l}\t{g}\t{x:.3f}\n')
+                for q, c in mem.items():
+                    for l, g, x in sorted(read_shares(c, theta, a.weighted), key=lambda z: -z[2]): w.write(f'{q}\t{l}\t{g}\t{x:.3f}\n')
             os.replace(a.shares + '.tmp', a.shares)
         sets = {}
     for s in sets.values():
@@ -117,15 +116,16 @@ def main():
     em = {l: theta.get(l, float(placed.get(l, 0))) for l in meta}
     keep = {l for l in meta if round(em[l], 2) >= a.min_em}   # at the precision the table prints: a 1e-4 leak to a far rival does not unseat a locus (row 1921, amendment)
     status = {l: ('expressed' if placed.get(l, 0) >= 1 else 'shared') if l in keep else 'homology_only' for l in meta}
-    with open(a.out + '.em.tsv', 'w') as w:
+    with open(a.out + '.em.tsv.tmp', 'w') as w:
         w.write('locus\tplaced\tmax\tem\tkept\tstatus\n')
         for l in sorted(meta, key=lambda l: (meta[l][0], meta[l][1], l)): w.write(f'{l}\t{placed.get(l, 0)}\t{mx[l]}\t{em[l]:.2f}\t{int(l in keep)}\t{status[l]}\n')
-    n = 0
+    os.replace(a.out + '.em.tsv.tmp', a.out + '.em.tsv')
+    n = 0; old = re.compile(r' reads_em "[^"]*"; o2_status "[^"]*";')      # labels of an earlier run on this file are replaced, not doubled
     with open(a.out + '.gtf.tmp', 'w') as w:
         for l in open(a.gtf):
             f = l.rstrip('\n').split('\t'); g = re.search(r'gene_id "([^"]+)"', f[8]) if len(f) > 8 else None
             if g and g.group(1) in meta and g.group(1) not in keep and not a.label: n += f[2] == 'transcript'; continue
-            if g and g.group(1) in em and f[2] == 'transcript': l = l.rstrip('\n').rstrip(';') + f'; reads_em "{em[g.group(1)]:.1f}"; o2_status "{status[g.group(1)]}";\n'
+            if g and g.group(1) in em and f[2] == 'transcript': l = old.sub('', l).rstrip('\n').rstrip(';') + f'; reads_em "{em[g.group(1)]:.1f}"; o2_status "{status[g.group(1)]}";\n'
             w.write(l)
     os.replace(a.out + '.gtf.tmp', a.out + '.gtf')
     c = collections.Counter(status.values())

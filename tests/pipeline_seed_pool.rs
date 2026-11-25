@@ -452,6 +452,18 @@ fn an_as_table_built_for_this_bam_is_reused_and_one_for_another_bam_is_rebuilt()
     };
     let r = assemble_with("table_resized", &["--as-table", t.to_str().unwrap()], &[], Some(FAI), &setup);
     assert!(r.as_table_ran, "a table made from a BAM of another size is rebuilt");
+    // 2026-11-25: a NAMED table whose own BAM still exists is that BAM's live table: refused, and left as it was
+    let t = case_dir("table_live").join("shared").join("mol.tsv");
+    let live = |d: &Path| {
+        std::fs::create_dir_all(d.join("shared")).unwrap();
+        std::fs::write(d.join("shared/other.bam"), "x").unwrap();
+        let h = format!("#as_table\tbam={}\tbam_bytes=1\trecords=1\tmolecules=1\n", d.join("shared/other.bam").display());
+        std::fs::write(d.join("shared").join("mol.tsv"), h).unwrap();
+    };
+    let r = assemble_with("table_live", &["--as-table", t.to_str().unwrap()], &[], Some(FAI), &live);
+    assert_eq!(r.code, 2, "{}", r.stderr);
+    assert!(!r.as_table_ran && r.stderr.contains("not overwritten"), "{}", r.stderr);
+    assert!(std::fs::read_to_string(&t).unwrap().contains("other.bam"), "the other BAM's table is untouched");
 }
 
 #[test]

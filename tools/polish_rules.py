@@ -240,7 +240,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('gtf'); ap.add_argument('out'); ap.add_argument('reasons', nargs='?')
     ap.add_argument('--parity', action='store_true', help='OUT is the Rust-polished GTF of the same run: compare, write nothing')
-    ap.add_argument('--mode', default='full'); ap.add_argument('--mono-quantile', type=float, default=0.82); ap.add_argument('--isoform-fraction', type=float, default=0.02)
+    ap.add_argument('--mode', default='full', choices=('full', 'light', 'none')); ap.add_argument('--mono-quantile', type=float, default=0.82); ap.add_argument('--isoform-fraction', type=float, default=0.02)
     ap.add_argument('--ism-ratio', type=float, default=0.3); ap.add_argument('--retained-ratio', type=float, default=10.0); ap.add_argument('--no-mono-shadow', action='store_true')
     ap.add_argument('--fuzzy', type=int, default=0)
     o = ap.parse_args()
@@ -252,7 +252,8 @@ def main():
         only = mine - rust; mono = sum(1 for c in only if len(c) == 1)
         print(f'polish_rules parity: python keeps {len(mine)} transcripts, rust {len(rust)}; shared {len(mine & rust)}; only python {len(only)} ({mono} of them single-exon: the assembler also removes internally primed single-exon transcripts, a rule that needs the reads and is not in this file); only rust {len(rust - mine)}; removed by rule ' + ', '.join(f'{k} {v}' for k, v in sorted(n.items())))
         return
-    with open(o.out, 'w') as w: w.writelines(kept)
+    with open(o.out + '.tmp', 'w') as w: w.writelines(kept)
+    __import__('os').replace(o.out + '.tmp', o.out)
     if o.reasons:
         with open(o.reasons, 'w') as w:
             w.write('transcript\tcontig\trule\n'); w.writelines(f'{t}\t{c}\t{r}\n' for t, (c, r) in sorted(why.items(), key=lambda z: (z[1][0], z[0])))

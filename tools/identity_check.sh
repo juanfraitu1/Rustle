@@ -71,14 +71,11 @@ if [ "${FULL:-0}" = 1 ]; then
   # the original golden: mGorGor1 GGO_mm.bam + GGO.fasta, NC_073244.2:1-5000000
   BAM=${IDENTITY_BAM:?set IDENTITY_BAM}; FASTA=${IDENTITY_FASTA:?set IDENTITY_FASTA}; REGION=${IDENTITY_REGION:-NC_073244.2:1-5000000}
   R=$W/real; mkdir -p $R
-  if [ "$MODE" = golden ]; then
-    bash tools/rlock.sh heavy bash -c "samtools view -b $BAM $REGION > $R/slice.bam && samtools index $R/slice.bam"
-    bash tools/rlock.sh heavy bash -c "cd $R && '$BIN/copy_assign' --assemble-only --genome-wide --assembly-junctions strict --bam slice.bam --fasta '$FASTA' --out slice --threads 4 > assemble.log 2>&1"
-    bash tools/rlock.sh heavy bash -c "cd $R && env -u RUSTLE_CACHE_DIR '$BIN/mcl_families' --from-gtf slice.families.gtf --fasta '$FASTA' --threads 4 --min-exonic-bp 1 --min-shared-exon-frac 0.60 --emit-units --out slice.fam > families.log 2>&1"
-  else
-    bash tools/rlock.sh heavy bash -c "samtools view -b $BAM $REGION > $R/slice.bam && samtools index $R/slice.bam"
-    bash tools/rlock.sh heavy bash -c "cd $R && '$BIN/copy_assign' --assemble-only --genome-wide --assembly-junctions strict --bam slice.bam --fasta '$FASTA' --out slice --threads 4 > assemble.log 2>&1"
-    bash tools/rlock.sh heavy bash -c "cd $R && env -u RUSTLE_CACHE_DIR '$BIN/mcl_families' --from-gtf slice.families.gtf --fasta '$FASTA' --threads 4 --min-exonic-bp 1 --min-shared-exon-frac 0.60 --emit-units --out slice.fam > families.log 2>&1"
+  # the same three steps for both modes; only what is done with the products differs
+  bash tools/rlock.sh heavy bash -c "samtools view -b $BAM $REGION > $R/slice.bam && samtools index $R/slice.bam"
+  bash tools/rlock.sh heavy bash -c "cd $R && '$BIN/copy_assign' --assemble-only --genome-wide --assembly-junctions strict --bam slice.bam --fasta '$FASTA' --out slice --threads 4 > assemble.log 2>&1"
+  bash tools/rlock.sh heavy bash -c "cd $R && env -u RUSTLE_CACHE_DIR '$BIN/mcl_families' --from-gtf slice.families.gtf --fasta '$FASTA' --threads 4 --min-exonic-bp 1 --min-shared-exon-frac 0.60 --emit-units --out slice.fam > families.log 2>&1"
+  if [ "$MODE" != golden ]; then
     for f in slice.gtf slice.fam.copies.tsv slice.fam.clusters.tsv; do
       cmp -s $R/$f "$GOLD/real_$f" && echo "[identity] IDENTICAL real $f" || { echo "[identity] DIFFERENT real $f"; exit 1; }
     done
@@ -91,4 +88,5 @@ if [ "$MODE" = golden ]; then
   fi
   echo "[identity] golden saved to $GOLD"
 fi
+rm -rf "$W"   # kept on a failure (the messages above name files in it), removed when everything passed
 echo "[identity] ALL GREEN ($MODE)"

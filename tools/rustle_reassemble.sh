@@ -52,6 +52,11 @@ read_polish() {
   for f in seed_env scope; do
     [ -s "$OUT.assemble.$f" ] || { echo "missing $OUT.assemble.$f: rerun the driver's assemble stage (same PREFIX), which writes it" >&2; exit 2; }
   done
+  # pass 1 with the short-exon repair (the default of `assemble` named alone since 2026-11-22) assembled REWRITTEN reads from a
+  # copy of the BAM that is gone; pass 2 on $BAM would then differ from pass 1 by more than the home table
+  if [ -s "$OUT.shortexons.reads.tsv" ] && [ "$(wc -l < "$OUT.shortexons.reads.tsv")" -gt 1 ]; then
+    echo "$OUT was assembled with the short-exon repair ($OUT.shortexons.reads.tsv): pass 2 would read other alignments than pass 1. Rerun assemble with RUSTLE_SHORTEXONS=0 on this PREFIX first" >&2; exit 2
+  fi
   mapfile -t PASS1_SEED < "$OUT.assemble.seed_env"
   mapfile -t SCOPE < "$OUT.assemble.scope"
 }
@@ -82,9 +87,9 @@ stage_pass2() {
   if [ "$ARM" = S ]; then
     seed_env=("${PASS1_SEED[@]}")
   else
-    # primaries only, with pass 1's read-strand setting (the one non-pool word of its seeding environment)
+    # primaries only, with pass 1's read-strand and read-count settings (the non-pool words of its seeding environment)
     seed_env=(-u RUSTLE_GTF_SECONDARY -u RUSTLE_GTF_SECONDARY_AS_RATIO -u RUSTLE_GTF_SECONDARY_AS_TABLE)
-    local w; for w in "${PASS1_SEED[@]}"; do case "$w" in RUSTLE_READ_STRAND=*) seed_env+=("$w");; esac; done
+    local w; for w in "${PASS1_SEED[@]}"; do case "$w" in RUSTLE_READ_STRAND=*|RUSTLE_DUP_COUNT=*) seed_env+=("$w");; esac; done
   fi
   say "pass2 ($ARM): re-assembly with $table -> $OUT.$TAG.gtf"
   env "${seed_env[@]}" "RUSTLE_READ_HOME_TABLE=$table" "$BIN/copy_assign" --assemble-only "${SCOPE[@]}" --threads "$THREADS" \

@@ -41,6 +41,7 @@ OUT_PREFIX.family_reads.tsv.gz (with --copies)   the rows of reads on a gene of 
 import sys, os, re, gzip, argparse, collections, multiprocessing, bisect
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import eq_classes as E
+import tie_table as TT
 
 COLS = 'read\tcontig\tstart\tend\tstrand\tintrons\trelation\ttranscript\tgene\treplaced\tshortexon_rewrite\trival_within_10ms\tlabel\tsequence\treason'
 CANON = {('GT', 'AG'), ('GC', 'AG'), ('AT', 'AC')}
@@ -198,6 +199,7 @@ def run(a):
     import pysam
     G.update(tx=load_gtf(a.gtf), bam=a.bam, fasta=a.fasta, window=a.window, out=a.out)
     refs = list(pysam.AlignmentFile(a.bam).references); G['order'] = {c: i for i, c in enumerate(refs)}
+    if a.as_table: TT.check_table(a.as_table, a.bam)      # another BAM's scores would mark the wrong reads as near-tied, silently
     G['ties'] = E.load_ties(a.as_table, E.floor_fn(10), 'ms') if a.as_table else None
     se = set()
     if a.shortexons and os.path.exists(a.shortexons):

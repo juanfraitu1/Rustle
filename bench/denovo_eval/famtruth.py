@@ -12,7 +12,7 @@ Metrics (family_score's): pairwise sensitivity / precision / F over gene pairs; 
 share, foreign judgeable genes in those families. Halves: true families split by the SHA-1 of their smallest Ensembl ID.
 """
 import argparse
-import sys
+import bisect
 import collections
 import csv
 import hashlib
@@ -57,6 +57,17 @@ GGO_MAINSTAYS = {"LRPAP1": r"^LRPAP1$|alpha-2-macroglobulin receptor-associated 
                  "SPTBN5": r"^SPTBN5$|spectrin beta chain, non-erythrocytic 5"}
 YAGS = {"BPY2": r"^BPY2[BC]?$", "CDY": r"^CDY[12][AB]?$", "DAZ": r"^DAZ[1-4]$", "HSFY": r"^HSFY[12]$", "PRY": r"^PRY2?$",
         "RBMY": r"^RBMY1[A-J][0-9]?$", "TSPY": r"^TSPY[0-9]+$", "VCY": r"^VCY(1B)?$", "XKRY": r"^XKRY2?$"}
+
+
+def _union(iv):
+    """sorted half-open intervals merged where they touch or overlap -> [(s, e)]"""
+    m = []
+    for s0, e0 in sorted(iv):
+        if m and s0 <= m[-1][1]:
+            m[-1][1] = max(m[-1][1], e0)
+        else:
+            m.append([s0, e0])
+    return [tuple(x) for x in m]
 
 
 def blocks(s):
@@ -114,13 +125,7 @@ def split_collapsed(genes, collapsed, refseq_gtf):
             coding.add(g)
     rs = {}
     for g in coding:
-        u = []
-        for a, b in sorted(ex[g]):
-            if u and a <= u[-1][1]:
-                u[-1][1] = max(u[-1][1], b)
-            else:
-                u.append([a, b])
-        rs[g] = dict(chrom=meta[g][0], strand=meta[g][1], name=meta[g][2], exons=[tuple(x) for x in u])
+        rs[g] = dict(chrom=meta[g][0], strand=meta[g][1], name=meta[g][2], exons=_union(ex[g]))
     ridx = exon_index(rs)
     out, n_split, n_sub = {}, 0, 0
     for gid, d in genes.items():
@@ -130,7 +135,6 @@ def split_collapsed(genes, collapsed, refseq_gtf):
         hits = set()
         k = (d['chrom'], d['strand'])
         if k in ridx:
-            import bisect
             v, st, m = ridx[k]
             for s0, e0 in d['exons']:
                 i = bisect.bisect_left(st, s0 - m)
@@ -186,13 +190,7 @@ def load_ggo(human, path=None):
         if g in genes:
             by[g] += v
     for g, v in by.items():
-        m = []
-        for s0, e0 in sorted(v):
-            if m and s0 <= m[-1][1]:
-                m[-1][1] = max(m[-1][1], e0)
-            else:
-                m.append([s0, e0])
-        genes[g]['exons'] = [tuple(x) for x in m]
+        genes[g]['exons'] = _union(v)
     genes = {g: d for g, d in genes.items() if d['exons']}
     if _os.environ.get('DENOVO_GGO_ENS_MAP'):  # r1611: gene id -> human Ensembl gene (best protein hit) for genes with no symbol-inherited id
         for line in open(_os.environ['DENOVO_GGO_ENS_MAP']):
@@ -241,13 +239,7 @@ def load_gtf(path):
                                                a.get('transcript_biotype', a.get('transcript_type')) == 'protein_coding'):
             genes[g]['biotype'] = 'protein_coding'  # no gene biotype (RefSeq GTF): a coding transcript (NM_/XM_) makes it coding
     for g, v in ex.items():
-        m = []
-        for s0, e0 in sorted(v):
-            if m and s0 <= m[-1][1]:
-                m[-1][1] = max(m[-1][1], e0)
-            else:
-                m.append([s0, e0])
-        genes[g]['exons'] = [tuple(x) for x in m]
+        genes[g]['exons'] = _union(v)
     GENES.clear()
     GENES.update(genes)
     return genes
@@ -276,13 +268,7 @@ def load_ensembl(path):
         if g in genes:
             genes[g]['exons'] += v
     for d in genes.values():
-        m = []
-        for s0, e0 in sorted(d['exons']):
-            if m and s0 <= m[-1][1]:
-                m[-1][1] = max(m[-1][1], e0)
-            else:
-                m.append([s0, e0])
-        d['exons'] = [tuple(x) for x in m]
+        d['exons'] = _union(d['exons'])
     genes = {g: d for g, d in genes.items() if d['exons']}
     GENES.clear()
     GENES.update(genes)
@@ -369,7 +355,6 @@ def exon_index(genes):
 
 def map_copy(idx, chrom, strand, exons):
     """CAT gene sharing the most exonic bp with the copy on its strand (None if none)."""
-    import bisect
     if (chrom, strand) not in idx:
         return None
     v, st, m = idx[(chrom, strand)]
@@ -512,7 +497,6 @@ def named(genes, expressed, fams, universe, patterns):
         rx = re.compile(pat)
         members = {g for g, d in genes.items() if rx.match(d['name']) and d['biotype'] in ('protein_coding',) or
                    (rx.match(d['name']) and 'pseudogene' not in d['biotype'] and d['biotype'] != 'lncRNA')}
-        members = {g for g in members if rx.match(genes[g]['name'])}
         exp = members & expressed
         held = collections.Counter(f for g in exp for f in gfam[g])
         best = held.most_common(1)[0] if held else (None, 0)

@@ -14,19 +14,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import chain_rules as R
 
-COMP = str.maketrans('ACGT', 'TGCA')
-def intron_extras(d, keep, fa_p):
-    """per chain: introns that are not GT-AG on the model's strand, length of the shortest intron (genome only)"""
-    import pysam
-    fa = pysam.FastaFile(fa_p); nc = []; mi = []
-    for c, key, s in zip(d['chrom'][keep], d['key'][keep], d['strand'][keep]):
-        k = 0; m = 1 << 60
-        for iv in key.split(','):
-            a, b = map(int, iv.split('-')); m = min(m, b - a); dn = (fa.fetch(c, a, a + 2) + fa.fetch(c, b - 2, b)).upper()
-            if s == '-': dn = dn.translate(COMP)[::-1]
-            k += dn != 'GTAG'
-        nc.append(k); mi.append(m)
-    return np.array(nc, float), np.array(mi, float)
+intron_extras = R.intron_extras   # in chain_rules.py: the one-read ranking uses it too
 
 def prob(d, keep, m, fa=None):
     if m.get('design') == 'frozen9':  # register 1813: no within-sample quantity

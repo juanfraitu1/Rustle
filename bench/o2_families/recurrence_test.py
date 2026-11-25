@@ -311,6 +311,9 @@ def selftest():
     hv = {f'h{i}': ({(10 * i, 'S', 'A'), (10 * i + 5, 'S', 'C')} if i % 2 else {(10 * (i - 1), 'S', 'A'), (10 * (i - 1) + 5, 'S', 'C')}, [(0, 1500)]) for i in range(40)}   # 20 patterns, 2 reads each
     r0 = decide(hv, {}, max_patterns=10); assert r0[0] is None and r0[1] == 20, r0[:2]
     assert decide(hv, {}, max_patterns=0)[0] is not None and decide(hv, {}, max_patterns=1000)[0] is not None
+    sig = [['/x.bam', 5, 9], 2, 'v1']
+    assert cache_ok({'signature': sig, 'qualities': False}, sig, False) and not cache_ok({'signature': sig, 'qualities': False}, sig, True)
+    assert not cache_ok({'signature': [['/x.bam', 6, 9], 2, 'v1'], 'qualities': True}, sig, False) and not cache_ok({}, sig, False)
     print('recurrence_test selftest ok')
 
 def main():
@@ -331,7 +334,8 @@ def main():
         for i in range(len(units)): w.writelines(res[i][0]); n += len(res[i][0])
     os.replace(a.out + '.tmp', a.out)
     sk = [l for i in range(len(units)) for l in res[i][1]]; skp = re.sub(r'\.tsv$', '', a.out) + '.skipped.tsv'
-    with open(skp, 'w') as w: w.write('group\tloci\tread_at\tisoform\treads\tsites\tpatterns\treason\n'); w.writelines(sk)
+    with open(skp + '.tmp', 'w') as w: w.write('group\tloci\tread_at\tisoform\treads\tsites\tpatterns\treason\n'); w.writelines(sk)
+    os.replace(skp + '.tmp', skp)
     print(f'recurrence_test: {ngroups} groups, {n} sequences kept' + (f', {len(sk)} isoforms not tested as hypervariable ({skp})' if sk else '') + f' -> {a.out}')
 
 _W = {}
@@ -350,9 +354,9 @@ def _decide_unit(i):
         for x in cs: x['iso'] = ci
         cands += [x for x in cs if len(x['reads']) >= a.min_reads]
     out = []
-    for i, cd in enumerate(sorted(cands, key=lambda x: -len(x['reads'])), 1):
+    for n, cd in enumerate(sorted(cands, key=lambda x: -len(x['reads'])), 1):      # n, not i: i is this function's unit index
         al = ','.join(f'{x[0] + 1}{x[1]}{x[2]}' for x in sorted(cd['pat']) if cd['pat'][x]) or 'reference'
-        out.append(f"{k}\t{loci}\t{rep}\t{i}\t{len(cd['reads'])}\t{al}\t{'NA' if cd['p'] is None else format(cd['p'], '.3g')}\t{amb}\t{','.join(cd['reads'])}\t{cd['iso']}\n")
+        out.append(f"{k}\t{loci}\t{rep}\t{n}\t{len(cd['reads'])}\t{al}\t{'NA' if cd['p'] is None else format(cd['p'], '.3g')}\t{amb}\t{','.join(cd['reads'])}\t{cd['iso']}\n")
     return out, skipped
 
 def _collect_group(k):
@@ -386,6 +390,11 @@ def signature(a):
     """what the collected reads depend on: the four inputs (size and time) and the read floor of the collection"""
     return TT.stamp(a.gtf, a.bam, a.tab, a.fasta) + [a.min_reads, 'v1']
 
+def cache_ok(d, sig, need_qual):
+    """a cached collection stands for this run only when it was made from the same inputs and, if the run reads base
+    qualities, holds them: anything else is collected again (a stale cache would give another sample's sequences)"""
+    return d.get('signature') == sig and (not need_qual or bool(d.get('qualities')))
+
 def collect(a):
     """The costly half (two passes over the BAM): groups of tied loci and, per locus read, each tied read's differences,
     aligned blocks, intron chain and base qualities. With --cache PATH it is written there and reused by any later run on
@@ -394,7 +403,7 @@ def collect(a):
     if a.cache and os.path.exists(a.cache):
         try:
             with open(a.cache, 'rb') as f: d = pickle.load(f)
-            if d.get('signature') == signature(a) and (a.qual == 'none' or d.get('qualities')):
+            if cache_ok(d, signature(a), a.qual != 'none'):
                 print(f'recurrence_test: reads taken from the cache {a.cache}', file=sys.stderr); return d['units'], d['groups']
             print(f'recurrence_test: cache {a.cache} is for other inputs; collecting again', file=sys.stderr)
         except Exception as e: print(f'recurrence_test: cache {a.cache} unreadable ({e}); collecting again', file=sys.stderr)
