@@ -98,6 +98,8 @@
 #             locus there or `.`) and PREFIX.members.gtf (a model per place with no assembled locus, o2_status
 #             "member_candidate"). Where relatives are, expressed or not. Needs a BAM mapped with the usual -p 0.1: the
 #             slim mapping mode removes these records (row 1909). Needs python3 + pysam.
+#             RUSTLE_MEMBERS_REPEATS=BED (opt-in, rows 1956 / 1957): leaves out the places whose footprint is at least
+#             RUSTLE_MEMBERS_MAX_REPEAT (0.5) inside the BED and adds the column repeat_share (2 = column only).
 #   `assign` is the LEGACY O2 and is in NO plan of `all` any more (2026-11-22): not by default, not with --candidates,
 #   not with --legacy-catalog, and there is no switch. The stage itself is kept and runs when called by name
 #   (`rustle_pipeline.sh assign ...`, as tools/rustle_samples.sh does); the candidates and catalog stages still run in
@@ -1837,6 +1839,10 @@ stage_members() {
   # the run's score table gives each read's best AS (saves a pass); the satellite list assign used keeps the scan off the arrays
   local tab=$OUT.molecules.tsv; [ -s "$tab" ] || tab=$BAM.as_table.tsv; local mtab=(); [ ! -s "$tab" ] || mtab=(--as-table "$tab")
   local bed=${RUSTLE_EXCLUDE_BED-$FASTA.exclude.bed}; local mex=(); [ ! -s "$bed" ] || mex=(--exclude "$bed")
+  if [ -n "${RUSTLE_MEMBERS_REPEATS:-}" ]; then
+    [ -s "$RUSTLE_MEMBERS_REPEATS" ] || { echo "[rustle_pipeline] members: RUSTLE_MEMBERS_REPEATS=$RUSTLE_MEMBERS_REPEATS is missing or empty" >&2; exit 2; }
+    mex+=(--repeats "$RUSTLE_MEMBERS_REPEATS" --max-repeat "${RUSTLE_MEMBERS_MAX_REPEAT:-0.5}")
+  fi
   "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/member_discovery.py" "$gtf" "$BAM" "$OUT.members.tmp" --min-reads "${RUSTLE_MEMBERS_MIN_READS:-5}" --min-ratio "${RUSTLE_MEMBERS_MIN_RATIO:-0.3}" "${mtab[@]}" "${mex[@]}" --threads "$JOB_THREADS" > "$OUT.members.log" 2>&1 \
     || { echo "[rustle_pipeline] members failed (see $OUT.members.log); no other product is affected" >&2; rm -f "$OUT.members.tmp".*; exit 1; }
   mv -f "$OUT.members.tmp.members.tsv" "$OUT.members.tsv"; mv -f "$OUT.members.tmp.members.gtf" "$OUT.members.gtf"
