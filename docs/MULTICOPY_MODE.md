@@ -173,9 +173,11 @@ never checked against an alignment of the copies. "Not needed" is not proof of a
 and lands there).
 
 ## StringTie and secondary alignments
-`stringtie -L` 3.0.3 reads secondary records: on chimp testis 62,418 transcripts with them, 62,494 without, 61,268
-shared; the named families are identical either way (row 1870). Every StringTie assembly compared here was run on BAMs
-that hold the secondaries. IsoQuant, FLAIR and bambu were not checked.
+CORRECTED 2026-11-25 (`docs/MULTIMAPPERS_ACROSS_ASSEMBLERS_2026-11-25.md`): in long-read mode StringTie DROPS secondary and
+supplementary alignments before its splice graph (`rlink.cpp:713`); they only move bundle boundaries, which is why on chimp
+testis the output differs slightly (62,418 transcripts with them, 62,494 without, 61,268 shared; named families identical;
+row 1870), and on planted reads not at all. FLAIR, IsoQuant and bambu were checked the same day, in source and by running:
+none uses a secondary alignment; all four give the same assembly with and without them.
 
 ## Planted truth across tools (`O2_FAMILY_BENCHMARK.md`; rows 1917, 1918, reads with ragged ends)
 - Isoforms: Rustle reproduces the most of the genome-based tools at every coverage (0.82 against 0.66-0.82 at 60 reads
@@ -202,7 +204,7 @@ Not supported:
   base-level verdicts.
 - "Rustle finds more copies" in general: on planted reads only at very low coverage.
 - "Rustle by default with primaries only": on real samples it is behind StringTie on these families (480 against 587).
-- "StringTie discards secondaries": it reads them and does not turn them into copies.
+- "StringTie uses secondaries" (this file said so until 2026-11-25): in long-read mode it drops them before building; they only move bundle boundaries. Say "none of the four comparison assemblers uses a secondary alignment as evidence".
 - "better families than every tool genome-wide": row 1855 failed its bar on OR6737 recall (0.320 against StringTie 0.353),
   and with primaries only StringTie leads the human-specific pairs on A119b (0.658 against 0.588, row 1857).
 

@@ -24,6 +24,7 @@ beside it); "sequences", not copies, for the sequence count; copies are MODELED,
 | N10 | Where did each read go? How did reads become transcripts? | One file per run, and the removal rules in readable Python with exact parity. | stage `provenance`, `tools/polish_rules.py` |
 | N11 | Is correlation clustering (Strainy) the better way? | Tried twice, no gain. | rows 1823, 1932 |
 | N12 | Is this luck or overfitting? | Rule fixed before each run, unseen seeds or samples, failures recorded (mine included). | register |
+| N13 | How do the other assemblers treat multi-mapping reads? | None of the four uses a secondary alignment as evidence (read in their source, and run); Rustle uses the near-tied ones and says which models rest on them. | `docs/MULTIMAPPERS_ACROSS_ASSEMBLERS_2026-11-25.md` |
 
 ### N1. Does Rustle solve near-tied multimappers?
 - **Per read: no, and no tool can.** On planted reads minimap2's primary is at the wrong copy for 12.6% of reads; 96.5% of those are exact `ms` ties whose candidate alignments are identical in AS, edit distance and clipping (row 1922). Re-scoring with the error context moves 0 of 20,656 reads on KB3781 and breaks 39 / fixes 4 on HG002 (row 1923). minimap2 is not blind to substitutions or indels (splice:hq: match +1, mismatch -4, gap 6 + 1 per base); it ranks on `ms` and breaks exact ties by a hash.
@@ -81,6 +82,14 @@ beside it); "sequences", not copies, for the sequence count; copies are MODELED,
 
 ### N12. Luck or overfitting
 - Every row above has a `docs/PREREG_*.md` written before the run, with the rule and my prediction; seeds or samples not used for the choice; failures kept in the register (this week: rows 1922 primary accuracy, 1924, 1927, 1928 measure withdrawn, 1929 all three predictions, 1932, 1933, 1935). One incident is recorded (a shared score table overwritten on 2026-11-24, restored, nothing to rerun). The planted benchmark has known traps, listed before any comparison is trusted (ragged ends, sample != reference, favourable seeds).
+
+### N13. How the other assemblers treat multi-mapping reads
+- Checked in each tool's source and by running each on the same planted reads with and without the secondary alignments: StringTie `-L` 156 = 156 transcripts, FLAIR 203 = 203, IsoQuant 123 = 123, bambu 198 = 198. None uses a secondary alignment as evidence.
+- StringTie (long-read mode) drops them before its splice graph (`rlink.cpp:713`); FLAIR aligns with `--secondary=no` and gives each read to one isoform, by name on a tie; IsoQuant drops MAPQ-0 short alignments and deletes 1-2 exon models whose reads average MAPQ under 30; bambu never loads them; IsoCon has no genome.
+- Two tools have a switch: FLAIR `--allow_paralogs` (a tied read counts for every tied isoform; +13 transcripts on the test set) and IsoQuant `--use_secondary` (123 -> 30 transcripts: flagged reads build nothing).
+- Ignoring secondaries does not avoid the problem: the primary of a tied read is arbitrary, and each tool models 24-30 silent copies from it on planted reads.
+- **Rustle's difference:** it uses the near-tied secondaries to build, labels each locus by what the tied reads can support, and records the ties per read. **Same as the others:** it ignores 98% of secondary alignments and does not say which copy a tied read came from.
+- **Correction:** I had recorded "StringTie uses secondaries" (row 1870). It does not; they only move its bundle boundaries.
 
 ### Not answered yet (say so)
 1. (answered 2026-11-25: the `ms` pool did not confirm, N2.) 2. Alleles against copies without the individual's genome. 3. The 15% of recurrent sequences in neither haplotype; X:62.25 Mb on KB3781. 4. Labels on real samples (no truth). 5. A sample that lacks or gains a copy, on planted reads. 6. Strongly supported non-canonical junctions (GOLGA6L2 / GOLGA8Q). 7. Member discovery on real data (0.23 pair precision).
