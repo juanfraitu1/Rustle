@@ -149,3 +149,13 @@ annotated pseudogene 27 (1%). They form 1,243 loci: 987 hold one read, 52 hold f
   the two definitions mostly agree: the tied secondary is inside the AS pool for 1,030 of 1,049 under the floor, 136 of 136
   removed by a rule, 757 of 900 with a non-canonical junction, and 1,832 of 2,058 unspliced ones (of the 226 outside, 207
   are this class). Over all 4,143: 3,755 inside (91%), 388 outside.
+
+### The layer summary now counts by tied place (2026-11-25, `support_tier.py --ties`, wired into stage `o2`)
+After row 1953 the class of reads tied with a transcript elsewhere is handled in the summary instead of in the pool: a
+near-tied read that no transcript carries at its primary is looked up in the stage's tie table, and counted as carried
+elsewhere when the table lists an assembled locus other than the one under its primary. Gorilla OR6737: of the 4,143
+such reads 2,620 have a tied alignment at another assembled locus (under the floor 1,000 of 1,049; unspliced with no model
+832 of 2,058; non-canonical junction 654 of 900; removed by a rule 134 of 136) and 1,523 are carried at no tied locus:
+9.4% of the 16,275 near-tied reads (1,226 unspliced with no model, 246 non-canonical, 49 under the floor, 2 removed by a
+rule). The stricter count made by hand before (a tied alignment with at least half its bases on assembled exons) gave
+1,856 (11%); the table's rule is the tie table's own, any exon overlap with a locus. The tagged GTF is unchanged by it.

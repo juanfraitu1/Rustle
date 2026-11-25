@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Mark each transcript by whether a PRIMARY alignment carries it (register 1952).
 
-    support_tier.py ASSEMBLY.gtf PREFIX.provenance.transcripts.tsv OUT_PREFIX [--reads PREFIX.provenance.reads.tsv.gz]
+    support_tier.py ASSEMBLY.gtf PREFIX.provenance.transcripts.tsv OUT_PREFIX [--reads PREFIX.provenance.reads.tsv.gz [--ties PREFIX.o2.ties.tsv.gz]]
 
 A transcript built with near-tied secondary alignments may have no primary alignment behind it: it then shows a chain
 some read fits there as well as elsewhere, not a chain a read was placed on. tools/read_provenance.py counts, per
@@ -22,7 +22,11 @@ OUT_PREFIX.primary.gtf (layer primary), OUT_PREFIX.tied.gtf (layers tied_support
 OUT_PREFIX.tied_only.gtf and OUT_PREFIX.primary_tier.gtf (the two tiers of register 1952, for scoring), and
 OUT_PREFIX.layers.tsv: per layer the transcripts, loci and o2_status labels; with --reads, of the reads that have a
 rival within 10 ms (near-tied multimappers) how many a transcript of each layer carries and how many no transcript
-carries, by reason: what the tied reads explain and what they leave unexplained."""
+carries, by reason: what the tied reads explain and what they leave unexplained.
+With --ties (the tie table of stage o2: read, locus, gap) a read no transcript carries at its PRIMARY is also looked up
+at its tied places: when the table lists for it an assembled locus other than the one under its primary, it is counted as
+"a tied alignment sits at another assembled locus". The primary of a tied read is the aligner's arbitrary choice, so only
+the reads carried at NO tied locus are unexplained (gorilla OR6737: 11% of the near-tied reads, not 25%)."""
 import sys, re, os, gzip, collections
 
 LAYERS = ('primary', 'tied_support', 'tied_only')
@@ -38,28 +42,48 @@ def counts(table):
             out[x[i['transcript']]] = int(x[i['exact']]) + int(x[i['exact_after_replacement']]) + int(x[i['unspliced']])
     return out
 
-def tied_reads(reads, layer):
-    """the near-tied reads of the provenance read table by what carries them: -> Counter"""
+def read_ties(path):
+    """{read: assembled loci within 10 ms of its best} from the tie table (read, locus, gap, best_ms)"""
+    out = collections.defaultdict(set)
+    with gzip.open(path, 'rt') as f:
+        for l in f:
+            if l[0] == '#' or l.startswith('read\t'): continue
+            q, g, gap = l.split('\t')[:3]
+            if g != 'outside' and int(gap) <= 10: out[q].add(g)
+    return out
+
+def tied_reads(reads, layer, ties=None, under=None):
+    """the near-tied reads of the provenance read table by what carries them: -> Counter. ties {read: loci} and
+    under(contig, start, end) -> loci under the primary: a read no transcript carries is then split by whether a tied
+    alignment sits at another assembled locus"""
     c = collections.Counter()
     with gzip.open(reads, 'rt') as f:
-        h = f.readline().rstrip('\n').split('\t'); i = {k: h.index(k) for k in ('relation', 'transcript', 'rival_within_10ms', 'reason')}
+        h = f.readline().rstrip('\n').split('\t'); i = {k: h.index(k) for k in ('read', 'contig', 'start', 'end', 'relation', 'transcript', 'rival_within_10ms', 'reason') if k in h}
         for l in f:
             x = l.rstrip('\n').split('\t')
             if x[i['rival_within_10ms']] != 'yes': continue
             rel = x[i['relation']]
-            if rel == 'none': c['carried by no transcript: ' + re.sub(r' \(\d+ distinct alignments?\)', '', x[i['reason']])] += 1
+            if rel == 'none':
+                why = re.sub(r' \(\d+ distinct alignments?\)', '', x[i['reason']])
+                if ties is None: c['carried by no transcript: ' + why] += 1
+                elif ties.get(x[i['read']], set()) - under(x[i['contig']], int(x[i['start']]), int(x[i['end']])): c['no transcript at the primary, a tied alignment sits at another assembled locus: ' + why] += 1
+                else: c['carried at no tied locus: ' + why] += 1
             elif rel == 'unspliced_in_exon': c['unspliced, inside an exon of a spliced transcript (not counted as support)'] += 1
             else: c['carried by a transcript of layer ' + layer.get(x[i['transcript']].split(',')[0], 'tied_only')] += 1
     return c
 
-def run(gtf, table, out, reads=None):
+def run(gtf, table, out, reads=None, ties=None):
     N = counts(table); n = {'primary': 0, 'tied_only': 0}; layer = {}
     per = {k: [0, set(), collections.Counter()] for k in LAYERS}       # transcripts, loci, labels
     names = ('.gtf', '.primary.gtf', '.tied.gtf', '.primary_tier.gtf', '.tied_only.gtf')
     fh = {x: open(out + x + '.tmp', 'w') for x in names}
+    exons = collections.defaultdict(list)       # contig -> (start, end, gene) of every exon, to find the loci under a primary
     for l in open(gtf):
         m = re.search(r'transcript_id "([^"]+)"', l)
         if not m or l.startswith('#'): fh['.gtf'].write(l); continue
+        if ties and '\texon\t' in l:
+            f0 = l.split('\t', 5); g0 = re.search(r'gene_id "([^"]+)"', l)
+            if g0: exons[f0[0]].append((int(f0[3]), int(f0[4]), g0.group(1)))
         k = N.get(m.group(1), 0); L = layer_of(k); tier = 'primary' if k else 'tied_only'; layer[m.group(1)] = L; f = l.split('\t')
         if len(f) > 8 and f[2] == 'transcript':
             n[tier] += 1; per[L][0] += 1; g = re.search(r'gene_id "([^"]+)"', l); st = re.search(r'o2_status "([^"]+)"', l)
@@ -76,8 +100,21 @@ def run(gtf, table, out, reads=None):
         only = lambda L: len(per[L][1] - set().union(*(per[x][1] for x in LAYERS if x != L)))
         w.write(f"loci\twith a transcript of layer primary\t{len(per['primary'][1])}\nloci\tadded by tied_support (no primary-layer transcript)\t{len(per['tied_support'][1] - per['primary'][1])}\nloci\tadded by tied_only alone\t{only('tied_only')}\n")
         if reads:
-            c = tied_reads(reads, layer); tot = sum(c.values()); w.write(f'near-tied reads\ttotal (primary alignments with a rival within 10 ms)\t{tot}\n')
-            for k, v in sorted(c.items(), key=lambda kv: (not kv[0].startswith('carried by a'), -kv[1])): w.write(f'near-tied reads\t{k}\t{v}\n')
+            under = None
+            if ties:
+                import bisect
+                for v in exons.values(): v.sort()
+                st = {c0: [e[0] for e in v] for c0, v in exons.items()}; mx = {c0: max(e[1] - e[0] for e in v) for c0, v in exons.items()}
+                def under(c0, a, b):
+                    v = exons.get(c0, ()); o = set(); k = bisect.bisect_left(st.get(c0, []), a - mx.get(c0, 0))
+                    while k < len(v) and v[k][0] <= b:
+                        if v[k][1] >= a: o.add(v[k][2])
+                        k += 1
+                    return o
+            c = tied_reads(reads, layer, read_ties(ties) if ties else None, under); tot = sum(c.values()); w.write(f'near-tied reads\ttotal (primary alignments with a rival within 10 ms)\t{tot}\n')
+            for k, v in sorted(c.items(), key=lambda kv: (not kv[0].startswith('carried by a'), kv[0].startswith('carried at no'), -kv[1])): w.write(f'near-tied reads\t{k}\t{v}\n')
+            if ties:
+                n0 = sum(v for k, v in c.items() if k.startswith('carried at no tied locus')); w.write(f'near-tied reads\tUNEXPLAINED: carried at no tied locus, all reasons\t{n0}\nnear-tied reads\tunexplained share\t{n0 / max(1, tot):.3f}\n')
     os.replace(out + '.layers.tsv.tmp', out + '.layers.tsv')
     print(f"support_tier: {n['primary']} transcripts with a primary alignment ({per['primary'][0]} stand on primaries alone, {per['tied_support'][0]} with tied support), {n['tied_only']} tied-only -> {out}.gtf")
     return n
@@ -98,10 +135,18 @@ def selftest():
     T = dict((l.split('\t')[0] + '|' + l.split('\t')[1], l.rstrip('\n').split('\t')[2]) for l in open(os.path.join(d, 'o.layers.tsv')))
     assert T['layer primary|transcripts'] == '2' and T['layer primary|transcripts labelled shared'] == '1' and T['near-tied reads|total (primary alignments with a rival within 10 ms)'] == '4'
     assert T['near-tied reads|carried by a transcript of layer primary'] == '1' and T['near-tied reads|carried by a transcript of layer tied_support'] == '1' and T['near-tied reads|carried by a transcript of layer tied_only'] == '1' and T['near-tied reads|carried by no transcript: under the read floor'] == '1', T
+    rd2 = os.path.join(d, 'r2.tsv.gz'); tt = os.path.join(d, 'ties.tsv.gz')
+    with gzip.open(rd2, 'wt') as w: w.write('read\tcontig\tstart\tend\trelation\ttranscript\trival_within_10ms\treason\nr1\tc\t1\t9\texact\tP\tyes\t.\nr3\tc\t500\t600\tnone\t.\tyes\tunder the read floor (1 distinct alignment)\nr6\tc\t700\t800\tnone\t.\tyes\tunspliced, no model here\nr7\tc\t2\t8\tnone\t.\tyes\tremoved by a later rule (3 distinct alignments)\n')
+    with gzip.open(tt, 'wt') as w: w.write('#tie_table\t[]\nread\tlocus\tgap\tbest_ms\nr3\toutside\t0\t90\nr3\tG\t0\t90\nr6\toutside\t0\t80\nr6\toutside\t4\t80\nr7\tG\t0\t70\nr7\tG\t3\t70\nr3\tH\t30\t90\n')
+    run(g, t, os.path.join(d, 'o2'), rd2, tt)
+    T = dict((l.split('\t')[1], l.rstrip('\n').split('\t')[2]) for l in open(os.path.join(d, 'o2.layers.tsv')) if l.startswith('near-tied'))
+    # r3: primary off every locus, tied alignment at G -> elsewhere; r6: ties only outside -> nowhere; r7: its only tied locus is the one under its primary -> nowhere
+    assert T['no transcript at the primary, a tied alignment sits at another assembled locus: under the read floor'] == '1' and T['carried at no tied locus: unspliced, no model here'] == '1' and T['carried at no tied locus: removed by a later rule'] == '1' and T['UNEXPLAINED: carried at no tied locus, all reasons'] == '2' and T['unexplained share'] == '0.500', T
     print('support_tier selftest ok')
 
 if __name__ == '__main__':
     if sys.argv[1:] == ['--selftest']: selftest()
     elif len(sys.argv) == 4: run(*sys.argv[1:])
     elif len(sys.argv) == 6 and sys.argv[4] == '--reads': run(*sys.argv[1:4], sys.argv[5])
+    elif len(sys.argv) == 8 and sys.argv[4] == '--reads' and sys.argv[6] == '--ties': run(*sys.argv[1:4], sys.argv[5], sys.argv[7])
     else: sys.exit(__doc__)

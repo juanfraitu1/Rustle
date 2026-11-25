@@ -1783,7 +1783,7 @@ stage_o2() {
       case "${RUSTLE_O2_SUPPORT:-1}" in
         0) ;;
         1) if ( stage_provenance ) > "$OUT.o2.support.log" 2>&1 \
-              && "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/../bench/o2_families/support_tier.py" "$OUT.o2.gtf" "$OUT.provenance.transcripts.tsv" "$OUT.o2.support.tmp" --reads "$OUT.provenance.reads.tsv.gz" >> "$OUT.o2.support.log" 2>&1; then
+              && "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/../bench/o2_families/support_tier.py" "$OUT.o2.gtf" "$OUT.provenance.transcripts.tsv" "$OUT.o2.support.tmp" --reads "$OUT.provenance.reads.tsv.gz" $([ ! -s "$OUT.o2.ties.tsv.gz" ] || echo --ties "$OUT.o2.ties.tsv.gz") >> "$OUT.o2.support.log" 2>&1; then
              mv -f "$OUT.o2.support.tmp.gtf" "$OUT.o2.gtf"; mv -f "$OUT.o2.support.tmp.primary.gtf" "$OUT.o2.primary.gtf"
              mv -f "$OUT.o2.support.tmp.tied.gtf" "$OUT.o2.tied.gtf"; mv -f "$OUT.o2.support.tmp.layers.tsv" "$OUT.o2.layers.tsv"; rm -f "$OUT.o2.support.tmp".*
              say "o2: $(tail -1 "$OUT.o2.support.log" | sed 's/ -> .*//') (attributes support, primary_reads, layer in $OUT.o2.gtf; layers $OUT.o2.primary.gtf, $OUT.o2.tied.gtf; summary $OUT.o2.layers.tsv)"

@@ -311,7 +311,11 @@ it over the read floor), `tied_only` (N = 0). Products:
 - `PREFIX.o2.layers.tsv`: per layer the transcripts, loci and labels, the loci each tied layer adds, and what happens to
   the near-tied reads (in which layer's transcript their primary sits, or why no transcript carries them). Gorilla OR6737:
   of 16,275 near-tied reads 64% sit in a `primary`-layer transcript, 4% in a tied layer, and 25% are carried by no
-  transcript (unspliced with no model there, under the read floor, non-canonical junction). Described the same day
+  transcript (unspliced with no model there, under the read floor, non-canonical junction). Since 2026-11-25 the table
+  also looks each such read up at its TIED places (the tie table of the stage): a read whose tied alignment sits at
+  another assembled locus is listed apart, and the last two rows give the reads carried at NO tied locus and their share,
+  which is the unexplained part (OR6737: 1,523 of 16,275, 9.4%; the primary of a tied read is the aligner's arbitrary
+  choice, so counting by the primary alone overstated it at 25%). Described the same day
   (`docs/PREREG_support_tier_2026-11-25.md`, last section): 55% of those have their TIED alignment on an assembled transcript
   elsewhere, leaving 11% of near-tied reads carried at no tied place; the unspliced ones without a model are mostly single
   reads tied between intronic or unannotated places, plus one clear class, intronless copies of ribosomal-protein genes
