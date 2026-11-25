@@ -1,4 +1,4 @@
-# docs/ index — every document, one line each (generated 2026-11-24)
+# docs/ index — every document, one line each (generated 2026-11-25)
 
 Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or archiving a document. Archived files keep their names; only the directory changed, so grepping a filename still finds it. Verdicts of archived studies are in the register rows that cite them; pre-registrations are kept verbatim (the commit that introduced each one is the proof it preceded the result).
 
@@ -6,7 +6,7 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 
 | file | title | last commit | cited by |
 |---|---|---|---|
-| [`ADVISOR_QUESTIONS.md`](ADVISOR_QUESTIONS.md) | The advisor's standing questions — and what the codebase can answer | 2026-11-19 | memory ×1 |
+| [`ADVISOR_QUESTIONS.md`](ADVISOR_QUESTIONS.md) | The advisor's standing questions — and what the codebase can answer | 2026-11-25 | memory ×1 |
 | [`AUDIT_ROUNDS_2026-11.md`](AUDIT_ROUNDS_2026-11.md) | Audit rounds, November 2026 (ponytail-audit, goal: 100 rounds) | 2026-11-23 | memory ×1 |
 | [`DATA.md`](DATA.md) | Datasets — what they are, where they came from, how to rebuild them | 2026-11-19 | register ×1, memory ×1 |
 | [`LEDGER_GENERAL.md`](LEDGER_GENERAL.md) | Ledger: general (handoffs, pending lists, register drafts, overviews) | 2026-11-18 | — |
@@ -14,8 +14,8 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`LEDGER_O2.md`](LEDGER_O2.md) | Ledger: O2 (copy assignment of tied reads) | 2026-11-23 | register ×1, memory ×1 |
 | [`LEDGER_O3.md`](LEDGER_O3.md) | Ledger: O3 (copies the reference lacks) | 2026-11-18 | — |
 | [`MODULE_STATUS.md`](MODULE_STATUS.md) | Module status — what is SHIPPED vs what was TRIED | 2026-11-19 | — |
-| [`MULTICOPY_MODE.md`](MULTICOPY_MODE.md) | Multi-copy mode: assembling the copies of known gene families | 2026-11-24 | memory ×2 |
-| [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) | REGISTER OF NEGATIVE RESULTS (full: archive/2026-11/NEGATIVE_RESULTS_REGISTER.md:1) | 2026-11-24 | memory ×4 |
+| [`MULTICOPY_MODE.md`](MULTICOPY_MODE.md) | Multi-copy mode: assembling the copies of known gene families | 2026-11-25 | memory ×2 |
+| [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) | REGISTER OF NEGATIVE RESULTS (full: archive/2026-11/NEGATIVE_RESULTS_REGISTER.md:1) | 2026-11-25 | memory ×4 |
 | [`O2_FAMILY_BENCHMARK.md`](O2_FAMILY_BENCHMARK.md) | O2: known gene families across tools, on planted and real reads | 2026-11-24 | register ×1, memory ×2 |
 | [`PARKED.md`](PARKED.md) | Parked items (to pick up later, on any cluster) | 2026-11-19 | memory ×2 |
 | [`PERFORMANCE.md`](PERFORMANCE.md) | Pipeline performance: where the time goes and the switches that change it | 2026-11-15 | — |
@@ -26,13 +26,20 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-18 | register ×1 |
 | [`seeded_family_definition.md`](seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-08 | — |
 
-## Open studies and current handoff (341)
+## Open studies and current handoff (348)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
+| [`MULTIMAPPERS_ACROSS_ASSEMBLERS_2026-11-25.md`](MULTIMAPPERS_ACROSS_ASSEMBLERS_2026-11-25.md) | How the comparison assemblers treat multi-mapping reads, and what Rustle does differently (2026-11-25) | 2026-11-25 | memory ×1 |
+| [`PREREG_flair_allow_paralogs_2026-11-25.md`](PREREG_flair_allow_paralogs_2026-11-25.md) | PREREG: FLAIR with its own multimapper option, `--allow_paralogs` (row 1946, 2026-11-25) | 2026-11-25 | register ×1 |
+| [`PREREG_isoquant_use_secondary_2026-11-25.md`](PREREG_isoquant_use_secondary_2026-11-25.md) | PREREG: IsoQuant with `--use_secondary`, and bambu's supplementary alignments (row 1947, 2026-11-25) | 2026-11-25 | register ×1 |
+| [`STEP0_graph_assembly_2026-11-25.md`](STEP0_graph_assembly_2026-11-25.md) | STEP 0: ASSEMBLY IN THE FAMILY GRAPH'S COORDINATES (register 1944, 2026-11-25) | uncommitted | register ×1, memory ×1 |
+| [`STEP0_graph_ties_2026-11-25.md`](STEP0_graph_ties_2026-11-25.md) | STEP 0: ARE A READ'S TIED PLACES A PROPERTY OF ITS LOCUS? (register 1943, 2026-11-25) | uncommitted | register ×1, memory ×1 |
+| [`STEP0_vg_mpmap_2026-11-25.md`](STEP0_vg_mpmap_2026-11-25.md) | STEP 0: READS MAPPED TO THE FAMILY GRAPH WITH VG'S SPLICE-AWARE MAPPER (register 1945, 2026-11-25) | uncommitted | register ×1, memory ×1 |
 | [`PREREG_guided_tworead_2026-11-24.md`](PREREG_guided_tworead_2026-11-24.md) | PREREG: guided mode, chains of guide introns at a two-read floor (row 1939, 2026-11-24) | 2026-11-24 | register ×1 |
-| [`PREREG_minimap2_sweep_2026-11-24.md`](PREREG_minimap2_sweep_2026-11-24.md) | PREREG: can a minimap2 parameter change remove or decide the near-tied reads (row 1940, 2026-11-24) | 2026-11-24 | register ×1 |
-| [`PREREG_multicopy_tool_pages_2026-11-24.md`](PREREG_multicopy_tool_pages_2026-11-24.md) | PREREG: the three tool-comparison pages restricted to multi-copy genes (row 1941) | uncommitted | register ×1 |
+| [`PREREG_minimap2_sweep_2026-11-24.md`](PREREG_minimap2_sweep_2026-11-24.md) | PREREG: can a minimap2 parameter change remove or decide the near-tied reads (row 1940, 2026-11-24) | 2026-11-24 | register ×1, memory ×1 |
+| [`PREREG_ms_seed_pool_2026-11-24.md`](PREREG_ms_seed_pool_2026-11-24.md) | PREREG: the seeding pool on `ms` instead of AS (row 1942, 2026-11-24) | 2026-11-25 | register ×1 |
+| [`PREREG_multicopy_tool_pages_2026-11-24.md`](PREREG_multicopy_tool_pages_2026-11-24.md) | PREREG: the three tool-comparison pages restricted to multi-copy genes (row 1941) | 2026-11-24 | register ×1, memory ×1 |
 | [`PREREG_shared_floor1_2026-11-24.md`](PREREG_shared_floor1_2026-11-24.md) | PREREG: one one-read assembly for both the one-read tiers and the multi-copy stage (row 1937, 2026-11-24) | 2026-11-24 | register ×1 |
 | [`PREREG_vacmap_spliced_2026-11-24.md`](PREREG_vacmap_spliced_2026-11-24.md) | PREREG: VACmap on Iso-Seq reads, against the genome and against isoform sequences (row 1936, 2026-11-24) | 2026-11-24 | register ×1 |
 | [`PREREG_winnowmap_home_case_2026-11-24.md`](PREREG_winnowmap_home_case_2026-11-24.md) | PREREG: Winnowmap on its own target, as a positive control for the page (row 1938, 2026-11-24) | 2026-11-24 | register ×1 |
@@ -41,14 +48,14 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`PREREG_error_context_2026-11-23.md`](PREREG_error_context_2026-11-23.md) | PREREG: sequencing-error context against minimap2's choice, real reads with own-haplotype truth (row 1923, 2026-11-23) | 2026-11-23 | register ×1 |
 | [`PREREG_guided_final_oneread_2026-11-23.md`](PREREG_guided_final_oneread_2026-11-23.md) | PREREG r1934: guided mode on final.gtf, and one-read chains made only of guide introns (2026-11-23) | 2026-11-24 | register ×1, memory ×1 |
 | [`PREREG_het_alleles_2026-11-23.md`](PREREG_het_alleles_2026-11-23.md) | PREREG: heterozygous copies, do alleles get counted as copies (row 1927, 2026-11-23) | 2026-11-23 | register ×1 |
-| [`PREREG_hg002_sequences_2026-11-23.md`](PREREG_hg002_sequences_2026-11-23.md) | PREREG: the non-reference sequences on HG002, a second sample with both haplotypes (row 1931, 2026-11-23) | 2026-11-23 | register ×1 |
+| [`PREREG_hg002_sequences_2026-11-23.md`](PREREG_hg002_sequences_2026-11-23.md) | PREREG: the non-reference sequences on HG002, a second sample with both haplotypes (row 1931, 2026-11-23) | 2026-11-24 | register ×1 |
 | [`PREREG_isocon_groups_2026-11-23.md`](PREREG_isocon_groups_2026-11-23.md) | PREREG: IsoCon on the reads of Rustle's tied groups, a hybrid count of expressed copies (row 1925, 2026-11-23) | 2026-11-23 | register ×1 |
 | [`PREREG_isocon_port_2026-11-23.md`](PREREG_isocon_port_2026-11-23.md) | PREREG: IsoCon's decision logic ported into Rustle, tested against IsoCon itself (row 1926, 2026-11-23) | 2026-11-23 | register ×1 |
-| [`PREREG_lower_hits_2026-11-23.md`](PREREG_lower_hits_2026-11-23.md) | PREREG: are the unconfirmed sequences explained by a haplotype hit that scores lower (row 1930, 2026-11-23) | 2026-11-23 | register ×1 |
+| [`PREREG_lower_hits_2026-11-23.md`](PREREG_lower_hits_2026-11-23.md) | PREREG: are the unconfirmed sequences explained by a haplotype hit that scores lower (row 1930, 2026-11-23) | 2026-11-24 | register ×1 |
 | [`PREREG_minimap_wrong_calls_2026-11-23.md`](PREREG_minimap_wrong_calls_2026-11-23.md) | PREREG: where minimap2's primary is wrong on reads of known origin, and can the alignments' own context overrule it (row | 2026-11-23 | register ×1 |
 | [`PREREG_mono_family_rescue_2026-11-23.md`](PREREG_mono_family_rescue_2026-11-23.md) | PREREG: single-exon models admitted on family evidence (row 1919, 2026-11-23) | 2026-11-23 | register ×2 |
 | [`PREREG_mosaic_check_2026-11-23.md`](PREREG_mosaic_check_2026-11-23.md) | PREREG: what are the sequence splits the haplotypes do not confirm; the mosaic check (row 1929, 2026-11-23) | 2026-11-23 | register ×1 |
-| [`PREREG_quality_model_2026-11-23.md`](PREREG_quality_model_2026-11-23.md) | PREREG: IsoCon's base-quality model in the sequence test, on the two samples with haplotype truth (row 1933, 2026-11-23) | 2026-11-24 | — |
+| [`PREREG_quality_model_2026-11-23.md`](PREREG_quality_model_2026-11-23.md) | PREREG: IsoCon's base-quality model in the sequence test, on the two samples with haplotype truth (row 1933, 2026-11-23) | 2026-11-24 | register ×1 |
 | [`PREREG_real_haplotypes_2026-11-23.md`](PREREG_real_haplotypes_2026-11-23.md) | PREREG: the sequence count on real reads, judged by the sample's own two haplotypes (row 1928, 2026-11-23) | 2026-11-23 | register ×1 |
 | [`PREREG_sample_psv_2026-11-23.md`](PREREG_sample_psv_2026-11-23.md) | PREREG: counting expressed copies from variants that recur across reads, on a planted sample that differs from the refer | 2026-11-23 | register ×1 |
 | [`PREREG_weighted_em_2026-11-23.md`](PREREG_weighted_em_2026-11-23.md) | PREREG: alignment scores inside the EM of the `o2` labels (row 1921, 2026-11-23) | 2026-11-23 | register ×1 |
