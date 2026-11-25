@@ -106,3 +106,42 @@ nearly empty.
   secondary alignments of reads whose primaries are at another copy, which is why few reads are "carried" by that layer.
 - Wired into stage `o2` (same switch `RUSTLE_O2_SUPPORT`): `PREFIX.o2.primary.gtf`, `PREFIX.o2.tied.gtf`,
   `PREFIX.o2.layers.tsv`; checked by a real run of the stage and the full test suite.
+
+### What the 25% unexplained near-tied reads are (description, gorilla OR6737; workspace `unexplained_unspliced_2026-11-25`, jobs 4504913, 4504915; no decision rule)
+**More than half are explained through their tie.** Of the 4,143 near-tied reads that no transcript carries at their
+primary alignment, 2,287 (55%) have a tied alignment on exons of an assembled transcript elsewhere: under the read floor
+866 of 1,049, non-canonical junction 605 of 900, removed by a later rule 131 of 136, unspliced with no model 685 of 2,058.
+Counted that way, 1,856 of 16,275 near-tied reads (11%) are carried by no transcript at any tied place.
+**The 2,058 unspliced reads with no model**, by where the primary sits (RefSeq): inside a gene but not on its exons 794
+(39%), nothing annotated 736 (36%), an annotated single-exon gene 294 (14%), an exon of a spliced gene 207 (10%), an
+annotated pseudogene 27 (1%). They form 1,243 loci: 987 hold one read, 52 hold five or more (582 reads, 28%).
+- The clear class: 207 reads sit on single-exon genes and tie with a SPLICED alignment at an annotated gene. The largest
+  loci are intronless copies of ribosomal-protein genes annotated as single-exon protein-coding `LOC` genes (tied with
+  RPL21: 82 reads, RPL12: 34 + 13, RPL11: 26, RPL9: 20; also MICU2: 20). This is the processed-copy case: a read of the
+  spliced parent ties on `ms` with its intronless copy (introns cost nothing on `ms`) and the aligner's tie-break puts the
+  primary on the copy. Whether those copies are expressed themselves cannot be told from these reads.
+- The bulk, about 1,350 reads, ties between two unspliced places that are intronic or unannotated (550 intron to intron,
+  450 unannotated to unannotated, 210 + 137 mixed): repeats and unspliced material, mostly singletons. No model there is
+  what a read floor is for.
+- Only 27 reads sit on annotated pseudogenes, so "expressed pseudogenes left on the table" is not what this group is on
+  this sample (the RefSeq annotation calls the ribosomal-protein copies genes, not pseudogenes).
+
+### `ms` against AS for those reads (description, job 4504918, `scores.py`; primary against its best-scoring secondary)
+| group | reads | `ms`: exact tie | `ms`: primary ahead by 1-10 | `ms`: primary behind | AS: primary higher | AS equal | AS: primary lower | median AS difference |
+|---|---|---|---|---|---|---|---|---|
+| all near-tied reads no transcript carries | 4,143 | 32% | 54% | 14% | 56% | 28% | 16% | +3 |
+| unspliced, no model there | 2,058 | 38% | 54% | 8% | 62% | 31% | 7% | +5 |
+| under the read floor | 1,049 | 32% | 54% | 13% | 53% | 33% | 14% | +3 |
+| non-canonical junction | 900 | 17% | 52% | 31% | 42% | 16% | 42% | 0 |
+| removed by a later rule | 136 | 31% | 68% | 1% | 68% | 31% | 1% | +5 |
+| intronless copy tied with its spliced parent | 207 | 69% | 28% | 4% | 97% | 3% | 0% | +120 |
+
+- For most of these reads the two scores tell the same story: a small lead or none (median AS difference 3 to 5).
+- **The intronless-copy class is where they disagree completely.** On `ms` 69% are exact ties and 97% are within 10. On AS
+  the intronless copy is ahead in 97%, by exactly 24 per intron of the parent's alignment (1 intron +24, 3 introns +72,
+  5 introns +120, 6 introns +147, 11 introns +270; median +120). AS charges for introns and `ms` does not, so AS makes the
+  intronless copy look like a clear winner for a read that fits the spliced parent equally well base for base.
+- In 14% of all these reads (31% of the non-canonical group) the primary has a LOWER `ms` than a secondary: minimap2
+  orders hits on an adjusted segment score, which the `ms` tag (the unadjusted one) does not always reproduce.
+- Not checked: how many of the parent alignments of that class fall outside the assembler's AS-based seeding pool (AS >=
+  0.98 x best); with a lead of 24 per intron most of them should.

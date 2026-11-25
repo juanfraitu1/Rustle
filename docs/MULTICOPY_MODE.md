@@ -311,7 +311,11 @@ it over the read floor), `tied_only` (N = 0). Products:
 - `PREFIX.o2.layers.tsv`: per layer the transcripts, loci and labels, the loci each tied layer adds, and what happens to
   the near-tied reads (in which layer's transcript their primary sits, or why no transcript carries them). Gorilla OR6737:
   of 16,275 near-tied reads 64% sit in a `primary`-layer transcript, 4% in a tied layer, and 25% are carried by no
-  transcript (unspliced with no model there, under the read floor, non-canonical junction).
+  transcript (unspliced with no model there, under the read floor, non-canonical junction). Described the same day
+  (`docs/PREREG_support_tier_2026-11-25.md`, last section): 55% of those have their TIED alignment on an assembled transcript
+  elsewhere, leaving 11% of near-tied reads carried at no tied place; the unspliced ones without a model are mostly single
+  reads tied between intronic or unannotated places, plus one clear class, intronless copies of ribosomal-protein genes
+  tied with their spliced parent (207 reads).
 
 ## The EM's share of each tied read (opt-in, 2026-11-25)
 `RUSTLE_O2_SHARES=1` (or `em_filter.py --shares FILE.tsv.gz`, with the weighted EM) writes `PREFIX.o2.shares.tsv.gz`: one
