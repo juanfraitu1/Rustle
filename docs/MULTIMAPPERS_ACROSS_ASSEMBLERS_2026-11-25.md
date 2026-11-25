@@ -183,7 +183,18 @@ So the two tools that HAVE a switch for multi-mapping reads use it in opposite w
 isoform and gains a little; IsoQuant excludes reads with several placements and loses most of the family. Neither labels
 what rests on ties.
 
-## 9. Still open
-- The other tools were run at their benchmark settings; a tuned FLAIR (`--support 2` with `--allow_paralogs`) was not tried.
-- All direct runs here are on planted human families plus one gorilla sample for bambu; no real-sample arm of FLAIR
-  `--allow_paralogs` was run.
+## 9. A tuned FLAIR and a real sample (row 1948, `docs/PREREG_flair_tuned_and_real_2026-11-25.md`)
+- **FLAIR given Rustle's read floor** (`--support 2`), on the planted sets of row 1946: at 3 reads per copy it finds 95 / 99 / 90
+  expressed units of 108, with its paralog option 98 / 101 / 96, against the mode's 104 / 102 / 104. So most of the gap of
+  row 1946 was FLAIR's support threshold, and the mode's lead in UNITS FOUND over a FLAIR with the same floor is 1 to 8 of
+  108. What stays apart is isoform recall at 3 reads (0.65-0.70 against 0.46-0.51) and the labels (4 / 3 / 4 silent units
+  called against the tuned FLAIR's 20 / 17 / 17 false units).
+- **FLAIR's paralog option on gorilla OR6737:** one more annotated family copy (24 against 23 of 49) at junction precision
+  0.48 instead of 0.55, and 36% more transcripts genome-wide. Rustle's mode: 37 copies at 0.67; StringTie 28 at 0.59. FLAIR
+  models none of the 8 expressed SPTBN5 copies with either setting.
+- What to take from it: on planted reads the count of copies FOUND at low coverage is mostly a matter of the read floor,
+  which any tool can lower; the difference in kind is that Rustle builds from tied secondaries (isoforms) and labels what
+  rests on ties.
+
+## 10. Still open
+- Real-sample arms of the tuned FLAIR, and other real samples, were not run (one sample, FLAIR at support 3).
