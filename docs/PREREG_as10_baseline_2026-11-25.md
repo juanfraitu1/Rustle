@@ -156,3 +156,31 @@ at the gene won on bases; the intronless copy only looks better because AS does 
   The made-up loci go, and with them every copy that has an identical twin. Three treatments of a tied read: keep the
   primary as placed (StringTie, FLAIR, bambu: silent copies modelled), remove mapping quality 0 (IsoQuant in part: tied
   copies lost), or keep the reads and label what rests on ties (Rustle).
+
+### What the tie-break hash is, on one read (user's questions; description, workspace `coin_toss_2026-11-25/mm2_print`)
+The hash is not added to the score. minimap2 sorts a read's hits on `score x 2^32 + hash` (`hit.c:203`): the hash is a
+32-bit number from the read's name, its length, `--seed` and the hit's first anchor, given to every hit when it is made
+from a chain (`hit.c:64`, before the alignment, so before ties are known), and it orders only hits of EQUAL score.
+A copy of minimap2 with one print line in `mm_hit_sort`, planted read `E|CHM13_G0018055|CHM13_T0067743|0` (three places on
+chr15 with `ms` 3332, sort score 3037; a fourth with sort score 2697):
+
+| place | default seed: hash | `--seed 7`: hash | read renamed: hash |
+|---|---|---|---|
+| chr15:21,060,824 | 3,591,144,635 (primary) | 2,449,493,403 | 3,449,921,921 (primary) |
+| chr15:20,810,848 | 2,311,871,521 | 114,373,982 | 2,977,526,979 |
+| chr15:21,008,553 | 1,022,223,755 | 3,825,266,051 (primary) | 2,065,762,625 |
+| chr15:20,133,021 (score 2697) | 2,150,004,679, fourth | 3,313,585,558, fourth | 2,569,078,872, fourth |
+
+So the choice is reproducible and unbiased (twins split 343 / 344) and uninformed: right at the rate of chance among
+exact ties, flagged with mapping quality 0. "Arbitrary" is accurate; "random" is not (same command, same primaries).
+
+### Are tied reads more frequent in multi-copy families? (description; OR6737, the run's tie table and family table)
+| where the read sits | reads | exact ties | near ties, not exact |
+|---|---|---|---|
+| a family locus (1,345 loci) | 85,468 | 5,254 (6.2%) | 6,603 (7.7%) |
+| another assembled locus | 4,137,424 | 1,261 (0.03%) | 1,762 (0.04%) |
+| no assembled locus | 181,548 | 561 (0.3%) | 834 (0.5%) |
+74% of the exact ties and 72% of the near ties touch a family locus; family loci hold 2% of the reads. Caveats: the
+families are called partly from reads that align well at several loci, so part of this is by construction (an
+annotation-based family list was not used here); a read is counted as exactly tied when two of its alignments, by locus,
+share the top `ms`, which gives 7,076 against the 5,791 of the score-table rule.

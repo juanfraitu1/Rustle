@@ -159,3 +159,48 @@ such reads 2,620 have a tied alignment at another assembled locus (under the flo
 9.4% of the 16,275 near-tied reads (1,226 unspliced with no model, 246 non-canonical, 49 under the floor, 2 removed by a
 rule). The stricter count made by hand before (a tied alignment with at least half its bases on assembled exons) gave
 1,856 (11%); the table's rule is the tie table's own, any exon overlap with a locus. The tagged GTF is unchanged by it.
+
+## Row 1958 (2026-11-25): the layers under a pool of exact `ms` ties only
+The user: try a mode that seeds only from fully tied multimappers (tied on `ms`, not 0.98 of the best AS) and see whether
+the layer built on tied reads has low precision there as well. The pool itself is row 1951's arm M0 (another session:
+`pool_bam.py --rule msgap:0` + `--seed-pool all`; overall a trade, not adopted); its assemblies are reused, not rebuilt.
+New here: the layer split (`support_tier.py`) of M0 against today's pool A0 on the same six planted sets (seeds 1951-1953,
+E and S), provenance on the original BAM, transcripts with at least 3 reads as in row 1952. Workspace `r1958_exact_tie_layers`.
+- **L1:** under M0 the `tied_only` layer is still the least precise layer in all six sets, below 0.70.
+- **L2:** M0's `tied_only` precision is higher than A0's in at least five of six sets.
+- **L3:** M0 has fewer `tied_only` transcripts than A0 in all six.
+Predictions (mine): all three hold; `tied_only` precision about 0.55-0.65 under M0 against about 0.45 under A0.
+
+### Row 1958 result (job 4506188). Correction first: these six sets are planted at 60 reads per isoform, not 3; the claim text above misnamed them, and my predicted 0.55-0.65 came from the 3-read sets.
+Transcripts on planted copies (exact among them), A0 = today's pool, M0 = exact `ms` ties only:
+
+| set | primary A0 | primary M0 | tied_support A0 | tied_support M0 | tied_only A0 | tied_only M0 | all, precision A0 -> M0 |
+|---|---|---|---|---|---|---|---|
+| 1951 E | 247 (198) | 249 (198) | 0 | 6 (0) | 63 (0) | 11 (0) | 0.639 -> 0.744 |
+| 1951 S | 162 (101) | 164 (101) | 13 (0) | 20 (0) | 59 (0) | 16 (0) | 0.432 -> 0.505 |
+| 1952 E | 249 (198) | 256 (198) | 5 (0) | 13 (0) | 53 (0) | 7 (0) | 0.645 -> 0.717 |
+| 1952 S | 164 (104) | 167 (104) | 7 (0) | 17 (0) | 69 (0) | 29 (0) | 0.433 -> 0.488 |
+| 1953 E | 241 (197) | 245 (197) | 7 (0) | 10 (0) | 58 (0) | 9 (0) | 0.644 -> 0.746 |
+| 1953 S | 155 (92) | 156 (92) | 7 (1) | 10 (1) | 59 (0) | 23 (0) | 0.421 -> 0.492 |
+
+- **L1 HOLDS** (tied_only precision 0.000 in all six under M0). **L2 FAILS** (0.000 under both pools: 0 of 361 and 0 of
+  95 exact). **L3 HOLDS** (361 -> 95 tied_only transcripts, -74%).
+- Reading: the exact-tie pool builds fewer transcripts from tied reads alone, and not one of those it still builds is
+  right; isoform recall is identical in every set, so at this depth nothing true is lost. The whole gain of M0 is the
+  removal of wrong tied_only transcripts. The 3-reads-per-isoform sets, where the tied layers DO add true transcripts
+  under A0 (row 1952), are run next.
+
+### Row 1958, the 3-reads-per-isoform sets (job 4506193; row 1952's seeds 1967-1969 low E; description, no claim was set for them)
+Exact transcripts / transcripts on planted copies (precision):
+
+| layer | 1967 A0 | 1967 M0 | 1968 A0 | 1968 M0 | 1969 A0 | 1969 M0 |
+|---|---|---|---|---|---|---|
+| primary | 82 / 86 (0.95) | 82 / 86 (0.95) | 69 / 74 (0.93) | 69 / 75 (0.92) | 72 / 77 (0.94) | 72 / 78 (0.92) |
+| tied_support | 60 / 84 (0.71) | 50 / 91 (0.55) | 71 / 97 (0.73) | 68 / 109 (0.62) | 74 / 103 (0.72) | 64 / 93 (0.69) |
+| tied_only | 24 / 50 (0.48) | 23 / 42 (0.55) | 22 / 52 (0.42) | 21 / 46 (0.46) | 22 / 47 (0.47) | 20 / 32 (0.63) |
+| all | 166 / 220 (0.755) | 155 / 219 (0.708) | 162 / 223 (0.726) | 158 / 230 (0.687) | 168 / 227 (0.740) | 156 / 203 (0.768) |
+Units found 103 / 103 / 103 (A0) against 103 / 104 / 102 (M0) of 108; M0 keeps 9-10% of the secondary alignments.
+At low depth the exact-tie pool LOSES true transcripts (-11, -4, -12 of about 165) and is less precise overall in two of
+three sets: the tied_only layer is somewhat more precise (0.46-0.63 against 0.42-0.48) but stays the least precise layer,
+and the tied_support layer gets worse. Together with row 1951's real samples (annotated copies lost): the exact-tie pool
+helps only where depth is high enough that the tied reads add nothing true.
