@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A BAM holding only the secondary alignments a seeding-pool rule admits (register 1942).
 
-    pool_bam.py IN.bam AS_TABLE OUT.bam --rule as:0.98 | ms:0.98 | msgap:10  [--threads N]
+    pool_bam.py IN.bam AS_TABLE OUT.bam --rule as:0.98 | ms:0.98 | msgap:10 | asintron:0.98:10:30  [--threads N]
 
 The assembler's `good` pool admits a secondary alignment when its AS is at least 0.98 x the read's best AS over the whole
 BAM (the best comes from the score table). To try another rule without changing the assembler, the rule is applied here
@@ -10,6 +10,10 @@ always kept. Rules, each against the read's genome-wide best from AS_TABLE (as_t
   as:R      AS >= R x best AS      (as:0.98 = the `good` pool; the control that this emulation is faithful)
   ms:R      ms >= R x best ms      (the same width on the score minimap2 ranks by)
   msgap:N   ms >= best ms - N      (msgap:10 = the near-tie band of the labels)
+  asintron:R:G:P  the `good` pool PLUS the secondaries that tie on ms and lose on AS only by their introns (register
+            1953): kept when AS >= R x best AS, or when ms >= best ms - G and AS >= R x best AS - P x (introns of this
+            alignment). AS charges about 24 per intron and ms nothing, so a spliced alignment that fits as well as an
+            intronless one, base for base, is 24 x introns behind on AS and falls out of the AS pool.
 A secondary without the tag, or of a read missing from the table, is kept (as the assembler does). Reads without a
 position (unmapped) are not copied: the assembler does not read them."""
 import sys, os, re, argparse, multiprocessing
@@ -23,7 +27,12 @@ def work(job):
         for r in B.fetch(contig):
             if r.is_secondary:
                 seen += 1; b = best.get(r.query_name)
-                if b is not None and r.has_tag(tag):
+                if kind == 'asintron':
+                    if b is not None and b[0] is not None and r.has_tag('AS'):
+                        a = r.get_tag('AS'); R, Gp, Pn = val
+                        if a < R * b[0] and not (b[1] is not None and r.has_tag('ms') and r.get_tag('ms') >= b[1] - Gp
+                                                  and a >= R * b[0] - Pn * sum(1 for o, _ in r.cigartuples if o == 3)): continue
+                elif b is not None and r.has_tag(tag):
                     t = r.get_tag(tag); top = b[0] if kind == 'as' else b[1]
                     if top is not None and (t < val * top if kind in ('as', 'ms') else t < top - val): continue
                 kept += 1
@@ -44,8 +53,9 @@ def load_best(tab, bam=None):
 
 def run(bam, tab, out, rule, threads):
     import pysam
-    kind, val = rule.split(':'); assert kind in ('as', 'ms', 'msgap'), rule
-    G.update(bam=bam, out=out, rule=(kind, float(val)), best=load_best(tab, bam))
+    kind, val = rule.split(':', 1); assert kind in ('as', 'ms', 'msgap', 'asintron'), rule
+    val = tuple(map(float, val.split(':'))) if kind == 'asintron' else float(val)
+    G.update(bam=bam, out=out, rule=(kind, val), best=load_best(tab, bam))
     if kind != 'as' and not any(m is not None for _, m in G['best'].values()):      # an AS-only table: an ms rule would keep everything and say nothing
         sys.exit(f'pool_bam: {tab} has no ms columns; --rule {rule} cannot be applied (rebuild the table with as_table)')
     refs = list(pysam.AlignmentFile(bam).references)
@@ -75,6 +85,16 @@ def selftest():
     open(tab, 'w').write('#as_table\tbam=/some/other.bam\tbam_bytes=1\n')
     try: load_best(tab, bam); raise AssertionError('a table of another BAM was accepted')
     except SystemExit: pass
+    open(tab, 'w').write('#as_table\nr\t1000\t990\t4\tc\t1000\t1000\t1000\t1000\n')
+    def sp(name, pos, AS, ms, cigar):
+        r = pysam.AlignedSegment(); r.query_name = name; r.reference_id = 0; r.reference_start = pos; r.cigarstring = cigar; r.flag = 256; r.mapping_quality = 0; r.query_sequence = 'A' * 100
+        r.set_tag('AS', AS); r.set_tag('ms', ms); return r
+    b2 = os.path.join(d, 'y.bam')
+    with pysam.AlignmentFile(b2, 'wb', header=hdr) as w:      # a parent with 5 introns, 120 behind on AS, tied on ms: kept; the same without the ms tie, or without introns: dropped
+        for r in (rd('r', 100, 0, 1000, 1000), sp('r', 1000, 880, 1000, '20M50N20M50N20M50N20M50N10M50N10M'), sp('r', 3000, 880, 950, '20M50N20M50N20M50N20M50N10M50N10M'), sp('r', 5000, 880, 1000, '100M'), sp('r', 7000, 985, 900, '100M')): w.write(r)
+    pysam.index(b2)
+    assert run(b2, tab, os.path.join(d, 'i.bam'), 'asintron:0.98:10:30', 1) == (4, 2) and [x[0] for x in names(os.path.join(d, 'i.bam'))] == [100, 1000, 7000]
+    assert run(b2, tab, os.path.join(d, 'j.bam'), 'as:0.98', 1) == (4, 1)
     open(tab, 'w').write('#as_table\nr\t1000\t990\t4\tc\t1000\n')              # a table without ms columns
     try: run(bam, tab, os.path.join(d, 'n.bam'), 'msgap:10', 1); raise AssertionError('an ms rule ran on a table without ms')
     except SystemExit: pass
