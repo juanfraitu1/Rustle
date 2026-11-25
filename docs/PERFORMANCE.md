@@ -85,3 +85,28 @@ Assign router (r1600, 2026-11-09): reading the BAM once and scheduling from exac
    of the slim A119b run spend 1,427 s re-reading the same chr17/chr19 blocks; one multithreaded sweep of that BAM is ~240 s).
    Identical by construction if each window's records are bucketed in coordinate order. The multithreaded reader itself is used
    only on regions >= 2 Mb (1.5x there; 3.5x slower on windows, it restarts on every index seek).
+5. Data-structure survey (2026-11-25; grep counts and a clippy pass with the performance and ownership lints, 110 hits in 134k
+   lines; nothing measured, nothing changed). None of these is expected to move wall time (inflate and minimap2 are the bound);
+   the gains are memory per record and type safety. In order of payoff:
+   - `src/copy_assign_bin.rs:8861`: `primary.clone()` deep-copies the region's whole primary read pool under `--assemble-only`
+     and the original is never used again (clippy `redundant_clone`). A move is a one-word change, identical by construction.
+   - `chrom: String` in every read and locus struct (35 structs, 181 `chrom.clone()` / `to_string()` sites; pass 1 clones it per
+     junction to probe a `BTreeMap<(String, (u64, u64)), u32>`) -> a `u32` contig id. Ids assigned in lexicographic name order
+     keep every `BTreeMap` iteration order, so products can stay identical. Estimate: ~50 bytes and one allocation per
+     `PrimaryRead`.
+   - `lazy_reads` (`src/family.rs:50917`): the op list is cloned into a `Cigar` for `exons_from_cigar`, and the read name is
+     allocated before the `Only(names)` filter. Two allocations per record; about ten lines; the test
+     `lazy_and_buffered_readers_agree_on_clipped_reverse_tagged_records` covers it.
+   - `cigar: Vec<(char, u64)>` (`AlignedRead`, `PileRead`): 16 bytes per op -> a `#[repr(u8)]` op enum + `u32` length, 8 bytes,
+     with exhaustive `match` instead of `_ => {}`.
+   - `Vec<Option<u8>>` for PSV alleles and observations (99 sites): 2 bytes per cell -> `Option<NonZeroU8>` or a base enum, 1 byte.
+   - Strand held as `char`, `String`, `Option<String>`, `Vec<char>` and `u8` (68 sites) -> one enum. `(u64, u64)` and
+     `(String, u64, u64)` tuples (about 440 and 121 sites) -> half-open interval newtypes with one overlap rule (the helpers mix
+     closed and half-open today). Correctness, not speed.
+   - Maps and sets keyed by `String` (322 sites; not classified into read names and other ids) -> interned ids or `read_name_hash`.
+   - Rest of the clippy list (45 `push_str(&format!())`, 13 `a = b.clone()`, 13 by-value parameters only read, 9 `&mut Vec`
+     where a slice does, 6 needless `collect()`): cosmetic. Rerun: `cargo clippy --lib --bins -- -A clippy::all -W clippy::perf
+     -W clippy::redundant_clone -W clippy::needless_collect -W clippy::needless_pass_by_value -W clippy::ptr_arg`.
+   - Not zero-cost, so not in this list: packing `seq` to 2 or 4 bits and keeping qualities only at PSV columns (the two vectors
+     are the memory of a full read). Interval trees and rust-lapper: not a lever, the lookups that matter already use a sorted
+     vector with `partition_point`.

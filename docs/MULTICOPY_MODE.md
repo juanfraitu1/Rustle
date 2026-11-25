@@ -403,3 +403,57 @@ and has no transcript, fraction 93,534, retained 10,868, spliced share 4,568, su
 | 1909, 1910, 1913-1915 | `r1909_silent_members`, `r1910_member_discovery`, `r1913_members_real`, `r1914_read_relatedness`, `r1915_members_blocks` | silent relatives, the member layer |
 | 1916-1918 | `r1916_isoform_loss`, `r1917_ragged_reads`, `r1918_rerun_ragged` | the read-end artefact and the corrected reruns |
 | - | `annot_related` | relatedness annotation of CHM13, NCBI gene_group |
+
+## Which rules use multi-mapping reads: the state on 2026-11-25
+Two bands are in use. They are different thresholds on different scores and must not be mixed in wording.
+
+| use | band | status |
+|---|---|---|
+| Seeding the assembly (stage `assemble` in `all`, pool `good`) | secondary AS >= 0.98 x the read's best AS | default |
+| Tie table, labels by the EM, `support` / `layer` tags (stage `o2`) | secondary `ms` within 10 of the primary's | default |
+| Distinct sequences among tied copies (`RUSTLE_O2_SEQUENCES=1`) | `ms` within 10 | opt-in |
+| Relatives list (stage `members`, with `RUSTLE_MEMBERS_REPEATS`) | >= 0.9 of the best score | opt-in; a list of relatives, never members |
+
+Every other rule tried on the secondaries was not adopted:
+
+| rule | row | why not |
+|---|---|---|
+| Pool `ms` within 10 for seeding | 1942, 1942b | more precise, fewer copies; did not confirm on unused samples |
+| Pool of exact `ms` ties only | 1951, 1958 | helps only at high depth; loses true transcripts at 3 reads |
+| Pool with the intron allowance | 1953 | harmless on real data, adds nothing correct |
+| Pools at 0.95 and 0.90 of the best AS | 1959 | adds transcripts with no read of their own |
+| Anchored pools at 0.9 (another session) | 1961 | planted: safe with the intron condition, no true transcript gained; real arms unfinished when this was written |
+| Per-read re-placement, error-aware re-scoring | 1922, 1923 | nothing inside one read decides a tie |
+| A MAPQ filter | `coin_toss_2026-11-25` | removes every copy that has an identical twin |
+| Members or silent copies from secondaries | 1915, 1955-1957, 1960 | secondaries mark homology, not membership or expression |
+| Ties from a graph instead of secondaries | 1943-1945 | the graph gives the places, not the band |
+| Label `processed_copy_of` (intronless against spliced, >= 0.9) | 1962 | 13.8% of places on a processed copy on A119b, reach 5.4% |
+| Seeding in two steps: uniquely placed primaries first, tied reads conditioned on them | 1963 | the unique core has no made-up copy but a third of the isoforms; the conditioned second step loses 3-5 true isoforms and removes almost no made-up copy |
+
+Census behind row 1962 (OR6737, workspace `multimapper_rules_2026-11-25/census.or.txt`, a description on one sample):
+105,396 of 4.40 million reads have a secondary at 0.9 or more of the primary's `ms` (7,076 ties, 9,194 within 10,
+89,126 below that). Three more patterns were counted and none is a rule: a join of two RefSeq genes has a tied or
+near-tied alternative that stays in one gene for 198 of 14,652 reads (1.4%; so read-throughs are not a mapping
+ambiguity), an alternative chain inside the same locus exists for about 440 reads, and of 236 tie-partner places on no
+RefSeq exon 10 are in the CAT annotation.
+
+### Two products side by side: unique primaries, and the near-tie pool (2026-11-25, description)
+Workspace `two_products_2026-11-25` (job 4509336, `run.sbatch` is the recipe). Product 1 = primary alignments with
+mapping quality 1 or more, no secondaries (`samtools view -b -F 0x100 -q 1`, then `assemble --seed-pool primary`; the
+assembler has no mapping-quality option). Product 2 = today's assembly with the 0.98 pool. Mapping quality 0 removes
+the exact ties only; near ties that are not exact stay in product 1.
+
+| planted sets, seeds 1967-1969 | unique primaries | all primaries | near-tie pool 0.98 | multi-copy mode |
+|---|---|---|---|---|
+| all expressed, 60 reads: exact isoforms of 239 (precision) | 108 (0.86-0.89) | 195-197 (0.81-0.83) | 197 (0.65-0.66) | 197 (0.65-0.66) |
+| half silent, 60 reads: exact isoforms (precision) | 56-57 (0.85-0.89) | 102-106 (0.62-0.65) | 103-105 (0.42-0.49) | 103-105 (0.42-0.49) |
+| half silent: silent copies with a transcript, of 63 | 0 / 0 / 0 | 23 / 25 / 24 | 44 / 47 / 39 | 45 / 48 / 40 |
+| all expressed, 3 reads: exact isoforms (precision) | 44-47 (0.90-0.96) | 70-83 (0.92-0.95) | 137-148 (0.77-0.82) | 162-168 (0.73-0.76) |
+| all expressed, 3 reads: expressed copies found, of 133 | 47-50 | 73-82 | 110-113 | 128 |
+
+Real OR6737: 11,291 of 4,409,946 primaries have mapping quality 0 (0.26%; 42% in the planted sets). Transcripts 68,640
+(unique primaries), 68,847 (all primaries), 70,181 (pool 0.98), 71,443 (mode). Annotated copies of the four named
+families modelled / junction precision: 25 / 0.61, 25 / 0.61, 27 / 0.58, 34 / 0.66.
+Reading: on planted families product 1 has no made-up copy and about half of the isoforms; on a real sample it is the
+all-primaries assembly within 0.3%, because exact ties are rare there. The near ties earn their place at low depth
+(3 reads per isoform: 2 to 3 times the exact isoforms of either primaries product).
