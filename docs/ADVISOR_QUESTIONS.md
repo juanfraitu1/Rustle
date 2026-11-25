@@ -24,6 +24,7 @@ beside it); "sequences", not copies, for the sequence count; copies are MODELED,
 | N10 | Where did each read go? How did reads become transcripts? | One file per run, and the removal rules in readable Python with exact parity. | stage `provenance`, `tools/polish_rules.py` |
 | N11 | Is correlation clustering (Strainy) the better way? | Tried twice, no gain. | rows 1823, 1932 |
 | N12 | Is this luck or overfitting? | Rule fixed before each run, unseen seeds or samples, failures recorded (mine included). | register |
+| N14 | Start from the 10-AS rule as the baseline. | It is right where it fires (99.9%) and fires on about 10% of our near ties; the secondaries worth anything are the exact ties. | row 1954 |
 | N13 | How do the other assemblers treat multi-mapping reads? | None of the four uses a secondary alignment as evidence (read in their source, and run); Rustle uses the near-tied ones and says which models rest on them. | `docs/MULTIMAPPERS_ACROSS_ASSEMBLERS_2026-11-25.md` |
 
 ### N1. Does Rustle solve near-tied multimappers?
@@ -95,6 +96,16 @@ beside it); "sequences", not copies, for the sequence count; copies are MODELED,
 - Ignoring secondaries does not avoid the problem: the primary of a tied read is arbitrary, and each tool models 24-30 silent copies from it on planted reads.
 - **Rustle's difference:** it uses the near-tied secondaries to build, labels each locus by what the tied reads can support, and records the ties per read. **Same as the others:** it ignores 98% of secondary alignments and does not say which copy a tied read came from.
 - **Correction:** I had recorded "StringTie uses secondaries" (row 1870). It does not; they only move its bundle boundaries.
+
+### N14. "Start from the 10-AS rule: the primary's copy is right when the primary is 10 AS above every other alignment" (row 1954)
+- **Agree with it where it speaks.** On HG002 and KB3781 family reads, when the primary leads by 10 AS and `ms` is clear, the primary is at the origin in 99.89% and 99.995% of judged reads. That is about 90% of the reads with several alignments.
+- **It says nothing about most of our near ties.** Of the reads near-tied on `ms` it fires on 11.7% (OR6737), 9.6% (KB3781), 15.4% (A119b) and 8.7% (HG002). Their AS leads: primary below a rival 15-26%, exact AS tie 29-47%, lead 1-9 25-40%.
+- **Where it fires on a near tie it names one copy too confidently:** the primary is right in 96% of judged reads on HG002, but in 42% of that cell the individual's own haplotypes say several copies fit equally.
+- **It sets aside reads that are fine.** 3-10% of multi-aligned reads have a primary that is not 10 AS ahead (mostly BELOW a rival on AS) but is clear on `ms`; the primary is right in 99.7-100% of them.
+- **Which secondaries are worth anything:** the exact ties. A secondary with exactly the primary's AS, in a read near-tied on `ms`, sits at the origin in 56% (HG002) and 16-20% (planted); 1-9 AS below, 5.6% and under 0.1%; 10 AS or more below, 0.03%. When the primary is wrong on planted reads, the origin is an exact-tie secondary in 97%.
+- **Can a tied primary make up a locus?** The copy exists, its expression may not. minimap2 always names a primary; exact ties are ordered by a hash of the read's name, length and a seed: renaming the reads moves 29% of the primaries of a planted family set, all of them mapping quality 0, and identical twins split a copy's reads evenly (343 / 344). On OR6737 545 loci (2.7%) have only near-tied reads behind them.
+- **"Then filter on mapping quality."** It works and costs too much: without the mapping-quality-0 primaries the silent copies with a transcript fall from about 25 to 0, and the expressed copies found fall from 133 to 83 (StringTie) and 129 to 79 (Rustle primaries); isoform recall halves. Page: https://claude.ai/artifact/RPAQw2dJcA1w6u4MZHhTUS
+- Wording: the Eichler lab's 10-point filter adapted to a single reference; the paper compares primaries across haplotype assemblies, which we have not run.
 
 ### Not answered yet (say so)
 1. (answered 2026-11-25: the `ms` pool did not confirm, N2.) 2. Alleles against copies without the individual's genome. 3. The 15% of recurrent sequences in neither haplotype; X:62.25 Mb on KB3781. 4. Labels on real samples (no truth). 5. A sample that lacks or gains a copy, on planted reads. 6. Strongly supported non-canonical junctions (GOLGA6L2 / GOLGA8Q). 7. Member discovery on real data (0.23 pair precision).

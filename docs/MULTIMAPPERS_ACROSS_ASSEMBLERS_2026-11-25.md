@@ -22,6 +22,18 @@ copies silent) 46% of primary alignments have MAPQ 0 and 66% are below 30.
 - **Which of two equal hits is primary:** the sort key is `score << 32 | hash` (`mm_hit_sort`, `hit.c:203`), where the hash
   is derived from the hit's anchors and a per-read seed (`hit.c:64`). Equal scores are ordered by that hash: deterministic
   for a given read and index, arbitrary with respect to biology. This is the "coin toss".
+  In detail (`map.c:246-248`): the per-read value is a hash of the read's NAME, its length and a seed (11 unless `--seed`;
+  `--no-hash-name` leaves the name out), mixed per alignment with the position of its first anchor. Shown directly on
+  7,980 planted reads (workspace `coin_toss_2026-11-25`): the same command twice moves no primary; another seed moves 2,284
+  (28.6%) and renaming the reads 2,308 (28.9%), every one of them a MAPQ-0 read; with `--no-hash-name` renaming moves
+  none. Reads of seven pairs of identical copies land 343 on the true copy and 344 on its twin.
+- **A re-ranking step** runs first when the two best hits are close (`mm_update_dp_max`, `align.c:1022`: second-best
+  within 0.9 of the best, and the best covering 0.9 of the read): the segment score is recomputed with a penalty scaled to
+  the read's divergence, so the final order can differ slightly from the `ms` tag, which is written before it.
+- **Primary or secondary** is then decided going down that order: a hit that overlaps a primary on the read by more
+  than half becomes its secondary (`mm_set_parent`, `hit.c:125`). AS plays no part, which is why a primary can have a
+  LOWER AS than a secondary: on OR6737 50,803 reads do, 88% of them a spliced primary against an unspliced rival, and the
+  primary is right in 99.7-100% of such reads against the truth (row 1954).
 - **The score that is compared** is `dp_max`, the best-scoring segment of the alignment; it is written as the tag `ms`
   (`dp_max0`), while `AS` is the full dynamic-programming score `dp_score`, which in splice mode also pays for introns
   (`format.c:403`, `minimap.h:105-106`). Hence "say which score": two hits can tie on `ms` and differ on `AS`.
