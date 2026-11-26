@@ -2,7 +2,7 @@
 """Member discovery: the places every expressed locus's reads also align to (register 1910; O2, the `available` layer).
 
     member_discovery.py ASSEMBLY.gtf BAM OUT_PREFIX [--min-reads 5] [--min-bases 100] [--min-ratio 0.3] [--as-table TSV]
-                        [--exclude BED] [--merge 0] [--repeats BED [--max-repeat 0.5]] [--threads N]
+                        [--exclude BED] [--merge 0] [--repeats BED [--max-repeat 0.5] [--neighbour-bp 1000000]] [--threads N]
 
 Loci = gene_id of the GTF (rule of eq_classes.py). A read's SOURCE = the locus of its primary record. A hit = a
 secondary record of the read that is not on the source locus, with >= --min-bases aligned bases and AS >= --min-ratio x
@@ -18,6 +18,10 @@ It says where relatives are, nothing about their expression.
 inside the BED's intervals, and rows with a share >= --max-repeat (0.5) are left out of both files (2 = keep all, only the
 column). On a human sample a third of the places at >= 0.9 of the best score are copies of a transposable element; the
 filter also removes about a third of the real relatives (reads that end in a repeat-rich untranslated region).
+A place on its source locus's contig within --neighbour-bp (1,000,000; 0 = no exemption) of it is kept whatever its share:
+a tandem copy sits beside its source (register 1968). Give a BED of INTERSPERSED repeats only (SINE, LINE, LTR, DNA,
+Retroposon): satellite and simple-repeat intervals cover much of a tandem array (rows 1967 / 1968: with both, the share of
+places at a relative rises from 0.50 to 0.72 on an unused sample with 99-100% of the paralogues and pseudogenes kept).
 --exclude BED: records that start inside an interval are not read (satellite arrays: one contig of A119b ran for hours).
 Two passes over the BAM (primaries, then secondaries); the places of a contig are built in its worker.
 --selftest runs the pure parts."""
@@ -128,6 +132,8 @@ def scan_hits(c):
 def selftest():
     import tempfile
     d = tempfile.mkdtemp(); open(d + '/r.bed', 'w').write('c\t100\t200\nc\t150\t300\nc\t900\t950\n'); bed = read_bed(d + '/r.bed')
+    assert neighbour(('c', 5000, 6000), ['c', 100, 4000, '+', 'x'], 1000) and not neighbour(('c', 5001, 6000), ['c', 100, 4000, '+', 'x'], 1000) and not neighbour(('d', 5000, 6000), ['c', 100, 4000, '+', 'x'], 1000)
+    assert neighbour(('c', 10, 90), ['c', 100, 4000, '+', 'x'], 1000) and not neighbour(('c', 5000, 6000), None, 1000) and not neighbour(('c', 5000, 6000), ['c', 100, 4000, '+', 'x'], 0)
     assert bed == {'c': ([100, 900], [300, 950])} and inside([(0, 200), (250, 350)], bed['c']) == 0.5 and inside([(0, 10)], None) == 0.0
     B = lambda *x: tuple(x)
     h = [('c', '+', 100, 400, 'r1', 'A', 300, 0.9, OUTSIDE, B((100, 400))), ('c', '+', 150, 9000, 'r2', 'A', 350, 0.6, OUTSIDE, B((150, 300), (8800, 9000))),
@@ -165,11 +171,15 @@ def inside(blocks, bed):
         while k < len(st) and st[k] < b: n += max(0, min(b, en[k]) - max(a, st[k])); k += 1
     return n / max(1, sum(b - a for a, b in blocks))
 
+def neighbour(row, src, bp):
+    """row (chrom, start, end, ...) lies on the contig of its source locus [chrom, start, end, ...] within bp of it"""
+    return bool(bp) and src is not None and src[0] == row[0] and max(row[1] - src[2], src[1] - row[2]) <= bp
+
 def main():
     if '--selftest' in sys.argv: return selftest()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('gtf'); ap.add_argument('bam'); ap.add_argument('out'); ap.add_argument('--min-reads', type=int, default=5); ap.add_argument('--min-bases', type=int, default=100)
-    ap.add_argument('--min-ratio', type=float, default=0.3); ap.add_argument('--merge', type=int, default=0); ap.add_argument('--as-table'); ap.add_argument('--exclude'); ap.add_argument('--repeats'); ap.add_argument('--max-repeat', type=float, default=0.5); ap.add_argument('--threads', type=int, default=8)
+    ap.add_argument('--min-ratio', type=float, default=0.3); ap.add_argument('--merge', type=int, default=0); ap.add_argument('--as-table'); ap.add_argument('--exclude'); ap.add_argument('--repeats'); ap.add_argument('--max-repeat', type=float, default=0.5); ap.add_argument('--neighbour-bp', type=int, default=1_000_000); ap.add_argument('--threads', type=int, default=8)
     a = ap.parse_args()
     import pysam, eq_classes as E
     meta, gex = E.load_loci(a.gtf); G.update(gex=gex, bam=a.bam, best=None, min_reads=a.min_reads, min_bases=a.min_bases, min_ratio=a.min_ratio, merge=a.merge)
@@ -196,7 +206,7 @@ def main():
     nh = sum(r[0] for r in res); rows = [x for r in res for x in r[1]]; share = {}; nrep = 0
     if a.repeats:
         rp = read_bed(a.repeats); share = {id(x[0]): inside(x[0][10], rp.get(x[0][0])) for x in rows}; nrep = len(rows)
-        rows = [x for x in rows if share[id(x[0])] < a.max_repeat]; nrep -= len(rows)
+        rows = [x for x in rows if share[id(x[0])] < a.max_repeat or neighbour(x[0], meta.get(x[0][4]), a.neighbour_bp)]; nrep -= len(rows)
     with open(a.out + '.members.tsv', 'w') as w:
         w.write('place\tchrom\tstart\tend\tstrand\tsource\treads\tbest_ratio\tmedian_ratio\tmax_bases\tlocus\tfootprint_bp\tfootprint' + ('\trepeat_share' if a.repeats else '') + '\n')
         for r, _ in rows:
@@ -211,7 +221,7 @@ def main():
             at = f'gene_id "M_{r[0]}_{r[1]}_{r[3]}"; transcript_id "M_{r[0]}_{r[1]}_{r[3]}.1"; o2_status "member_candidate"; sources "{",".join(srcs)}"; reads "{r[5]}"; best_ratio "{r[6]:.3f}";'
             w.write(f'{r[0]}\tmember_discovery\ttranscript\t{bl[0][0] + 1}\t{bl[-1][1]}\t.\t{r[3]}\t.\t{at}\n')
             for x, y in bl: w.write(f'{r[0]}\tmember_discovery\texon\t{x + 1}\t{y}\t.\t{r[3]}\t.\t{at}\n')
-    if a.repeats: print(f'member_discovery: {nrep} rows left out, repeat share >= {a.max_repeat} ({a.repeats})')
+    if a.repeats: print(f'member_discovery: {nrep} rows left out, repeat share >= {a.max_repeat} and not within {a.neighbour_bp} bp of their source ({a.repeats})')
     print(f"member_discovery: {len(src)} reads with a source locus, {nh} secondary hits off it past the thresholds, {len(rows)} place x source rows ({nnew} places on no assembled locus, {len({(r[0], r[1], r[3]) for r, _ in rows if r[9] != '.'})} on one) -> {a.out}.members.tsv, .members.gtf")
 
 if __name__ == '__main__':

@@ -46,9 +46,9 @@ def main(pairs, relp, rmsk, fa, out, thr=16, band='0.9'):
     print(f'genes {len(genes)}; with fewer than 200 non-repeat exonic bases {sum(v < 200 for v in L.values())}; aligned pairs {len(cov)}')
     print(f'rows of band {band}\trows\tsimilar\tshare\tdistinct places\tplaces similar')
     T = collections.defaultdict(lambda: [0, 0, set(), set()]); RW = open(out + '/rows.tsv', 'w')   # every row with its verdict, for members_grid.py
-    for band, k, place, s, under, share in rows:
+    for band, k, place, s, under, share, *rest in rows:
         key = k if float(share) < 0.5 or k[0] == '4' else k + ' (repeat-dominated)'
-        ok = any(sim(s, g) for g in under.split(',') if g != '.'); RW.write(f'{band}\t{k}\t{place}\t{s}\t{under}\t{share}\t{int(ok)}\n'); t = T[key]; t[0] += 1; t[1] += ok; t[2].add(place); ok and t[3].add(place)
+        ok = any(sim(s, g) for g in under.split(',') if g != '.'); RW.write('\t'.join([band, k, place, s, under, share, str(int(ok))] + rest) + '\n'); t = T[key]; t[0] += 1; t[1] += ok; t[2].add(place); ok and t[3].add(place)
     for k in sorted(T): t = T[k]; print(f'{k}\t{t[0]}\t{t[1]}\t{t[1] / t[0]:.3f}\t{len(t[2])}\t{len(t[3])}')
     keep = {k: t for k, t in T.items() if 'repeat' not in k}; n = sum(t[0] for t in keep.values()); r = sum(t[0] if k[0] in '123' else t[1] if k[0] == '5' else 0 for k, t in keep.items())
     print(f'rows with a repeat share under 0.5: {n}; relatives (classes 1-3, or class 5 and similar): {r} ({r / max(1, n):.3f})')

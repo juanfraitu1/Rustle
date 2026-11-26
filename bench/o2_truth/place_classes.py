@@ -8,7 +8,7 @@ remove (share a listed relative); same named family (HGNC gene group, or symbol 
 (>= half of the footprint in an interspersed or simple repeat); another gene by biotype; nothing annotated."""
 import sys, os, re, bisect, collections
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'denovo_eval'))
-REP = {'SINE', 'LINE', 'LTR', 'DNA', 'Retroposon', 'Simple_repeat', 'Low_complexity', 'Satellite'}
+REP = set(os.environ['PLACE_CLASSES_REP'].split(',')) if os.environ.get('PLACE_CLASSES_REP') else {'SINE', 'LINE', 'LTR', 'DNA', 'Retroposon', 'Simple_repeat', 'Low_complexity', 'Satellite'}   # register 1968: the env narrows the classes
 
 def merged(iv):
     out = []
@@ -76,6 +76,10 @@ def main(mem, gtf, relp, hgnc, rmsk, *bands):
         if len(f) > 8 and f[2] == 'exon':
             g = re.search(r'gene_id "([^"]+)"', f[8]).group(1); tx[g].append((int(f[3]) - 1, int(f[4]))); meta[g] = (f[0], f[6] if f[6] in '+-' else '+')
     pairs = open(os.environ['PLACE_CLASSES_PAIRS'], 'w') if os.environ.get('PLACE_CLASSES_PAIRS') else None   # one line per row: band, class, place, source gene, genes under, repeat share
+    span = {g: (meta[g][0], min(a for a, _ in tx[g]), max(b for _, b in tx[g])) for g in tx}
+    def near(s, p):          # register 1968: the place is on the source's contig within 1 Mb of it (a tandem neighbour)
+        if s not in span or span[s][0] != p[1]: return 0
+        return int(max(int(p[2]) - span[s][2], span[s][1] - int(p[3])) <= 1_000_000)
     src_gene = {}; rows = [l.rstrip('\n').split('\t') for l in open(mem)][1:]
     for lo, hi in bands:
         C = collections.Counter(); P = collections.defaultdict(set); R = collections.Counter(); ex_ = collections.defaultdict(list)
@@ -86,7 +90,7 @@ def main(mem, gtf, relp, hgnc, rmsk, *bands):
             bl = [tuple(map(int, x.split('-'))) for x in p[12].split(',')]; share = covered(bl, rs.get(p[1], []), rp.get(p[1], [])) / max(1, sum(b - a for a, b in bl))
             under = genes_at(p[1], bl); k = klass(src_gene[s], under, rel, grp, name, bio, share)
             C[k] += 1; P[k].add(p[0]); R[k] += share >= 0.5
-            if pairs: pairs.write(f"{lo}\t{k}\t{p[0]}\t{src_gene[s] or '.'}\t{','.join(sorted(under - {src_gene[s]})) or '.'}\t{share:.3f}\n")
+            if pairs: pairs.write(f"{lo}\t{k}\t{p[0]}\t{src_gene[s] or '.'}\t{','.join(sorted(under - {src_gene[s]})) or '.'}\t{share:.3f}\t{near(s, p)}\n")
             if len(ex_[k]) < 6: ex_[k].append(f"{name[src_gene[s]] if src_gene[s] else s}>{','.join(sorted(name[g] for g in under - {src_gene[s]})[:2]) or '.'}")
         n = sum(v for k, v in C.items() if not k.startswith('source')); n13 = sum(v for k, v in C.items() if k[0] in '123')
         print(f'## score {lo}-{min(hi, 1.0)}: {sum(C.values())} rows; with an annotated source {n}; classes 1-3: {n13} ({n13 / max(1, n):.3f})')
