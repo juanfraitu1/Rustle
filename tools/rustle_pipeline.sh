@@ -78,6 +78,10 @@
 #             The pass over the BAM that finds, for every multimapping read, the loci it can sit at is made once
 #             (tools/tie_table.py -> PREFIX.o2.ties.tsv.gz, readable: read, locus, ms gap, best ms) and read by the
 #             labels and by the sequence test.
+#             RUSTLE_O2_CLUSTERS=1 (opt-in, registers 1974 / 1975; needs --fasta and minimap2): tied reads decided for a
+#             CLUSTER of near-identical loci (RUSTLE_O2_CLUSTER_IDENTITY, 0.99), the unit of the Eichler lab's 10-point
+#             filter (Guitart 2024) adapted to one reference -> PREFIX.o2.clusters.tsv, PREFIX.o2.cluster_loci.tsv.
+#             A verdict is "one of N loci"; quote N with it (tools/cluster_verdict.py).
 #             Nothing is dropped: a family member that is found stays available. RUSTLE_O2_DROP=1 drops the
 #             homology_only loci instead. Costs a second assembly at a floor of one read, a families run on the
 #             candidates and one BAM pass (gorilla OR6737: about 7 min). If it fails, the report is made on PREFIX.gtf
@@ -1796,6 +1800,21 @@ stage_o2() {
              say "o2: $(tail -1 "$OUT.o2.support.log" | sed 's/ -> .*//') (attributes support, primary_reads, layer in $OUT.o2.gtf; layers $OUT.o2.primary.gtf, $OUT.o2.tied.gtf; summary $OUT.o2.layers.tsv)"
            else rm -f "$OUT.o2.support.tmp".*; say "o2: the support tag FAILED (see $OUT.o2.support.log); $OUT.o2.gtf has no support attribute"; fi ;;
         *) echo "[rustle_pipeline] RUSTLE_O2_SUPPORT must be 0 or 1 (got '$RUSTLE_O2_SUPPORT')" >&2; exit 2 ;;
+      esac
+      # RUSTLE_O2_CLUSTERS=1 (OPT-IN, user 2026-11-26, registers 1974 / 1975; unset = 0): the Eichler lab's 10-point filter (Guitart 2024)
+      # at the unit the paper uses it at, adapted to one reference: the loci that tied reads touch are joined into clusters of
+      # near-identical sequence (RUSTLE_O2_CLUSTER_IDENTITY, 0.99) and a tied read is decided for a cluster when every alignment
+      # within 10 ms of its best lies in it, ambiguous otherwise -> PREFIX.o2.clusters.tsv, PREFIX.o2.cluster_loci.tsv. A verdict is
+      # "one of N loci"; N is in the tables. Needs the tie table of the labels, --fasta, pysam and minimap2 on PATH; a failure is
+      # reported and changes no other product (tools/cluster_verdict.py).
+      case "${RUSTLE_O2_CLUSTERS:-0}" in
+        0) rm -f "$OUT.o2.clusters.tsv" "$OUT.o2.cluster_loci.tsv" ;;
+        1) if [ ! -s "$OUT.o2.ties.tsv.gz" ] || [ -z "${FASTA:-}" ] || ! command -v minimap2 > /dev/null; then
+             rm -f "$OUT.o2.clusters.tsv" "$OUT.o2.cluster_loci.tsv"; say "o2: clusters SKIPPED (needs $OUT.o2.ties.tsv.gz, --fasta and minimap2 on PATH)"
+           elif "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/cluster_verdict.py" "$OUT.multicopy.gtf" "$FASTA" "$OUT.o2.ties.tsv.gz" "$OUT.o2" --identity "${RUSTLE_O2_CLUSTER_IDENTITY:-0.99}" --threads "$JOB_THREADS" > "$OUT.o2.clusters.log" 2>&1; then
+             say "o2: $(tail -1 "$OUT.o2.clusters.log" | sed 's/^cluster_verdict: //; s/ -> .*//') -> $OUT.o2.clusters.tsv, $OUT.o2.cluster_loci.tsv"
+           else rm -f "$OUT.o2.clusters.tsv" "$OUT.o2.cluster_loci.tsv"; say "o2: clusters FAILED (see $OUT.o2.clusters.log); no other product is affected"; fi ;;
+        *) echo "[rustle_pipeline] RUSTLE_O2_CLUSTERS must be 0 or 1 (got '$RUSTLE_O2_CLUSTERS')" >&2; exit 2 ;;
       esac
     fi
   fi

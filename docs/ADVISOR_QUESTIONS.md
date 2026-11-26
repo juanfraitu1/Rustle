@@ -24,6 +24,7 @@ beside it); "sequences", not copies, for the sequence count; copies are MODELED,
 | N10 | Where did each read go? How did reads become transcripts? | One file per run, and the removal rules in readable Python with exact parity. | stage `provenance`, `tools/polish_rules.py` |
 | N11 | Is correlation clustering (Strainy) the better way? | Tried twice, no gain. | rows 1823, 1932 |
 | N12 | Is this luck or overfitting? | Rule fixed before each run, unseen seeds or samples, failures recorded (mine included). | register |
+| N18 | The Eichler rule tells you quickly which copy a read came from. | Run as the paper describes it: 99% decided on the individual's own haplotypes; the same TBC1D3 reads are ties on one reference in 96%. | rows 1954, 1969, 1972 |
 | N17 | Can multimappers just below the ties seed real loci? | Only as support for an isoform the locus's own reads show; +14 to +24 annotated isoforms a sample. | rows 1961, 1965 |
 | N16 | Use more multimappers: lower the threshold, or all the ties. | Neither helps: wider pools add transcripts with no reads of their own; exact ties only loses true ones at low depth. | rows 1958-1960 |
 | N15 | Multimappers are very useful for finding silent copies. | They reach them, rarely through near ties, and cannot tell them from other homologous places (AUC 0.68). | row 1955 |
@@ -134,6 +135,17 @@ beside it); "sequences", not copies, for the sequence count; copies are MODELED,
 - **How much it is worth:** over a whole gorilla sample, net +14 to +24 annotated isoforms of about 24,000, for 400-530 more transcripts, of which 42-46% are shown by a full-length read at the locus or by a second animal.
 - **Without the two conditions** the same reads build copies with no read of their own (open pool: 14% of the extra transcripts have any direct evidence).
 - **The larger pool is elsewhere:** about 10,000 annotated isoforms per sample have 1-4 full-length reads of their own and are not assembled; relatives reach 0.2% of them.
+
+### N18. "The Eichler rule tells you quickly which copy a read came from" (rows 1954, 1969, 1972; full page: `docs/EICHLER_FILTER_WHAT_IT_DOES_2026-11-26.md`)
+- **We ran it as the paper describes it** (row 1972): HG002's family reads mapped separately to its maternal and paternal assemblies with the paper's minimap2 parameters, primaries compared per paralog, lead of 10 = retained, the rest ambiguous and ignored.
+- **On the individual's own haplotypes it decides 98.9% of family reads.** TBC1D3: 53.6% retained, 46.4% ambiguous and thrown away. NPIP: 92% / 8%.
+- **The same reads on one reference:** 96% of the TBC1D3 reads it retains are ties on CHM13; the CHM13 primary is on the paralog the haplotypes name for 27% (14 of 52); our single-reference adaptation abstains on 94%.
+- **So the work is done by the haplotype assemblies, not by the number 10.** Without them the rule fires on one near-tied read in ten (row 1954), and at an exact tie the primary is a draw by read name (renaming moves 29%).
+- **What it is in the paper:** a filter that keeps confident reads per paralog CLUSTER and discards the rest. It is not a method that places every read, and its unit is coarser than a copy.
+- **What is right about it:** where a read leads clearly, the primary is right in 99.9%.
+- **"Then adapt it." (row 1974)** The paper's unit is a cluster of paralogs. Asked between clusters of near-identical copies on CHM13, the 10-point lead decides 78-81% of the reads that are near ties between copies and is right in 98-99% (truth: the haplotype run); asked between copies, 15% and 79%. The answer is "one of 2 copies" in the median, "one of 9" for TBC1D3. That is the adaptation: cluster-level support with the rest discarded. It holds with clusters built from the run's own copies, no annotation (row 1975): HG002 80% decided / 96.6% right, KB3781 74% / 99.3%, planted reads with private variants 82-85% / 100%. In the pipeline as an opt-in: `RUSTLE_O2_CLUSTERS=1` (stage `o2`) -> `PREFIX.o2.clusters.tsv`; the built step on HG002: 83.7% of tied reads decided, 97.3% right.
+- Page: https://claude.ai/artifact/CCNiwfa8YVJfKmsWGG4Gif
+- Say "the Eichler lab's 10-point filter (Guitart 2024)" and which version was run. Limits: one individual, clusters by nearest reference copy, no quality filter, 97 TBC1D3 reads.
 
 ### Not answered yet (say so)
 1. (answered 2026-11-25: the `ms` pool did not confirm, N2.) 2. Alleles against copies without the individual's genome. 3. The 15% of recurrent sequences in neither haplotype; X:62.25 Mb on KB3781. 4. Labels on real samples (no truth). 5. A sample that lacks or gains a copy, on planted reads. 6. Strongly supported non-canonical junctions (GOLGA6L2 / GOLGA8Q). 7. Member discovery on real data (0.23 pair precision).
