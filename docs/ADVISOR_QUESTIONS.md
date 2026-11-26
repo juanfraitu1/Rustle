@@ -24,6 +24,7 @@ beside it); "sequences", not copies, for the sequence count; copies are MODELED,
 | N10 | Where did each read go? How did reads become transcripts? | One file per run, and the removal rules in readable Python with exact parity. | stage `provenance`, `tools/polish_rules.py` |
 | N11 | Is correlation clustering (Strainy) the better way? | Tried twice, no gain. | rows 1823, 1932 |
 | N12 | Is this luck or overfitting? | Rule fixed before each run, unseen seeds or samples, failures recorded (mine included). | register |
+| N17 | Can multimappers just below the ties seed real loci? | Only as support for an isoform the locus's own reads show; +14 to +24 annotated isoforms a sample. | rows 1961, 1965 |
 | N16 | Use more multimappers: lower the threshold, or all the ties. | Neither helps: wider pools add transcripts with no reads of their own; exact ties only loses true ones at low depth. | rows 1958-1960 |
 | N15 | Multimappers are very useful for finding silent copies. | They reach them, rarely through near ties, and cannot tell them from other homologous places (AUC 0.68). | row 1955 |
 | N14 | Start from the 10-AS rule as the baseline. | It is right where it fires (99.9%) and fires on about 10% of our near ties; the secondaries worth anything are the exact ties. | row 1954 |
@@ -126,6 +127,13 @@ beside it); "sequences", not copies, for the sequence count; copies are MODELED,
 - **The benchmark caveat found on the way:** the copy count gives each transcript to one gene, so at read-through pairs (JMJD7 / PLA2G4B-like) a gene whose 76 reads are all inside a transcript counts as not modelled.
 - **Two modes, as they stand:** ties seed transcripts at 0.98 of the best score and are labelled; lower-score places go to a list (`members`), which is 85% real relatives at 0.9 and above with the repeat filter and 67% at 0.7-0.9.
 - **Ties are a family matter:** see N14.
+
+### N17. "Can the multimappers just below the ties (0.9 or more of the best score) seed real loci?" (rows 1961, 1965)
+- **What is in that band:** a third of those alignments fit an isoform truly expressed where they land, a third land on a silent copy (planted reads). Where the place has reads of its own: 84% and 1%. Below 0.9 nothing fits. `AS` and `ms` give the same shares.
+- **The rule that is safe:** admit one only where the place has reads of its own AND every intron of it is shown by one of those reads. Planted: as precise as today. Real: no copy lost; covered family copies OR6737 +2, KB3781 0, HG002 +1 (on `ms`), each confirmed. Example: an LRPAP1-like copy whose annotated isoform has 5 reads of its own and is assembled only once 22 reads of relatives join them.
+- **How much it is worth:** over a whole gorilla sample, net +14 to +24 annotated isoforms of about 24,000, for 400-530 more transcripts, of which 42-46% are shown by a full-length read at the locus or by a second animal.
+- **Without the two conditions** the same reads build copies with no read of their own (open pool: 14% of the extra transcripts have any direct evidence).
+- **The larger pool is elsewhere:** about 10,000 annotated isoforms per sample have 1-4 full-length reads of their own and are not assembled; relatives reach 0.2% of them.
 
 ### Not answered yet (say so)
 1. (answered 2026-11-25: the `ms` pool did not confirm, N2.) 2. Alleles against copies without the individual's genome. 3. The 15% of recurrent sequences in neither haplotype; X:62.25 Mb on KB3781. 4. Labels on real samples (no truth). 5. A sample that lacks or gains a copy, on planted reads. 6. Strongly supported non-canonical junctions (GOLGA6L2 / GOLGA8Q). 7. Member discovery on real data (0.23 pair precision).

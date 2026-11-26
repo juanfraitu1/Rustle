@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A BAM holding only the secondary alignments a seeding-pool rule admits (register 1942).
 
-    pool_bam.py IN.bam AS_TABLE OUT.bam --rule as:0.98 | ms:0.98 | msgap:10 | asintron:0.98:10:30  [--threads N]
+    pool_bam.py IN.bam AS_TABLE OUT.bam --rule as:0.98 | ms:0.98 | msgap:10 | asintron:0.98:10:30 | anchor:ms:0.9:3 | janchor:ms:0.9:3  [--threads N]
 
 The assembler's `good` pool admits a secondary alignment when its AS is at least 0.98 x the read's best AS over the whole
 BAM (the best comes from the score table). To try another rule without changing the assembler, the rule is applied here
@@ -14,6 +14,11 @@ always kept. Rules, each against the read's genome-wide best from AS_TABLE (as_t
             1953): kept when AS >= R x best AS, or when ms >= best ms - G and AS >= R x best AS - P x (introns of this
             alignment). AS charges about 24 per intron and ms nothing, so a spliced alignment that fits as well as an
             intronless one, base for base, is 24 x introns behind on AS and falls out of the AS pool.
+  anchor:S:R:K  (register 1961) the `good` pool PLUS the secondaries at >= R x the read's best on score S (as or ms) that
+            land where the sample has reads of its own: at least 50 of the alignment's bases lie where >= K primary
+            alignments with mapping quality >= 1 are stacked. A place nothing is placed at without a tie-break gets none.
+  janchor:S:R:K  as anchor, and every intron of the secondary must be an intron of one of those primary alignments (same
+            two ends): the secondary can add support to a structure the place's own reads show, never a new one.
 A secondary without the tag, or of a read missing from the table, is kept (as the assembler does). Reads without a
 position (unmapped) are not copied: the assembler does not read them."""
 import sys, os, re, argparse, multiprocessing
@@ -22,7 +27,9 @@ G = {}
 def work(job):
     import pysam
     i, contig = job; tag = 'AS' if G['rule'][0] == 'as' else 'ms'; part = f"{G['out']}.part.{i:06d}.bam"; kept = seen = 0; kind, val = G['rule']; best = G['best']
-    B = pysam.AlignmentFile(G['bam'])
+    B = pysam.AlignmentFile(G['bam']); deep = None
+    if kind in ('anchor', 'janchor'):
+        tag = 'AS'; own = set() if kind == 'janchor' else None; deep = anchored_bases(B, contig, val[2], own)
     with pysam.AlignmentFile(part, 'wb', template=B) as w:
         for r in B.fetch(contig):
             if r.is_secondary:
@@ -32,12 +39,36 @@ def work(job):
                         a = r.get_tag('AS'); R, Gp, Pn = val
                         if a < R * b[0] and not (b[1] is not None and r.has_tag('ms') and r.get_tag('ms') >= b[1] - Gp
                                                   and a >= R * b[0] - Pn * sum(1 for o, _ in r.cigartuples if o == 3)): continue
+                elif kind in ('anchor', 'janchor'):
+                    if b is not None and b[0] is not None and r.has_tag('AS') and r.get_tag('AS') < 0.98 * b[0]:
+                        s = val[0]; top = b[0] if s == 'as' else b[1]; t = r.get_tag('AS' if s == 'as' else 'ms') if r.has_tag('AS' if s == 'as' else 'ms') else None
+                        if top is None or t is None or t < val[1] * top or sum(int(deep[y] - deep[x]) for x, y in r.get_blocks()) < 50: continue
+                        if own is not None and not all(j in own for j in junctions(r)): continue
                 elif b is not None and r.has_tag(tag):
                     t = r.get_tag(tag); top = b[0] if kind == 'as' else b[1]
                     if top is not None and (t < val * top if kind in ('as', 'ms') else t < top - val): continue
                 kept += 1
             w.write(r)
     return part, seen, kept
+
+def junctions(r):
+    """the introns (N operations) of an alignment as (start, end)"""
+    out = []; p = r.reference_start
+    for o, n in r.cigartuples:
+        if o == 3: out.append((p, p + n))
+        if o in (0, 2, 3, 7, 8): p += n
+    return out
+
+def anchored_bases(B, contig, k, own=None):
+    """prefix sums over the contig of 'at least k primary alignments with mapping quality >= 1 cover this base'"""
+    import numpy as np
+    d = np.zeros(B.get_reference_length(contig) + 2, dtype=np.int32)
+    for r in B.fetch(contig):
+        if r.is_secondary or r.is_supplementary or r.mapping_quality < 1: continue
+        for x, y in r.get_blocks(): d[x] += 1; d[y] -= 1
+        if own is not None: own.update(junctions(r))
+    np.cumsum(d, out=d); d = (d >= k).astype(np.int32); np.cumsum(d, out=d)
+    return np.concatenate(([0], d))            # deep[y] - deep[x] = anchored bases in [x, y)
 
 def load_best(tab, bam=None):
     best = {}
@@ -53,8 +84,9 @@ def load_best(tab, bam=None):
 
 def run(bam, tab, out, rule, threads):
     import pysam
-    kind, val = rule.split(':', 1); assert kind in ('as', 'ms', 'msgap', 'asintron'), rule
-    val = tuple(map(float, val.split(':'))) if kind == 'asintron' else float(val)
+    kind, val = rule.split(':', 1); assert kind in ('as', 'ms', 'msgap', 'asintron', 'anchor', 'janchor'), rule
+    if kind in ('anchor', 'janchor'): s, R, K = val.split(':'); assert s in ('as', 'ms'), rule; val = (s, float(R), int(K))
+    else: val = tuple(map(float, val.split(':'))) if kind == 'asintron' else float(val)
     G.update(bam=bam, out=out, rule=(kind, val), best=load_best(tab, bam))
     if kind != 'as' and not any(m is not None for _, m in G['best'].values()):      # an AS-only table: an ms rule would keep everything and say nothing
         sys.exit(f'pool_bam: {tab} has no ms columns; --rule {rule} cannot be applied (rebuild the table with as_table)')
@@ -95,6 +127,22 @@ def selftest():
     pysam.index(b2)
     assert run(b2, tab, os.path.join(d, 'i.bam'), 'asintron:0.98:10:30', 1) == (4, 2) and [x[0] for x in names(os.path.join(d, 'i.bam'))] == [100, 1000, 7000]
     assert run(b2, tab, os.path.join(d, 'j.bam'), 'as:0.98', 1) == (4, 1)
+    b3 = os.path.join(d, 'z.bam')           # anchor: secondaries at 0.93 of the best; one where 3 placed reads are stacked, one where 2 are, one where the 3 have mapping quality 0
+    def pr(name, pos, mq):
+        r = rd(name, pos, 0, 500, 500); r.mapping_quality = mq; return r
+    with pysam.AlignmentFile(b3, 'wb', header=hdr) as w:
+        for r in (rd('r', 100, 0, 1000, 1000), pr('a1', 1000, 60), pr('a2', 1000, 60), pr('a3', 1000, 60), rd('r', 1010, 256, 930, 930), pr('b1', 3000, 60), pr('b2', 3000, 60), rd('r', 3010, 256, 930, 930),
+                  pr('c1', 5000, 0), pr('c2', 5000, 0), pr('c3', 5000, 0), rd('r', 5010, 256, 930, 880), rd('r', 7000, 256, 985, 900)): w.write(r)
+    pysam.index(b3)
+    assert run(b3, tab, os.path.join(d, 'k.bam'), 'anchor:as:0.9:3', 1) == (4, 2) and [x[0] for x in names(os.path.join(d, 'k.bam')) if x[1]] == [1010, 7000]
+    b4 = os.path.join(d, 'w.bam')          # janchor: the place's reads show intron 1040-1100; a secondary with that intron is kept, one with another intron is not
+    def spl(name, pos, flag, cigar, AS):
+        r = rd(name, pos, flag, AS, AS); r.cigarstring = cigar; r.mapping_quality = 60 if flag == 0 else 0; return r
+    with pysam.AlignmentFile(b4, 'wb', header=hdr) as w:
+        for r in (rd('r', 100, 0, 1000, 1000), spl('a1', 1000, 0, '40M60N60M', 500), spl('a2', 1000, 0, '40M60N60M', 500), spl('a3', 1000, 0, '40M60N60M', 500), spl('r', 1000, 256, '40M60N60M', 930), spl('r', 1001, 256, '45M60N55M', 930)): w.write(r)
+    pysam.index(b4)
+    assert run(b4, tab, os.path.join(d, 'j1.bam'), 'janchor:as:0.9:3', 1) == (2, 1) and run(b4, tab, os.path.join(d, 'j2.bam'), 'anchor:as:0.9:3', 1) == (2, 2)
+    assert run(b3, tab, os.path.join(d, 'k2.bam'), 'anchor:ms:0.9:2', 1) == (4, 3) and run(b3, tab, os.path.join(d, 'k3.bam'), 'anchor:ms:0.95:2', 1) == (4, 1)
     open(tab, 'w').write('#as_table\nr\t1000\t990\t4\tc\t1000\n')              # a table without ms columns
     try: run(bam, tab, os.path.join(d, 'n.bam'), 'msgap:10', 1); raise AssertionError('an ms rule ran on a table without ms')
     except SystemExit: pass

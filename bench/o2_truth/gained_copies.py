@@ -23,12 +23,19 @@ def main(species, bam, truth, today, *arms):
         rx = re.compile(pat)
         for g, d in G.items():
             if (rx.search(d['name']) or rx.search(d.get('desc', ''))) if species == 'gorilla' else (rx.match(d['name']) and d['biotype'] == 'protein_coding'): members.add(g)
+    COVERED = {}
     def modelled(path):
-        tx = collections.defaultdict(list); meta = {}
+        tx = collections.defaultdict(list); meta = {}; by_chrom = collections.defaultdict(list)
         for l in open(path):
             f = l.split('\t')
             if len(f) > 8 and f[2] == 'exon':
                 t = re.search(r'transcript_id "([^"]+)"', f[8]).group(1); tx[t].append((int(f[3]) - 1, int(f[4]))); meta[t] = (f[0], f[6] if f[6] in '+-' else '+')
+        for t, x in tx.items(): by_chrom[meta[t][0]].append((t, x))
+        cov = set()             # the fairer count (row 1959): every member a spliced transcript covers by >= half of its exon bases, on its strand
+        for g in members:
+            d = G[g]; need = sum(b - a for a, b in d['exons']) / 2
+            if any(len(x) > 1 and meta[t][0] == d['chrom'] and meta[t][1] == d['strand'] and ov(x, d['exons']) >= need for t, x in by_chrom.get(d['chrom'], ())): cov.add(g)
+        COVERED[path] = cov
         return {g for t, ex in tx.items() if len(ex) > 1 for g in [F.map_copy(idx, meta[t][0], meta[t][1], sorted(ex))] if g in members}
     base = modelled(today); B = pysam.AlignmentFile(bam); orig = collections.Counter(); cand = collections.Counter()
     span = {g: (G[g]['chrom'], min(a for a, _ in G[g]['exons']), max(b for _, b in G[g]['exons'])) for g in members}
@@ -48,10 +55,12 @@ def main(species, bam, truth, today, *arms):
         print(f"{lab}\t{len(gs)} copies\treads placed there without a tie-break: 0 -> {pc['0']}, 1-4 -> {pc['1-4']}, 5 or more -> {pc['5 or more']}{t}")
         return [(G[g]['name'], x, orig[g], cand[g]) for g, x in zip(gs, p)]
     line('modelled today', base)
+    print(f"covered today (a spliced transcript over >= half of the copy's exon bases): {len(COVERED[today])} of {len(members)} members")
     for a in arms:
         lab, path = a.split('=', 1); m = modelled(path); d = line(f'added by {lab}', m - base)
         print('   ' + '; '.join(f'{n}: placed {x}, origin {o}, candidate {c}' for n, x, o, c in d)[:900])
         if base - m: print(f'   lost by {lab}: {len(base - m)}')
+        cg = COVERED[path] - COVERED[today]; print(f'   covered by {lab}: {len(COVERED[path])} (added {len(cg)}, lost {len(COVERED[today] - COVERED[path])})'); line(f'   added to the covered by {lab}', cg)
 
 if __name__ == '__main__':
     if sys.argv[1:] == ['--selftest']:

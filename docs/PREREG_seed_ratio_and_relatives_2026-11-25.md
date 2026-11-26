@@ -126,3 +126,8 @@ not checked for this either. (2) A count that credits every gene a transcript co
 - Relatives list: 84.6% real relatives at 0.9 and above with the repeat filter, 66.9% at 0.7-0.9.
 - Recommendation: seeding stays at 0.98; lower-score places belong to the `members` list at 0.9 with the repeat filter.
   A119b's arm was still running when this was written (job 4506300).
+
+### A119b, the fourth real sample of row 1959 (job 4506300, 4.6 hours)
+Annotated family copies with a spliced transcript / junction precision / spliced transcripts (of 133): today 127 / 0.49 /
+1,096; 0.95: 127 / 0.46 / 1,213; 0.90: 128 / 0.44 / 1,305. No copy gained at 0.95, one at 0.90, junction precision down
+3 and 5 points: on the sample where nearly every copy is already modelled the wider pool only costs.
