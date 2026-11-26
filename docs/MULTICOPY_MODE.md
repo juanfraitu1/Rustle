@@ -300,6 +300,8 @@ isoforms at 0.42-0.48. On gorilla OR6737 2,455 of 73,173 transcripts are `tied_o
 copies cannot tell the tiers apart (a paralog's isoform laid onto a copy has that copy's junctions): do not use it to
 argue that `tied_only` transcripts are expressed.
 
+**DEFINITION CHANGED 2026-11-26: contested primaries no longer count; see "The layers without contested primaries" at the end of this file. The numbers in this section are for the definition before.**
+
 **Three layers and their products (user 2026-11-25).** The same step also writes `primary_reads "N"` (primary alignments
 that carry the chain) and `layer`: `primary` (N >= 2: stands without tied reads), `tied_support` (N = 1: tied reads lifted
 it over the read floor), `tied_only` (N = 0). Products:
@@ -457,3 +459,35 @@ families modelled / junction precision: 25 / 0.61, 25 / 0.61, 27 / 0.58, 34 / 0.
 Reading: on planted families product 1 has no made-up copy and about half of the isoforms; on a real sample it is the
 all-primaries assembly within 0.3%, because exact ties are rare there. The near ties earn their place at low depth
 (3 reads per isoform: 2 to 3 times the exact isoforms of either primaries product).
+
+### The depth effect on real reads (row 1964, 2026-11-26)
+OR6737 and KB3781 downsampled to 5 / 10 / 25%, truth = the full-depth primaries-only assembly
+(`PREREG_real_downsample_2026-11-26.md`). The 0.98 pool adds 0.3-0.5% confirmed chains at every depth, and 0.52 / 0.51
+of what it adds is confirmed at 5%, 0.29 / 0.30 at 25% (primaries themselves: 0.90-0.92). The mode adds 2.8% / 1.2% at
+5% and 1.0% / 0.5% at 25%, a third to a sixth of it confirmed. The planted "two to three times the isoforms at 3 reads"
+is a statement about multi-copy families, not about a whole sample.
+
+### The layers without contested primaries (default since 2026-11-26, user)
+The primary alignment of a read with a rival within 10 `ms` was placed by the aligner's tie-break. It no longer counts
+as primary support: `primary_reads "N"` is the number of UNCONTESTED primaries that carry the chain, the new attribute
+`contested_primaries "M"` holds the ones set aside, and the layers follow N as before (`primary` N >= 2, `tied_support`
+N = 1, `tied_only` N = 0). A transcript that only contested primaries carry is now `tied_only` and is written to
+`PREFIX.o2.tied.gtf`. The assembly itself is unchanged: same transcripts, other tags. Tool
+`bench/o2_families/support_tier.py` (with `--reads`, as the stage calls it); check in workspace
+`contested_primaries_2026-11-26` (job 4509358; self-tests and `cargo test` pass).
+
+| | layer `primary` before | layer `primary` now |
+|---|---|---|
+| OR6737: transcripts / loci | 68,657 / 19,097 | 68,121 / 18,860 |
+| OR6737: tied_support / tied_only transcripts | 1,133 / 1,653 | 874 / 2,448 |
+| OR6737: annotated copies of the four named families (junction precision) | 25 (0.58) | 21 (0.59) |
+| planted, half silent, 60 reads: made-up units | 8 / 11 / 6 | 0 / 0 / 0 |
+| planted, half silent, 60 reads: exact isoforms (precision) | 102-105 (0.64-0.65) | 32-34 (0.81-0.92) |
+| planted, all expressed, 60 reads: exact isoforms (precision) | 196-197 (0.81-0.83) | 65 (0.83-0.88) |
+| planted, all expressed, 3 reads: exact isoforms (precision) | 69-82 (0.93-0.95) | 25-31 (0.86-0.97) |
+
+What this changes in the wording: on a real sample 0.37% of the primaries are contested and the `primary` layer loses
+536 transcripts and 237 loci (0.8% and 1.2%). In multi-copy families the layer is now the part no tie-break touched:
+no made-up copy on planted reads, and a third of the isoforms. The tied layers are no longer "almost all wrong": at 60
+reads `tied_only` held 0 exact isoforms of 58 before and holds 130 of 224 now (seed 1967), because true isoforms of
+copies with an identical twin sit there. Row 1952's sentences about the tied layers describe the definition before.

@@ -7,7 +7,7 @@
 
 A read is TIED when a rival alignment lies within 10 ms of its best (AS_TABLE column 7), else uniquely placed.
 layers: a transcript is `unique` when >= 2 uniquely placed primaries carry its chain (provenance relation exact,
-exact_after_replacement or unspliced, rival_within_10ms = no).
+exact_after_replacement or unspliced_model, rival_within_10ms = no).
 cond: seeds = primaries + secondaries at AS >= 0.98 x best AS (the `good` pool). For a tied read, among its seeds within
 10 ms of its best: when at least one lies on a step-1 transcript (>= 50 exon bases), those that do not are dropped, the
 primary included; a kept one is then written as the primary. When none does, the group stays whole. Only removes."""
@@ -21,7 +21,7 @@ def layers(gtf, prov, out):
         h = f.readline().rstrip('\n').split('\t'); rel, tx, riv = h.index('relation'), h.index('transcript'), h.index('rival_within_10ms')
         for l in f:
             c = l.rstrip('\n').split('\t')
-            if c[rel] in ('exact', 'exact_after_replacement', 'unspliced') and c[riv] == 'no': n[c[tx]] += 1
+            if c[rel] in ('exact', 'exact_after_replacement', 'unspliced_model') and c[riv] == 'no': n[c[tx]] += 1
     u = open(out + '.unique.gtf', 'w'); t = open(out + '.tied.gtf', 'w'); k = collections.Counter()
     for l in open(gtf):
         m = re.search(r'transcript_id "([^"]+)"', l)

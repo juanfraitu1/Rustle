@@ -1779,6 +1779,8 @@ stage_o2() {
       # It runs the provenance pass (stage `provenance`, one more pass over the BAM; its tables are written as that stage
       # writes them) and bench/o2_families/support_tier.py. A failure is reported and leaves PREFIX.o2.gtf without the tag.
       # Layers (user 2026-11-25): layer "primary" = >= 2 primary alignments carry the chain (it stands without tied reads)
+      # Since 2026-11-26 (user) a CONTESTED primary (its read has a rival within 10 ms: placed by the aligner's tie-break)
+      # does not count: it is treated like a tied secondary, and its number is written as contested_primaries.
       # -> PREFIX.o2.primary.gtf, the primaries-only product; "tied_support" (1 primary, tied reads lifted it over the
       # floor) and "tied_only" -> PREFIX.o2.tied.gtf, what the near-tied multimappers add; PREFIX.o2.layers.tsv = per layer
       # transcripts, loci and labels, and of the near-tied reads how many each layer carries and how many nothing carries.

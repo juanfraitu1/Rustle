@@ -17,7 +17,12 @@ floor is 2):
   layer "tied_only"     N = 0
 (N counts alignments, the floor counts distinct start-end pairs: a transcript with two coordinate-duplicate primaries is
 called `primary` here.)
-Writes OUT_PREFIX.gtf (every transcript, tagged support, primary_reads and layer; nothing is dropped),
+CONTESTED PRIMARIES DO NOT COUNT (2026-11-26, user: "avoid counting as primaries the primaries of contested multimapping
+reads"). The primary of a read with a rival within 10 ms was placed by the aligner's tie-break, so with --reads N is the
+number of UNCONTESTED primary alignments that carry the chain: the table's count minus the carrying reads marked
+rival_within_10ms = yes (attribute contested_primaries). A contested primary is treated like a tied secondary: a
+transcript that only contested primaries carry is `tied_only`. Without --reads every primary counts, as before.
+Writes OUT_PREFIX.gtf (every transcript, tagged support, primary_reads, contested_primaries and layer; nothing is dropped),
 OUT_PREFIX.primary.gtf (layer primary), OUT_PREFIX.tied.gtf (layers tied_support and tied_only),
 OUT_PREFIX.tied_only.gtf and OUT_PREFIX.primary_tier.gtf (the two tiers of register 1952, for scoring), and
 OUT_PREFIX.layers.tsv: per layer the transcripts, loci and o2_status labels; with --reads, of the reads that have a
@@ -40,6 +45,17 @@ def counts(table):
         for l in f:
             x = l.rstrip('\n').split('\t')
             out[x[i['transcript']]] = int(x[i['exact']]) + int(x[i['exact_after_replacement']]) + int(x[i['unspliced']])
+    return out
+
+def contested(reads):
+    """-> {transcript: contested primary alignments (a rival within 10 ms) that carry it} from the provenance read table"""
+    out = collections.Counter()
+    with gzip.open(reads, 'rt') as f:
+        h = f.readline().rstrip('\n').split('\t'); r, t, v = h.index('relation'), h.index('transcript'), h.index('rival_within_10ms')
+        for l in f:
+            x = l.rstrip('\n').split('\t')
+            if x[v] == 'yes' and x[r] in ('exact', 'exact_after_replacement', 'unspliced_model', 'unspliced'):
+                for tid in x[t].split(','): out[tid] += 1
     return out
 
 def read_ties(path):
@@ -73,7 +89,7 @@ def tied_reads(reads, layer, ties=None, under=None):
     return c
 
 def run(gtf, table, out, reads=None, ties=None):
-    N = counts(table); n = {'primary': 0, 'tied_only': 0}; layer = {}
+    N = counts(table); C = contested(reads) if reads else {}; n = {'primary': 0, 'tied_only': 0}; layer = {}
     per = {k: [0, set(), collections.Counter()] for k in LAYERS}       # transcripts, loci, labels
     names = ('.gtf', '.primary.gtf', '.tied.gtf', '.primary_tier.gtf', '.tied_only.gtf')
     fh = {x: open(out + x + '.tmp', 'w') for x in names}
@@ -84,12 +100,12 @@ def run(gtf, table, out, reads=None, ties=None):
         if ties and '\texon\t' in l:
             f0 = l.split('\t', 5); g0 = re.search(r'gene_id "([^"]+)"', l)
             if g0: exons[f0[0]].append((int(f0[3]), int(f0[4]), g0.group(1)))
-        k = N.get(m.group(1), 0); L = layer_of(k); tier = 'primary' if k else 'tied_only'; layer[m.group(1)] = L; f = l.split('\t')
+        cp = C.get(m.group(1), 0); k = max(0, N.get(m.group(1), 0) - cp); L = layer_of(k); tier = 'primary' if k else 'tied_only'; layer[m.group(1)] = L; f = l.split('\t')
         if len(f) > 8 and f[2] == 'transcript':
             n[tier] += 1; per[L][0] += 1; g = re.search(r'gene_id "([^"]+)"', l); st = re.search(r'o2_status "([^"]+)"', l)
             if g: per[L][1].add(g.group(1))
             per[L][2][st.group(1) if st else 'unlabelled'] += 1
-        l = l.rstrip('\n').rstrip().rstrip(';') + f'; support "{tier}"; primary_reads "{k}"; layer "{L}";\n'
+        l = l.rstrip('\n').rstrip().rstrip(';') + f'; support "{tier}"; primary_reads "{k}"; contested_primaries "{cp}"; layer "{L}";\n'
         fh['.gtf'].write(l); fh['.primary.gtf' if L == 'primary' else '.tied.gtf'].write(l); fh['.primary_tier.gtf' if k else '.tied_only.gtf'].write(l)
     for x in names: fh[x].close(); os.replace(out + x + '.tmp', out + x)
     with open(out + '.layers.tsv.tmp', 'w') as w:
@@ -116,7 +132,7 @@ def run(gtf, table, out, reads=None, ties=None):
             if ties:
                 n0 = sum(v for k, v in c.items() if k.startswith('carried at no tied locus')); w.write(f'near-tied reads\tUNEXPLAINED: carried at no tied locus, all reasons\t{n0}\nnear-tied reads\tunexplained share\t{n0 / max(1, tot):.3f}\n')
     os.replace(out + '.layers.tsv.tmp', out + '.layers.tsv')
-    print(f"support_tier: {n['primary']} transcripts with a primary alignment ({per['primary'][0]} stand on primaries alone, {per['tied_support'][0]} with tied support), {n['tied_only']} tied-only -> {out}.gtf")
+    print(f"support_tier: {n['primary']} transcripts with an uncontested primary alignment ({per['primary'][0]} stand on primaries alone, {per['tied_support'][0]} with tied support), {n['tied_only']} tied-only -> {out}.gtf")
     return n
 
 def selftest():
@@ -128,13 +144,13 @@ def selftest():
     open(t, 'a').write('P\tG\t3\t0\t0\t0\n'); open(g, 'a').write(L('transcript', 'P').replace('transcript_id "P";', 'transcript_id "P"; o2_status "shared";'))
     rd = os.path.join(d, 'r.tsv.gz')
     with gzip.open(rd, 'wt') as w: w.write('read\trelation\ttranscript\trival_within_10ms\treason\nr1\texact\tP\tyes\t.\nr2\texact\tA\tyes\t.\nr3\tnone\t.\tyes\tunder the read floor (1 distinct alignment)\nr4\texact\tP\tno\t.\nr5\tpartial\tB,P\tyes\t.\n')
-    assert run(g, t, os.path.join(d, 'o'), rd) == {'primary': 3, 'tied_only': 2}       # A by a replaced junction, M unspliced; B has only partial reads; N is not in the table
-    o = open(os.path.join(d, 'o.gtf')).read(); assert o.count('support "primary"') == 4 and o.count('support "tied_only"') == 3 and o.startswith('# h')
+    assert run(g, t, os.path.join(d, 'o'), rd) == {'primary': 2, 'tied_only': 3}       # M unspliced, P (3 primaries, 1 contested); A's only primary is contested; B has only partial reads; N is not in the table
+    o = open(os.path.join(d, 'o.gtf')).read(); assert o.count('support "primary"') == 2 and o.count('support "tied_only"') == 5 and o.startswith('# h') and 'transcript_id "P"; o2_status "shared"; support "primary"; primary_reads "2"; contested_primaries "1"' in o
     assert 'transcript_id "B"' in open(os.path.join(d, 'o.tied_only.gtf')).read() and 'transcript_id "B"' not in open(os.path.join(d, 'o.primary_tier.gtf')).read()
-    assert 'layer "tied_support"' in [l for l in o.splitlines() if 'transcript_id "A"' in l][0] and 'transcript_id "A"' in open(os.path.join(d, 'o.tied.gtf')).read() and open(os.path.join(d, 'o.primary.gtf')).read().count('transcript_id') == 2      # M (two unspliced primaries) and P
+    assert 'layer "tied_only"' in [l for l in o.splitlines() if 'transcript_id "A"' in l][0] and 'transcript_id "A"' in open(os.path.join(d, 'o.tied.gtf')).read() and open(os.path.join(d, 'o.primary.gtf')).read().count('transcript_id') == 2      # M (two unspliced primaries) and P
     T = dict((l.split('\t')[0] + '|' + l.split('\t')[1], l.rstrip('\n').split('\t')[2]) for l in open(os.path.join(d, 'o.layers.tsv')))
     assert T['layer primary|transcripts'] == '2' and T['layer primary|transcripts labelled shared'] == '1' and T['near-tied reads|total (primary alignments with a rival within 10 ms)'] == '4'
-    assert T['near-tied reads|carried by a transcript of layer primary'] == '1' and T['near-tied reads|carried by a transcript of layer tied_support'] == '1' and T['near-tied reads|carried by a transcript of layer tied_only'] == '1' and T['near-tied reads|carried by no transcript: under the read floor'] == '1', T
+    assert T['near-tied reads|carried by a transcript of layer primary'] == '1' and T['near-tied reads|carried by a transcript of layer tied_only'] == '2' and T['near-tied reads|carried by no transcript: under the read floor'] == '1', T
     rd2 = os.path.join(d, 'r2.tsv.gz'); tt = os.path.join(d, 'ties.tsv.gz')
     with gzip.open(rd2, 'wt') as w: w.write('read\tcontig\tstart\tend\trelation\ttranscript\trival_within_10ms\treason\nr1\tc\t1\t9\texact\tP\tyes\t.\nr3\tc\t500\t600\tnone\t.\tyes\tunder the read floor (1 distinct alignment)\nr6\tc\t700\t800\tnone\t.\tyes\tunspliced, no model here\nr7\tc\t2\t8\tnone\t.\tyes\tremoved by a later rule (3 distinct alignments)\n')
     with gzip.open(tt, 'wt') as w: w.write('#tie_table\t[]\nread\tlocus\tgap\tbest_ms\nr3\toutside\t0\t90\nr3\tG\t0\t90\nr6\toutside\t0\t80\nr6\toutside\t4\t80\nr7\tG\t0\t70\nr7\tG\t3\t70\nr3\tH\t30\t90\n')
