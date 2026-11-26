@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Are two annotated genes similar over their non-repeat exonic sequence? (register 1957)
 
-    pair_similarity.py PAIRS.tsv RELATIONS.tsv RMSK.bed GENOME.fa OUT_DIR [THREADS [BAND]]   (BAND = the band's lower bound as place_classes wrote it, default 0.9)
+    pair_similarity.py PAIRS.tsv RELATIONS.tsv RMSK.bed GENOME.fa OUT_DIR [THREADS [BAND]]   (BAND = the band's lower bound as place_classes wrote it, default 0.9; `all` = every band; OUT_DIR/rows.tsv = each row with `similar`)
 
 PAIRS.tsv = place_classes.py's PLACE_CLASSES_PAIRS (band, class, place, source gene, genes under, repeat share).
 Each gene: exons merged and spliced, repeat bases as N; all against all with minimap2; a pair is similar when the aligned
@@ -17,7 +17,7 @@ def similar(cov, la, lb): return cov >= 200 and cov >= 0.3 * min(la, lb)
 def main(pairs, relp, rmsk, fa, out, thr=16, band='0.9'):
     import pysam, famtruth as F
     os.makedirs(out, exist_ok=True); CAT = F.load_cat(); rows = [l.rstrip('\n').split('\t') for l in open(pairs)]
-    rows = [r for r in rows if r[0] == band and r[3] != '.']; genes = sorted({r[3] for r in rows} | {g for r in rows for g in r[4].split(',') if g != '.'})
+    rows = [r for r in rows if (band == 'all' or r[0] == band) and r[3] != '.']; genes = sorted({r[3] for r in rows} | {g for r in rows for g in r[4].split(',') if g != '.'})
     rp = collections.defaultdict(list)
     for l in open(rmsk):
         f = l.split('\t', 8)
@@ -45,14 +45,14 @@ def main(pairs, relp, rmsk, fa, out, thr=16, band='0.9'):
         f = l.rstrip('\n').split('\t'); rel[f[0]].add(f[2]); rel[f[2]].add(f[0])
     print(f'genes {len(genes)}; with fewer than 200 non-repeat exonic bases {sum(v < 200 for v in L.values())}; aligned pairs {len(cov)}')
     print(f'rows of band {band}\trows\tsimilar\tshare\tdistinct places\tplaces similar')
-    T = collections.defaultdict(lambda: [0, 0, set(), set()])
+    T = collections.defaultdict(lambda: [0, 0, set(), set()]); RW = open(out + '/rows.tsv', 'w')   # every row with its verdict, for members_grid.py
     for band, k, place, s, under, share in rows:
         key = k if float(share) < 0.5 or k[0] == '4' else k + ' (repeat-dominated)'
-        ok = any(sim(s, g) for g in under.split(',') if g != '.'); t = T[key]; t[0] += 1; t[1] += ok; t[2].add(place); ok and t[3].add(place)
+        ok = any(sim(s, g) for g in under.split(',') if g != '.'); RW.write(f'{band}\t{k}\t{place}\t{s}\t{under}\t{share}\t{int(ok)}\n'); t = T[key]; t[0] += 1; t[1] += ok; t[2].add(place); ok and t[3].add(place)
     for k in sorted(T): t = T[k]; print(f'{k}\t{t[0]}\t{t[1]}\t{t[1] / t[0]:.3f}\t{len(t[2])}\t{len(t[3])}')
     keep = {k: t for k, t in T.items() if 'repeat' not in k}; n = sum(t[0] for t in keep.values()); r = sum(t[0] if k[0] in '123' else t[1] if k[0] == '5' else 0 for k, t in keep.items())
     print(f'rows with a repeat share under 0.5: {n}; relatives (classes 1-3, or class 5 and similar): {r} ({r / max(1, n):.3f})')
-    random.seed(1957); n = hit = 0
+    RW.close(); random.seed(1957); n = hit = 0
     while n < 5000:
         a, b = random.sample(genes, 2)
         if b in rel[a]: continue
