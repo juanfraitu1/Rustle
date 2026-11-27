@@ -160,6 +160,9 @@
 #                              PREFIX.multicopy.tsv lists them. Transcripts also carry counts that do not multiply over
 #                              indistinguishable copies (reads_em, reads_tieadj, tie_group); PREFIX.multicopy.groups.tsv = the tie
 #                              groups with the range of expressed copies (row 1871). No other product changes.
+#                              RUSTLE_ONE_READ_LOCI=1 (opt-in, row 1987): also PREFIX.oneloci.gtf = PREFIX.gtf + every spliced
+#                              one-read transcript at an empty place whose lone read has no rival alignment (as StringTie -L
+#                              admits one spliced read; 0.84-0.94 correct on simulated reads, 13% annotated on a human library).
 #   tools/rustle_pipeline.sh oneread --bam B --fasta G --out PREFIX [--threads N]   (registers 1766 / 1806 / 1808; also a last step of `all` since 2026-11-20,
 #                              RUSTLE_ONEREAD_TIER=0 = off): side files, never read by another stage. PREFIX.oneread.gtf = one-read chains with every
 #                              junction in another read and a clean reading frame (tools/oneread.py); PREFIX.oneread.ranked.gtf = every one-read chain
@@ -924,7 +927,9 @@ stage_assemble() {
     seed_score_table
     if "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/../bench/o2_families/pool_bam.py" "$BAM" "$table" "$od/pool.bam" --rule "own:as:0.98:1:${RUSTLE_SEED_OWN_MAPQ:-0}" --threads "$THREADS" > "$OUT.seedpool.log" 2>&1; then
       say "assemble: seeding pool: own ($(tail -1 "$OUT.seedpool.log" | sed 's/^pool_bam ([^)]*): //; s/ -> .*//'))"
-      ( export RP_OWNPOOL_FROM="$BAM"; BAM="$od/pool.bam"; SEED_POOL=all; AS_TABLE=""; stage_assemble ) || orc=$?
+      # RP_LAYERS_BG=0: the layered run reads pool.bam, so it must end before the pool is removed (found 2026-11-27: under `all` it
+      # was left running and failed on the missing index)
+      ( export RP_OWNPOOL_FROM="$BAM"; BAM="$od/pool.bam"; SEED_POOL=all; AS_TABLE=""; RP_LAYERS_BG=0; stage_assemble ) || orc=$?
       [ -n "${RUSTLE_SEEDPOOL_KEEP:-}" ] || rm -rf "${od:?}"
       [ "$orc" = 0 ] || exit "$orc"
       return 0
@@ -1312,6 +1317,14 @@ stage_multicopy() {
   $py "$RP_DRIVER_DIR/multicopy_rescue.py" candidates "$OUT.gtf" "$f1" "$d/cand.gtf" "${monoarg[@]}" >> "$OUT.multicopy.log" 2>&1 \
     || { echo "[rustle_pipeline] multicopy: candidates failed (see $OUT.multicopy.log)" >&2; exit 1; }
   say "multicopy: $(tail -1 "$OUT.multicopy.log")"
+  # RUSTLE_ONE_READ_LOCI=1 (opt-in, row 1987): one read is enough to seed a LOCUS. PREFIX.oneloci.gtf = PREFIX.gtf + the candidates
+  # one primary read carries and no other alignment of that read rivals (tools/one_read_loci.py). A failure leaves the rest.
+  case "${RUSTLE_ONE_READ_LOCI:-0}" in 0) ;; 1)
+      ( table="${AS_TABLE:-}"; tbam="$BAM"; seed_score_table >> "$OUT.multicopy.log" 2>&1
+        $py "$RP_DRIVER_DIR/one_read_loci.py" "$OUT.gtf" "$d/cand.gtf" "$BAM" "$table" "$OUT.oneloci.gtf" "$THREADS" >> "$OUT.multicopy.log" 2>&1 ) \
+        && say "multicopy: $(tail -1 "$OUT.multicopy.log") -> $OUT.oneloci.gtf" \
+        || echo "[rustle_pipeline] WARNING: multicopy: the one-read loci failed (see $OUT.multicopy.log); every other product is unaffected" >&2 ;;
+    *) echo "[rustle_pipeline] RUSTLE_ONE_READ_LOCI must be 0 or 1 (got '$RUSTLE_ONE_READ_LOCI')" >&2; exit 2 ;; esac
   rm -f "$d"/u.fam.* "$d/u.families.gtf"
   cat "$OUT.gtf" "$d/cand.gtf" > "$d/u.gtf"
   local ufam="$d/u.gtf"; if [ "$FAM_GTF" != "$OUT.gtf" ]; then cat "$FAM_GTF" "$d/cand.gtf" > "$d/u.families.gtf"; ufam="$d/u.families.gtf"; fi
