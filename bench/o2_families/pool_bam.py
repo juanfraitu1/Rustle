@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A BAM holding only the secondary alignments a seeding-pool rule admits (register 1942).
 
-    pool_bam.py IN.bam AS_TABLE OUT.bam --rule as:0.98 | ms:0.98 | msgap:10 | asintron:0.98:10:30 | anchor:ms:0.9:3 | janchor:ms:0.9:3  [--threads N]
+    pool_bam.py IN.bam AS_TABLE OUT.bam --rule as:0.98 | ms:0.98 | msgap:10 | asintron:0.98:10:30 | anchor:ms:0.9:3 | janchor:ms:0.9:3 | own:as:0.98:1  [--threads N]
 
 The assembler's `good` pool admits a secondary alignment when its AS is at least 0.98 x the read's best AS over the whole
 BAM (the best comes from the score table). To try another rule without changing the assembler, the rule is applied here
@@ -19,6 +19,11 @@ always kept. Rules, each against the read's genome-wide best from AS_TABLE (as_t
             alignments with mapping quality >= 1 are stacked. A place nothing is placed at without a tie-break gets none.
   janchor:S:R:K  as anchor, and every intron of the secondary must be an intron of one of those primary alignments (same
             two ends): the secondary can add support to a structure the place's own reads show, never a new one.
+  own:S:R:K   (register 1984) own-evidence seeding: a secondary is kept ONLY when its score is >= R x the read's best on S AND
+            it is anchored (as `anchor`) AND every intron of it is an intron of a placed primary there (as `janchor`). No
+            unconditional band: with R = 0.98 this is today's pool minus the seeds at places the sample puts no read of
+            its own at. A fifth field sets the lowest mapping quality of a placed primary (default 1; `own:as:0.98:1:0` = any
+            primary, also one placed by the tie-break).
 A secondary without the tag, or of a read missing from the table, is kept (as the assembler does). Reads without a
 position (unmapped) are not copied: the assembler does not read them."""
 import sys, os, re, argparse, multiprocessing
@@ -28,8 +33,8 @@ def work(job):
     import pysam
     i, contig = job; tag = 'AS' if G['rule'][0] == 'as' else 'ms'; part = f"{G['out']}.part.{i:06d}.bam"; kept = seen = 0; kind, val = G['rule']; best = G['best']
     B = pysam.AlignmentFile(G['bam']); deep = None
-    if kind in ('anchor', 'janchor'):
-        tag = 'AS'; own = set() if kind == 'janchor' else None; deep = anchored_bases(B, contig, val[2], own)
+    if kind in ('anchor', 'janchor', 'own'):
+        tag = 'AS'; own = set() if kind in ('janchor', 'own') else None; deep = anchored_bases(B, contig, val[2], own, val[3] if len(val) > 3 else 1)
     with pysam.AlignmentFile(part, 'wb', template=B) as w:
         for r in B.fetch(contig):
             if r.is_secondary:
@@ -39,6 +44,9 @@ def work(job):
                         a = r.get_tag('AS'); R, Gp, Pn = val
                         if a < R * b[0] and not (b[1] is not None and r.has_tag('ms') and r.get_tag('ms') >= b[1] - Gp
                                                   and a >= R * b[0] - Pn * sum(1 for o, _ in r.cigartuples if o == 3)): continue
+                elif kind == 'own':
+                    s = val[0]; t = r.get_tag('AS' if s == 'as' else 'ms') if r.has_tag('AS' if s == 'as' else 'ms') else None; top = None if b is None else (b[0] if s == 'as' else b[1])
+                    if top is not None and t is not None and (t < val[1] * top or sum(int(deep[y] - deep[x]) for x, y in r.get_blocks()) < 50 or not all(j in own for j in junctions(r))): continue
                 elif kind in ('anchor', 'janchor'):
                     if b is not None and b[0] is not None and r.has_tag('AS') and r.get_tag('AS') < 0.98 * b[0]:
                         s = val[0]; top = b[0] if s == 'as' else b[1]; t = r.get_tag('AS' if s == 'as' else 'ms') if r.has_tag('AS' if s == 'as' else 'ms') else None
@@ -59,12 +67,12 @@ def junctions(r):
         if o in (0, 2, 3, 7, 8): p += n
     return out
 
-def anchored_bases(B, contig, k, own=None):
+def anchored_bases(B, contig, k, own=None, min_mapq=1):
     """prefix sums over the contig of 'at least k primary alignments with mapping quality >= 1 cover this base'"""
     import numpy as np
     d = np.zeros(B.get_reference_length(contig) + 2, dtype=np.int32)
     for r in B.fetch(contig):
-        if r.is_secondary or r.is_supplementary or r.mapping_quality < 1: continue
+        if r.is_secondary or r.is_supplementary or r.mapping_quality < min_mapq: continue
         for x, y in r.get_blocks(): d[x] += 1; d[y] -= 1
         if own is not None: own.update(junctions(r))
     np.cumsum(d, out=d); d = (d >= k).astype(np.int32); np.cumsum(d, out=d)
@@ -84,8 +92,8 @@ def load_best(tab, bam=None):
 
 def run(bam, tab, out, rule, threads):
     import pysam
-    kind, val = rule.split(':', 1); assert kind in ('as', 'ms', 'msgap', 'asintron', 'anchor', 'janchor'), rule
-    if kind in ('anchor', 'janchor'): s, R, K = val.split(':'); assert s in ('as', 'ms'), rule; val = (s, float(R), int(K))
+    kind, val = rule.split(':', 1); assert kind in ('as', 'ms', 'msgap', 'asintron', 'anchor', 'janchor', 'own'), rule
+    if kind in ('anchor', 'janchor', 'own'): s, R, K, *Q = val.split(':'); assert s in ('as', 'ms'), rule; val = (s, float(R), int(K)) + ((int(Q[0]),) if Q else ())
     else: val = tuple(map(float, val.split(':'))) if kind == 'asintron' else float(val)
     G.update(bam=bam, out=out, rule=(kind, val), best=load_best(tab, bam))
     if kind != 'as' and not any(m is not None for _, m in G['best'].values()):      # an AS-only table: an ms rule would keep everything and say nothing
@@ -142,6 +150,9 @@ def selftest():
         for r in (rd('r', 100, 0, 1000, 1000), spl('a1', 1000, 0, '40M60N60M', 500), spl('a2', 1000, 0, '40M60N60M', 500), spl('a3', 1000, 0, '40M60N60M', 500), spl('r', 1000, 256, '40M60N60M', 930), spl('r', 1001, 256, '45M60N55M', 930)): w.write(r)
     pysam.index(b4)
     assert run(b4, tab, os.path.join(d, 'j1.bam'), 'janchor:as:0.9:3', 1) == (2, 1) and run(b4, tab, os.path.join(d, 'j2.bam'), 'anchor:as:0.9:3', 1) == (2, 2)
+    assert run(b3, tab, os.path.join(d, 'o1.bam'), 'own:as:0.98:3', 1) == (4, 0) and run(b3, tab, os.path.join(d, 'o2.bam'), 'own:as:0.9:3', 1) == (4, 1)   # 7000 (AS 985) has no placed read under it
+    assert run(b4, tab, os.path.join(d, 'o3.bam'), 'own:as:0.9:3', 1) == (2, 1)
+    assert run(b3, tab, os.path.join(d, 'o4.bam'), 'own:as:0.9:3:0', 1) == (4, 2)      # with mapping quality 0 allowed, the three tie-break primaries at 5000 anchor too
     assert run(b3, tab, os.path.join(d, 'k2.bam'), 'anchor:ms:0.9:2', 1) == (4, 3) and run(b3, tab, os.path.join(d, 'k3.bam'), 'anchor:ms:0.95:2', 1) == (4, 1)
     open(tab, 'w').write('#as_table\nr\t1000\t990\t4\tc\t1000\n')              # a table without ms columns
     try: run(bam, tab, os.path.join(d, 'n.bam'), 'msgap:10', 1); raise AssertionError('an ms rule ran on a table without ms')

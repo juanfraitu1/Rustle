@@ -298,15 +298,17 @@ fn the_pool_is_named_in_the_log() {
 
 #[test]
 fn a_bad_pool_or_ratio_is_refused_with_status_2_and_nothing_runs() {
-    let cases: [(&str, Vec<&str>, Vec<(&str, &str)>, &str); 8] = [
-        ("bad_pool", vec!["--seed-pool", "secondary"], vec![], "must be primary, good or all"),
-        ("bad_env_pool", vec![], vec![("RUSTLE_SEED_POOL", "Good")], "must be primary, good or all"),
+    let cases: [(&str, Vec<&str>, Vec<(&str, &str)>, &str); 10] = [
+        ("bad_pool", vec!["--seed-pool", "secondary"], vec![], "must be primary, good, own or all"),
+        ("bad_env_pool", vec![], vec![("RUSTLE_SEED_POOL", "Good")], "must be primary, good, own or all"),
         ("ratio_zero", vec!["--seed-as-ratio", "0"], vec![], "number in (0, 1]"),
         ("ratio_big", vec!["--seed-as-ratio", "1.5"], vec![], "number in (0, 1]"),
         ("ratio_text", vec!["--seed-as-ratio", "abc"], vec![], "number in (0, 1]"),
         ("ratio_env_bad", vec![], vec![("RUSTLE_SEED_AS_RATIO", "2")], "number in (0, 1]"),
         ("ratio_with_primary", vec!["--seed-pool", "primary", "--seed-as-ratio", "0.9"], vec![], "only the good pool"),
         ("ratio_with_all", vec!["--seed-as-ratio", "0.9", "--seed-pool", "all"], vec![], "only the good pool"),
+        ("ratio_with_own", vec!["--seed-pool", "own", "--seed-as-ratio", "0.9"], vec![], "only the good pool"),
+        ("own_bad_mapq", vec!["--seed-pool", "own"], vec![("RUSTLE_SEED_OWN_MAPQ", "x")], "RUSTLE_SEED_OWN_MAPQ must be a whole number"),
     ];
     for (tag, flags, env, want) in cases {
         let r = assemble(tag, &flags, &env);

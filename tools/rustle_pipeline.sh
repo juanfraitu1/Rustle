@@ -264,6 +264,20 @@
 #                         records of good x17.5 (chr16; x22.9 of primary), x14.0 (chr17; x15.0), x3.1 (gorilla NPIP; x3.9)
 #                         (human chr16: 14,183 against 9,473 transcripts, 1,648,588 against 94,433 PAF records;
 #                         docs/archive/2026-11/LEDGER_O1.md:2696 (SEED_POOL_REAL_READS_2026-10-07.md))
+#   --seed-pool own       (register 1984, 2026-11-26) own-evidence seeding. DEFAULT OF `all` FOR THE MAIN ASSEMBLY since 2026-11-27
+#                         (user: the main assembly PREFIX.gtf from own, every other stage from good, so the family mode's
+#                         rescue still sees every near tie; `all --seed-pool good` = the default before). Elsewhere opt-in.
+#                         A secondary seeds only when its AS is >= 0.98 x
+#                         the molecule's best AND at least 50 of its bases lie where a primary alignment is placed AND each
+#                         of its introns is an intron of such a primary (RUSTLE_SEED_OWN_MAPQ, 0: the lowest mapping quality
+#                         of that primary; 1 = only reads placed without the tie-break, a little more precise, less sensitive
+#                         at thin family copies). Between primary and good: on fly, mouse and zebrafish simulated reads and
+#                         four mouse libraries its precision is within 0.001-0.007 of primary and above good (fly 0.866 ->
+#                         0.941) with 99.8-99.98% of good's correct chains; in planted families a third fewer silent copies
+#                         get a transcript and isoform recall at copies with 3 reads is 0.64-0.68 (good 0.72, primary 0.33).
+#                         The filter
+#                         is one pass over the BAM (bench/o2_families/pool_bam.py) into PREFIX.seedpool.d, removed afterwards
+#                         (RUSTLE_SEEDPOOL_KEEP=1 keeps it); the other stages read the original BAM.
 #   --seed-as-ratio R     the width R of the good pool, a number in (0, 1]; 1 = exact ties only. Refused with another pool.
 #   RUSTLE_SEED_POOL / RUSTLE_SEED_AS_RATIO set the same two as defaults (a flag wins; a malformed exported ratio is refused,
 #   a valid one is ignored by the other pools). The pool the flag names is the pool the binary gets: an exported
@@ -431,14 +445,18 @@ case "$STAGE" in
 esac
 # Register 1812 (user, 2026-11-19): the stage `assemble` on its own seeds with primary alignments unless a pool is named (flag,
 # RUSTLE_SEED_POOL, or --seed-as-ratio / --as-table, which belong to good); every other stage, `all` included, keeps good.
+# `all` with no pool named and no width for good (user 2026-11-27, register 1984): the main assembly is seeded with own, every
+# other stage keeps good (RP_ASM_OWN; `--seed-pool good` = the default before that date, good for the main assembly too).
+RP_ASM_OWN=0; if [ -z "$SEED_POOL" ] && [ "$STAGE" = all ] && [ "$SEED_RATIO_FLAG" = 0 ]; then RP_ASM_OWN=1; fi
 if [ -z "$SEED_POOL" ]; then if [ "$STAGE" = assemble ] && [ "$SEED_RATIO_FLAG" = 0 ] && [ -z "$AS_TABLE" ]; then SEED_POOL=primary; else SEED_POOL=good; fi; fi
 # The seeding pool (see the SEEDING POOL note above): a misspelling must not quietly run another pool. Same `case "$STAGE"`
 # form as the check above.
 case "$STAGE" in
   *) case "$SEED_POOL" in
-       primary|good|all) ;;
-       *) echo "[rustle_pipeline] --seed-pool (RUSTLE_SEED_POOL) must be primary, good or all (got '$SEED_POOL')" >&2; exit 2;;
+       primary|good|all|own) ;;
+       *) echo "[rustle_pipeline] --seed-pool (RUSTLE_SEED_POOL) must be primary, good, own or all (got '$SEED_POOL')" >&2; exit 2;;
      esac
+     if [ "$SEED_POOL" = own ]; then case "${RUSTLE_SEED_OWN_MAPQ:-0}" in ''|*[!0-9]*) echo "[rustle_pipeline] RUSTLE_SEED_OWN_MAPQ must be a whole number (got '${RUSTLE_SEED_OWN_MAPQ:-}')" >&2; exit 2;; esac; fi
      [[ "$SEED_RATIO" =~ ^(1(\.0+)?|0?\.[0-9]*[1-9][0-9]*)$ ]] || { echo "[rustle_pipeline] --seed-as-ratio (RUSTLE_SEED_AS_RATIO) must be a number in (0, 1] (got '$SEED_RATIO')" >&2; exit 2; }
      if [ "$SEED_RATIO_FLAG" = 1 ] && [ "$SEED_POOL" != good ]; then
        echo "[rustle_pipeline] --seed-as-ratio sets the width of the good pool and only the good pool has one (--seed-pool $SEED_POOL): drop one" >&2; exit 2
@@ -847,12 +865,74 @@ fam_gtf_guard() {
   fi
 }
 
+# The genome-wide best-AS table of the BAM the seeding pool is judged on (good and own). Reads and sets the caller's `table`
+# (--as-table or empty) and `tbam`; leaves PREFIX.molecules.tsv pointing at the table.
+seed_score_table() {
+    as_table_ok() { head -1 "$1" 2>/dev/null | grep -qF "bam=$(readlink -f "$tbam")$(printf '\t')bam_bytes=$(stat -Lc %s "$tbam")$(printf '\t')" && [ ! "$1" -ot "$tbam" ]; }
+    if [ -z "$table" ]; then
+      # next to the BAM when a valid table is there or the directory takes a new file (-w alone misses a full file quota);
+      # otherwise PREFIX.molecules.tsv, which the check below then reuses like any other table
+      local probe="$tbam.as_table.probe.$$"
+      table="$OUT.molecules.tsv"
+      if as_table_ok "$tbam.as_table.tsv" || { : > "$probe"; } 2>/dev/null; then table="$tbam.as_table.tsv"; fi
+      rm -f "$probe"
+    fi
+    if as_table_ok "$table"; then
+      say "assemble: genome-wide best-AS table: reusing $table"
+    else   # absent, truncated, from another BAM, or older than the BAM
+      # a table NAMED with --as-table that belongs to another BAM which still exists is that BAM's live table: rebuilding would
+      # overwrite it for every run on that BAM (2026-11-24: a shared table was lost this way). Refused; a table whose BAM is gone is rebuilt.
+      if [ -n "${AS_TABLE:-}" ] && [ -s "$table" ]; then
+        local owner; owner=$(head -1 "$table" | sed -n 's/^#as_table\tbam=\([^\t]*\)\t.*/\1/p')
+        if [ -n "$owner" ] && [ "$owner" != "$(readlink -f "$tbam")" ] && [ -e "$owner" ]; then
+          echo "[rustle_pipeline] --as-table $table was made for $owner, which exists: not overwritten for $tbam. Name another file, or drop --as-table" >&2; exit 2
+        fi
+      fi
+      say "assemble: genome-wide best-AS table -> $table (one pass over the BAM)"
+      local tmp="$table.tmp.$$"
+      if "$BIN/as_table" --bam "$tbam" --out "$tmp" --threads "$JOB_THREADS" > "$OUT.as_table.log" 2>&1 && [ -s "$tmp" ]; then
+        [ -e "$tmp.asbin" ] && mv -f "$tmp.asbin" "$table.asbin"
+        mv -f "$tmp" "$table"
+      else
+        rm -f "$tmp" "$tmp.tmp" "$tmp.asbin"
+        echo "[rustle_pipeline] as_table failed (see $OUT.as_table.log)" >&2; exit 3
+      fi
+    fi
+    # PREFIX.molecules.tsv stays the per-run name later tools read (tools/rustle_reassemble.sh): a link to the shared table
+    if [ "$(readlink -f "$table")" != "$(readlink -f "$OUT.molecules.tsv")" ]; then
+      ln -sfn "$(readlink -f "$table")" "$OUT.molecules.tsv"
+      ln -sfn "$(readlink -f "$table").asbin" "$OUT.molecules.tsv.asbin"
+    fi
+}
 stage_assemble() {
   # RUSTLE_DUP_COUNT (row 1850, user 2026-11-21 after row 1849): unset = 1 for this stage, every coordinate-duplicate spliced
   # record counts in a chain's `reads` (the 2-read floor stays on distinct records); 0 = the collapsed counts before
   : "${RP_DUP_COUNT_USER=${RUSTLE_DUP_COUNT:-}}"  # what the caller set, for the floor-1 run of the oneread stage (it is called inside this scope too)
   local -x RUSTLE_DUP_COUNT="${RUSTLE_DUP_COUNT:-1}"
   case "$RUSTLE_DUP_COUNT" in 0|1) ;; *) echo "[rustle_pipeline] RUSTLE_DUP_COUNT must be 0 or 1 (got '$RUSTLE_DUP_COUNT')" >&2; exit 2 ;; esac
+  # --seed-pool own (register 1984): the secondaries that may seed are chosen first, into a BAM of their own, and the stage runs
+  # on it with every remaining secondary admitted (the pattern of the short-exon repair below; nothing outside this scope sees it)
+  # Inside `all` with no pool named (user, 2026-11-27, register 1984: "mixed"), the MAIN assembly is seeded this way and the
+  # other stages keep good: the family mode's rescue still sees every near tie. There a failed filter is a warning and the
+  # stage seeds with good, as before; with --seed-pool own named it stops the stage.
+  # `all` runs each stage as a child and marks only its assemble call (RP_ASM_MAIN); the mark is cleared here so that no
+  # assembly started from inside this stage (the one-read floor runs) inherits it
+  local asm_own=0; if [ "${RP_ASM_MAIN:-0}" = 1 ] && [ "$SEED_POOL" = good ]; then asm_own=1; fi
+  export RP_ASM_MAIN=0
+  if { [ "$SEED_POOL" = own ] || [ "$asm_own" = 1 ]; } && [ -z "${RP_OWNPOOL_FROM:-}" ]; then
+    local od="$OUT.seedpool.d" orc=0 table="${AS_TABLE:-}" tbam="$BAM"; mkdir -p "$od"
+    seed_score_table
+    if "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/../bench/o2_families/pool_bam.py" "$BAM" "$table" "$od/pool.bam" --rule "own:as:0.98:1:${RUSTLE_SEED_OWN_MAPQ:-0}" --threads "$THREADS" > "$OUT.seedpool.log" 2>&1; then
+      say "assemble: seeding pool: own ($(tail -1 "$OUT.seedpool.log" | sed 's/^pool_bam ([^)]*): //; s/ -> .*//'))"
+      ( export RP_OWNPOOL_FROM="$BAM"; BAM="$od/pool.bam"; SEED_POOL=all; AS_TABLE=""; stage_assemble ) || orc=$?
+      [ -n "${RUSTLE_SEEDPOOL_KEEP:-}" ] || rm -rf "${od:?}"
+      [ "$orc" = 0 ] || exit "$orc"
+      return 0
+    fi
+    [ -n "${RUSTLE_SEEDPOOL_KEEP:-}" ] || rm -rf "${od:?}"
+    if [ "$asm_own" = 0 ]; then echo "[rustle_pipeline] assemble: --seed-pool own failed (see $OUT.seedpool.log); needs python3 with pysam and numpy" >&2; exit 1; fi
+    say "assemble: WARNING own-evidence seeding did not run (see $OUT.seedpool.log; needs python3 with pysam and numpy): the main assembly is seeded with the good pool"
+  fi
   # RUSTLE_SHORTEXONS (row 1878, user 2026-11-22): the short-exon repair is part of this stage. minimap2 drops exons of <= 15 bp
   # (row 1746); the reads that skip one are rewritten through it (bench/famcmp/short_exons.py, no annotation) and the assembly
   # runs once, on the rewritten reads. Unset = 1 when `assemble` is named, 0 inside `all` (families / assign read the original
@@ -924,41 +1004,7 @@ stage_assemble() {
     # the run: the repair changes CIGARs and no score, so the table of the ORIGINAL BAM is the right one, and the shared one is
     # reused (2026-11-25; before, every such run made a table for the copy, one more pass over the BAM, and threw it away).
     local tbam=${RP_SHORTEXONS_FROM:-$BAM}
-    as_table_ok() { head -1 "$1" 2>/dev/null | grep -qF "bam=$(readlink -f "$tbam")$(printf '\t')bam_bytes=$(stat -Lc %s "$tbam")$(printf '\t')" && [ ! "$1" -ot "$tbam" ]; }
-    if [ -z "$table" ]; then
-      # next to the BAM when a valid table is there or the directory takes a new file (-w alone misses a full file quota);
-      # otherwise PREFIX.molecules.tsv, which the check below then reuses like any other table
-      local probe="$tbam.as_table.probe.$$"
-      table="$OUT.molecules.tsv"
-      if as_table_ok "$tbam.as_table.tsv" || { : > "$probe"; } 2>/dev/null; then table="$tbam.as_table.tsv"; fi
-      rm -f "$probe"
-    fi
-    if as_table_ok "$table"; then
-      say "assemble: genome-wide best-AS table: reusing $table"
-    else   # absent, truncated, from another BAM, or older than the BAM
-      # a table NAMED with --as-table that belongs to another BAM which still exists is that BAM's live table: rebuilding would
-      # overwrite it for every run on that BAM (2026-11-24: a shared table was lost this way). Refused; a table whose BAM is gone is rebuilt.
-      if [ -n "${AS_TABLE:-}" ] && [ -s "$table" ]; then
-        local owner; owner=$(head -1 "$table" | sed -n 's/^#as_table\tbam=\([^\t]*\)\t.*/\1/p')
-        if [ -n "$owner" ] && [ "$owner" != "$(readlink -f "$tbam")" ] && [ -e "$owner" ]; then
-          echo "[rustle_pipeline] --as-table $table was made for $owner, which exists: not overwritten for $tbam. Name another file, or drop --as-table" >&2; exit 2
-        fi
-      fi
-      say "assemble: genome-wide best-AS table -> $table (one pass over the BAM)"
-      local tmp="$table.tmp.$$"
-      if "$BIN/as_table" --bam "$tbam" --out "$tmp" --threads "$JOB_THREADS" > "$OUT.as_table.log" 2>&1 && [ -s "$tmp" ]; then
-        [ -e "$tmp.asbin" ] && mv -f "$tmp.asbin" "$table.asbin"
-        mv -f "$tmp" "$table"
-      else
-        rm -f "$tmp" "$tmp.tmp" "$tmp.asbin"
-        echo "[rustle_pipeline] as_table failed (see $OUT.as_table.log)" >&2; exit 3
-      fi
-    fi
-    # PREFIX.molecules.tsv stays the per-run name later tools read (tools/rustle_reassemble.sh): a link to the shared table
-    if [ "$(readlink -f "$table")" != "$(readlink -f "$OUT.molecules.tsv")" ]; then
-      ln -sfn "$(readlink -f "$table")" "$OUT.molecules.tsv"
-      ln -sfn "$(readlink -f "$table").asbin" "$OUT.molecules.tsv.asbin"
-    fi
+    seed_score_table
     seed_env=(RUSTLE_GTF_SECONDARY=1 RUSTLE_GTF_SECONDARY_AS_RATIO="$SEED_RATIO" "RUSTLE_GTF_SECONDARY_AS_TABLE=$table")
   elif [ "$SEED_POOL" = all ]; then
     say "assemble: seeding pool: all (every secondary alignment, no filter)"
@@ -2115,6 +2161,8 @@ merged_env() {
   printf 'bam=%s\nfasta=%s\nthreads=%s\nseed_sec=%s\nbridge=%s\n' "$(readlink -f "$BAM")" "$(readlink -f "$FASTA")" "$THREADS" \
     "$([ "$SEED_POOL" = primary ] && echo 0 || echo 1)" "$BRIDGE_MODE"
   if [ "$SEED_POOL" = all ]; then printf 'seed_pool=all\n'; fi
+  if [ "$SEED_POOL" = own ]; then printf 'seed_pool=own mapq=%s\n' "${RUSTLE_SEED_OWN_MAPQ:-0}"; fi
+  if [ "${RP_ASM_OWN:-0}" = 1 ]; then printf 'seed_pool_main=own mapq=%s\n' "${RUSTLE_SEED_OWN_MAPQ:-0}"; fi
   if [ "$SEED_POOL" = good ] && [ "$SEED_RATIO" != 0.98 ]; then printf 'seed_ratio=%s\n' "$SEED_RATIO"; fi
   if [ -n "$CONTIG" ]; then printf 'contig=%s\n' "$CONTIG"; fi
   # the SEDEF sidecar the families stage picks up when RUSTLE_SEDEF_BED is unset (round-4 audit)
@@ -2408,10 +2456,10 @@ stage_all() {
     say "all: $st"
     local rc=0
     if [ -n "$gtime" ]; then
-      "$gtime" -f $'wall_s\t%e\npeak_rss_kb\t%M' -o "$OUT.$st.time.tmp" bash "$0" "$st" "${args[@]}" || rc=$?
+      "$gtime" -f $'wall_s\t%e\npeak_rss_kb\t%M' -o "$OUT.$st.time.tmp" env "RP_ASM_MAIN=$([ "$st" = assemble ] && echo "$RP_ASM_OWN" || echo 0)" bash "$0" "$st" "${args[@]}" || rc=$?
     else
       # compute nodes without GNU time (r1543 e2e, 2026-11-06): wall only, no peak RSS
-      local st0=$SECONDS; bash "$0" "$st" "${args[@]}" || rc=$?; printf 'wall_s\t%s\n' "$(( SECONDS - st0 ))" > "$OUT.$st.time.tmp"
+      local st0=$SECONDS; env "RP_ASM_MAIN=$([ "$st" = assemble ] && echo "$RP_ASM_OWN" || echo 0)" bash "$0" "$st" "${args[@]}" || rc=$?; printf 'wall_s\t%s\n' "$(( SECONDS - st0 ))" > "$OUT.$st.time.tmp"
     fi
     time_record "$st" "$rc"
     if [ "$rc" != 0 ]; then
