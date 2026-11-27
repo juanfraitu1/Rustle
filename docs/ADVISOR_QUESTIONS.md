@@ -24,6 +24,7 @@ beside it); "sequences", not copies, for the sequence count; copies are MODELED,
 | N10 | Where did each read go? How did reads become transcripts? | One file per run, and the removal rules in readable Python with exact parity. | stage `provenance`, `tools/polish_rules.py` |
 | N11 | Is correlation clustering (Strainy) the better way? | Tried twice, no gain. | rows 1823, 1932 |
 | N12 | Is this luck or overfitting? | Rule fixed before each run, unseen seeds or samples, failures recorded (mine included). | register |
+| N19 | A family-wise assembly should borrow information across copies. | It does, at thin copies: twice the isoforms recovered (planted 0.35 -> 0.72, real 0.09 -> 0.20), at about half the precision there. | row 1980 |
 | N18 | The Eichler rule tells you quickly which copy a read came from. | Run as the paper describes it: 99% decided on the individual's own haplotypes; the same TBC1D3 reads are ties on one reference in 96%. | rows 1954, 1969, 1972 |
 | N17 | Can multimappers just below the ties seed real loci? | Only as support for an isoform the locus's own reads show; +14 to +24 annotated isoforms a sample. | rows 1961, 1965 |
 | N16 | Use more multimappers: lower the threshold, or all the ties. | Neither helps: wider pools add transcripts with no reads of their own; exact ties only loses true ones at low depth. | rows 1958-1960 |
@@ -146,6 +147,14 @@ beside it); "sequences", not copies, for the sequence count; copies are MODELED,
 - **"Then adapt it." (row 1974)** The paper's unit is a cluster of paralogs. Asked between clusters of near-identical copies on CHM13, the 10-point lead decides 78-81% of the reads that are near ties between copies and is right in 98-99% (truth: the haplotype run); asked between copies, 15% and 79%. The answer is "one of 2 copies" in the median, "one of 9" for TBC1D3. That is the adaptation: cluster-level support with the rest discarded. It holds with clusters built from the run's own copies, no annotation (row 1975): HG002 80% decided / 96.6% right, KB3781 74% / 99.3%, planted reads with private variants 82-85% / 100%. In the pipeline as an opt-in: `RUSTLE_O2_CLUSTERS=1` (stage `o2`) -> `PREFIX.o2.clusters.tsv`; the built step on HG002: 83.7% of tied reads decided, 97.3% right.
 - Page: https://claude.ai/artifact/CCNiwfa8YVJfKmsWGG4Gif
 - Say "the Eichler lab's 10-point filter (Guitart 2024)" and which version was run. Limits: one individual, clusters by nearest reference copy, no quality filter, 97 TBC1D3 reads.
+
+### N19. "A family-wise assembly should borrow information across the copies" (row 1980)
+- **Tested where it can pay: thinly covered copies, scored alone.** Earlier tests over whole samples saw almost nothing because most copies need nothing.
+- **Planted, copies with 3 reads:** isoforms found 0.34-0.38 with primaries only (StringTie 0.32), 0.70-0.73 with the family's tied reads. Isoforms that have ONE read of their own: 7-10% -> 55-63%.
+- **Real reads (two gorillas; copies with 20+ reads thinned to 3, relatives untouched; truth = the copy's own full-depth assembly):** 8.8% -> 19.9% and 9.9% -> 20.6% of the truth chains.
+- **The price, at the same copies:** the share of built transcripts that are real falls from 0.81-0.94 to 0.68-0.77 (planted) and from 0.91-0.94 to 0.50-0.57 (real).
+- **It does not need a deeply expressed sibling;** the help comes from the family's tied reads as a whole.
+- So: borrowing works as he expects at low depth, about twofold, as a trade against precision; the layer tag marks the transcripts that rest on it.
 
 ### Not answered yet (say so)
 1. (answered 2026-11-25: the `ms` pool did not confirm, N2.) 2. Alleles against copies without the individual's genome. 3. The 15% of recurrent sequences in neither haplotype; X:62.25 Mb on KB3781. 4. Labels on real samples (no truth). 5. A sample that lacks or gains a copy, on planted reads. 6. Strongly supported non-canonical junctions (GOLGA6L2 / GOLGA8Q). 7. Member discovery on real data (0.23 pair precision).
