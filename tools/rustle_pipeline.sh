@@ -160,6 +160,7 @@
 #                              PREFIX.multicopy.tsv lists them. Transcripts also carry counts that do not multiply over
 #                              indistinguishable copies (reads_em, reads_tieadj, tie_group); PREFIX.multicopy.groups.tsv = the tie
 #                              groups with the range of expressed copies (row 1871). No other product changes.
+#                              (`all` adds the SUPPORTED one-read loci to PREFIX.gtf by default, see stage_oneloci; here:)
 #                              RUSTLE_ONE_READ_LOCI=1 (opt-in, row 1987): also PREFIX.oneloci.gtf = PREFIX.gtf + every spliced
 #                              one-read transcript at an empty place whose lone read has no rival alignment (as StringTie -L
 #                              admits one spliced read; 0.84-0.94 correct on simulated reads, 13% annotated on a human library).
@@ -1170,6 +1171,35 @@ f1_shared() {  # f1_shared OTHER_DIR SETTINGS -> prints OTHER_DIR/f1.gtf when it
   [ "${RUSTLE_F1_SHARE:-1}" != 0 ] && [ -s "$1/f1.gtf" ] && [ -s "$1/f1.settings" ] && [ "$1/f1.gtf" -nt "$OUT.gtf" ] && [ "$(cat "$1/f1.settings")" = "$2" ] && echo "$1/f1.gtf"
   return 0
 }
+f1_run() {  # f1_run OUT_PREFIX [ENV=VALUE...]: the floor-1 assembly of the one-read stages
+  local o=$1; shift
+  env "$@" RUSTLE_DUP_COUNT="${RP_DUP_COUNT_USER:-0}" RUSTLE_MIN_CHAIN_READS=1 RUSTLE_ASSEMBLY_LAYERS=off RUSTLE_ONEREAD=0 RUSTLE_SEED_POOL="$SEED_POOL" RUSTLE_SEED_AS_RATIO="$SEED_RATIO" bash "$0" assemble --bam "$BAM" --fasta "$FASTA" \
+    --out "$o" --threads "$THREADS" ${BIN:+--bin "$BIN"} ${CONTIG:+--contig "$CONTIG"} ${AS_TABLE:+--as-table "$AS_TABLE"}
+}
+# One read as the seed of a locus (row 1987; default of `all` since 2026-11-27, user). After the main assembly of `all`, the spliced
+# one-read transcripts of the floor-1 assembly at places $OUT.gtf leaves empty are added to $OUT.gtf when one primary read carries
+# the chain, no other alignment of that read is within 10 ms, and EVERY intron of the chain is also in another primary read
+# (tools/one_read_loci.py; tag one_read_locus "supported"). Such loci are as reproducible as two-read chains (introns seen again
+# in replicates 0.94 against 0.945) and their introns are more often all annotated (mouse 0.57-0.87 against 0.37-0.64), but most
+# are FRAGMENTS of a transcript (exact chain annotated 8-17%). RUSTLE_ONE_READ_LOCI=0 = off. The floor-1 run is the one the
+# one-read tier reuses. $OUT.gtf keeps its time, so nothing downstream is redone for it. A failure leaves $OUT.gtf as it was.
+stage_oneloci() {
+  [ "${RUSTLE_ONE_READ_LOCI:-supported}" != 0 ] && [ -s "$OUT.gtf" ] || return 0
+  if grep -q 'one_read_locus "' "$OUT.gtf"; then return 0; fi
+  local py=${RUSTLE_PYTHON:-python3} d="$OUT.oneread.d" gate1=() f1set f1; mkdir -p "$d"
+  [ "${RUSTLE_ONEREAD_GATE:-1}" = 0 ] || gate1=(RUSTLE_GATE_MIN_READS=1)
+  f1set=$(f1_settings "${RUSTLE_ONEREAD_GATE:-1}" 0); f1=$(f1_shared "$d" "$f1set"); [ -n "$f1" ] || f1=$(f1_shared "$OUT.multicopy.d" "$f1set")
+  if ( if [ -z "$f1" ]; then rm -f "$d/f1.gtf" "$d/f1.settings"; f1_run "$d/f1" "${gate1[@]}" && printf '%s\n' "$f1set" > "$d/f1.settings" || exit 1; f1="$d/f1.gtf"; fi
+       $py "$RP_DRIVER_DIR/multicopy_rescue.py" candidates "$OUT.gtf" "$f1" "$d/oneloci.cand.gtf" || exit 1
+       table="${AS_TABLE:-}"; tbam="$BAM"; seed_score_table
+       $py "$RP_DRIVER_DIR/one_read_loci.py" "$OUT.gtf" "$d/oneloci.cand.gtf" "$BAM" "$table" "$OUT.oneloci.tmp.gtf" "$THREADS" supported ) > "$OUT.oneloci.log" 2>&1 \
+     && [ -s "$OUT.oneloci.tmp.gtf" ]; then
+    touch -r "$OUT.gtf" "$OUT.oneloci.tmp.gtf"; mv -f "$OUT.oneloci.tmp.gtf" "$OUT.gtf"
+    say "assemble: one-read loci: $(tail -1 "$OUT.oneloci.log") -> $OUT.gtf (RUSTLE_ONE_READ_LOCI=0 = off)"
+  else
+    rm -f "$OUT.oneloci.tmp.gtf"; say "assemble: WARNING the one-read loci failed (see $OUT.oneloci.log); $OUT.gtf is the assembly without them"
+  fi
+}
 stage_oneread() {
   [ -s "$OUT.gtf" ] && [ -s "$BAM" ] && [ -s "$FASTA" ] || { echo "[rustle_pipeline] oneread needs $OUT.gtf (run assemble first), --bam and --fasta" >&2; return 2; }
   mkdir -p "$OUT.oneread.d"
@@ -1179,13 +1209,14 @@ stage_oneread() {
   local gate1=(); case "${RUSTLE_ONEREAD_GATE:-1}" in 0) ;; 1) gate1=(RUSTLE_GATE_MIN_READS=1) ;;
     *) echo "[rustle_pipeline] RUSTLE_ONEREAD_GATE must be 0 or 1 (got '$RUSTLE_ONEREAD_GATE')" >&2; return 2 ;; esac
   local f1set f1have; f1set=$(f1_settings "${RUSTLE_ONEREAD_GATE:-1}" 0); f1have=$(f1_shared "$OUT.multicopy.d" "$f1set")
-  { if [ -n "$f1have" ]; then
+  { if [ -n "$(f1_shared "$OUT.oneread.d" "$f1set")" ]; then
+      echo "[rustle_pipeline] oneread: floor-1 assembly $OUT.oneread.d/f1.gtf reused (the one-read loci of assemble made it with the same settings)"
+    elif [ -n "$f1have" ]; then
       ln -sf "$(cd "$(dirname "$f1have")" && pwd)/f1.gtf" "$OUT.oneread.d/f1.gtf"; printf '%s\n' "$f1set" > "$OUT.oneread.d/f1.settings"
       echo "[rustle_pipeline] oneread: floor-1 assembly taken from $f1have (the multi-copy stage made it with the same settings)"
     else
       rm -f "$OUT.oneread.d/f1.gtf" "$OUT.oneread.d/f1.settings"
-      env "${gate1[@]}" RUSTLE_DUP_COUNT="${RP_DUP_COUNT_USER:-0}" RUSTLE_MIN_CHAIN_READS=1 RUSTLE_ASSEMBLY_LAYERS=off RUSTLE_ONEREAD=0 RUSTLE_SEED_POOL="$SEED_POOL" RUSTLE_SEED_AS_RATIO="$SEED_RATIO" bash "$0" assemble --bam "$BAM" --fasta "$FASTA" \
-        --out "$OUT.oneread.d/f1" --threads "$THREADS" ${BIN:+--bin "$BIN"} ${CONTIG:+--contig "$CONTIG"} ${AS_TABLE:+--as-table "$AS_TABLE"} && printf '%s\n' "$f1set" > "$OUT.oneread.d/f1.settings"
+      f1_run "$OUT.oneread.d/f1" "${gate1[@]}" && printf '%s\n' "$f1set" > "$OUT.oneread.d/f1.settings"
     fi && ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/oneread.py" "$OUT.gtf" "$OUT.oneread.d/f1.gtf" "$BAM" "$FASTA" "$OUT.oneread.gtf.tmp"; } > "$OUT.oneread.log" 2>&1 \
     || { echo "[rustle_pipeline] oneread failed (see $OUT.oneread.log); $OUT.gtf is unaffected" >&2; rm -f "$OUT.oneread.gtf.tmp"; return 1; }
   mv -f "$OUT.oneread.gtf.tmp" "$OUT.oneread.gtf"
@@ -1319,12 +1350,12 @@ stage_multicopy() {
   say "multicopy: $(tail -1 "$OUT.multicopy.log")"
   # RUSTLE_ONE_READ_LOCI=1 (opt-in, row 1987): one read is enough to seed a LOCUS. PREFIX.oneloci.gtf = PREFIX.gtf + the candidates
   # one primary read carries and no other alignment of that read rivals (tools/one_read_loci.py). A failure leaves the rest.
-  case "${RUSTLE_ONE_READ_LOCI:-0}" in 0) ;; 1)
+  case "${RUSTLE_ONE_READ_LOCI:-0}" in 0) ;; 1|supported)   # supported = only the loci whose every intron is in another read too
       ( table="${AS_TABLE:-}"; tbam="$BAM"; seed_score_table >> "$OUT.multicopy.log" 2>&1
-        $py "$RP_DRIVER_DIR/one_read_loci.py" "$OUT.gtf" "$d/cand.gtf" "$BAM" "$table" "$OUT.oneloci.gtf" "$THREADS" >> "$OUT.multicopy.log" 2>&1 ) \
+        $py "$RP_DRIVER_DIR/one_read_loci.py" "$OUT.gtf" "$d/cand.gtf" "$BAM" "$table" "$OUT.oneloci.gtf" "$THREADS" $([ "$RUSTLE_ONE_READ_LOCI" = supported ] && echo supported) >> "$OUT.multicopy.log" 2>&1 ) \
         && say "multicopy: $(tail -1 "$OUT.multicopy.log") -> $OUT.oneloci.gtf" \
         || echo "[rustle_pipeline] WARNING: multicopy: the one-read loci failed (see $OUT.multicopy.log); every other product is unaffected" >&2 ;;
-    *) echo "[rustle_pipeline] RUSTLE_ONE_READ_LOCI must be 0 or 1 (got '$RUSTLE_ONE_READ_LOCI')" >&2; exit 2 ;; esac
+    *) echo "[rustle_pipeline] RUSTLE_ONE_READ_LOCI must be 0, 1 or supported (got '$RUSTLE_ONE_READ_LOCI')" >&2; exit 2 ;; esac
   rm -f "$d"/u.fam.* "$d/u.families.gtf"
   cat "$OUT.gtf" "$d/cand.gtf" > "$d/u.gtf"
   local ufam="$d/u.gtf"; if [ "$FAM_GTF" != "$OUT.gtf" ]; then cat "$FAM_GTF" "$d/cand.gtf" > "$d/u.families.gtf"; ufam="$d/u.families.gtf"; fi
@@ -2177,6 +2208,7 @@ merged_env() {
   if [ "$SEED_POOL" = own ]; then printf 'seed_pool=own mapq=%s\n' "${RUSTLE_SEED_OWN_MAPQ:-0}"; fi
   if [ "${RP_ASM_OWN:-0}" = 1 ]; then printf 'seed_pool_main=own mapq=%s\n' "${RUSTLE_SEED_OWN_MAPQ:-0}"; fi
   if [ "$SEED_POOL" = good ] && [ "$SEED_RATIO" != 0.98 ]; then printf 'seed_ratio=%s\n' "$SEED_RATIO"; fi
+  if [ "${RUSTLE_ONE_READ_LOCI:-}" = 0 ]; then printf 'one_read_loci=0\n'; fi
   if [ -n "$CONTIG" ]; then printf 'contig=%s\n' "$CONTIG"; fi
   # the SEDEF sidecar the families stage picks up when RUSTLE_SEDEF_BED is unset (round-4 audit)
   if [ -z "${RUSTLE_SEDEF_BED+x}" ] && [ -s "$FASTA.sedef.bed" ]; then stat -L -c "sedef_sidecar %s %Y" "$FASTA.sedef.bed"; fi
@@ -2469,10 +2501,10 @@ stage_all() {
     say "all: $st"
     local rc=0
     if [ -n "$gtime" ]; then
-      "$gtime" -f $'wall_s\t%e\npeak_rss_kb\t%M' -o "$OUT.$st.time.tmp" env "RP_ASM_MAIN=$([ "$st" = assemble ] && echo "$RP_ASM_OWN" || echo 0)" bash "$0" "$st" "${args[@]}" || rc=$?
+      "$gtime" -f $'wall_s\t%e\npeak_rss_kb\t%M' -o "$OUT.$st.time.tmp" env "RP_ASM_MAIN=$([ "$st" = assemble ] && echo "$RP_ASM_OWN" || echo 0)" "RP_ONELOCI=$([ "$st" = assemble ] && echo 1 || echo 0)" bash "$0" "$st" "${args[@]}" || rc=$?
     else
       # compute nodes without GNU time (r1543 e2e, 2026-11-06): wall only, no peak RSS
-      local st0=$SECONDS; env "RP_ASM_MAIN=$([ "$st" = assemble ] && echo "$RP_ASM_OWN" || echo 0)" bash "$0" "$st" "${args[@]}" || rc=$?; printf 'wall_s\t%s\n' "$(( SECONDS - st0 ))" > "$OUT.$st.time.tmp"
+      local st0=$SECONDS; env "RP_ASM_MAIN=$([ "$st" = assemble ] && echo "$RP_ASM_OWN" || echo 0)" "RP_ONELOCI=$([ "$st" = assemble ] && echo 1 || echo 0)" bash "$0" "$st" "${args[@]}" || rc=$?; printf 'wall_s\t%s\n' "$(( SECONDS - st0 ))" > "$OUT.$st.time.tmp"
     fi
     time_record "$st" "$rc"
     if [ "$rc" != 0 ]; then
@@ -2511,7 +2543,7 @@ stage_all() {
 }
 case "$STAGE" in
   merged) stage_merged;;
-  assemble) stage_assemble; if [ -n "${GUIDE:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_guided; fi; if [ -n "${NAMES:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_names; fi;; guided) stage_guided;; names) stage_names;; eqclasses) stage_eqclasses;; famwise) stage_famwise;; psi) stage_psi;; multicopy) stage_multicopy;; siblings) stage_siblings;; oneread) stage_oneread || exit $?;; flairlike) stage_flairlike;; altends) stage_altends;; trunc5) stage_trunc5;; chainscore) stage_chainscore;; shiftdrop) stage_shiftdrop;; shortexons) stage_shortexons;; capstarts) stage_capstarts;; earlyends) stage_earlyends;; repeatloci) stage_repeatloci;; exonmap) stage_exonmap;; relatives) stage_relatives;; sdcore) stage_sdcore;; famreps) stage_famreps;; families) stage_families;; candidates) stage_candidates;; catalog) stage_catalog;;
+  assemble) rp_oneloci=${RP_ONELOCI:-0}; export RP_ONELOCI=0; stage_assemble; if [ "$rp_oneloci" = 1 ]; then stage_oneloci; fi; if [ -n "${GUIDE:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_guided; fi; if [ -n "${NAMES:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_names; fi;; guided) stage_guided;; names) stage_names;; eqclasses) stage_eqclasses;; famwise) stage_famwise;; psi) stage_psi;; multicopy) stage_multicopy;; siblings) stage_siblings;; oneread) stage_oneread || exit $?;; flairlike) stage_flairlike;; altends) stage_altends;; trunc5) stage_trunc5;; chainscore) stage_chainscore;; shiftdrop) stage_shiftdrop;; shortexons) stage_shortexons;; capstarts) stage_capstarts;; earlyends) stage_earlyends;; repeatloci) stage_repeatloci;; exonmap) stage_exonmap;; relatives) stage_relatives;; sdcore) stage_sdcore;; famreps) stage_famreps;; families) stage_families;; candidates) stage_candidates;; catalog) stage_catalog;;
   assign) stage_assign;; o2) stage_o2;; o2bench) stage_o2bench;; members) stage_members;; provenance) stage_provenance;; flag) stage_flag;; flag_scan) stage_flag_scan;; index) stage_index;;
   # `all`'s background flag stage: the scan, then align + verdict, whose wall goes to PREFIX.flag.time
   flag_bg) stage_flag_scan; export RP_FLAG_SCAN_DONE=1; fb0=$SECONDS; stage_flag; printf 'wall_s\t%s\n' "$(( SECONDS - fb0 ))" > "$OUT.flag.time.tmp";;

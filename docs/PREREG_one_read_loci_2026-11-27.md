@@ -87,3 +87,82 @@ A rule is then written down from r1 and judged ONCE on WTC11 r2 (replicates r1, 
 - **O5:** a rule from r1 keeps at least 500 loci on r2 that are seen again at >= 0.60 (two thirds of the main assembly's
   rate), and annotated at least as often as the main assembly's chains are precise minus 0.10.
 Prediction: fails; the best class reaches about 0.4 (row 1806: read-level features rank but do not separate).
+
+## Result of the addendum (jobs 4513387, 4513406): no class holds on real data
+WTC11 r1, 8,976 one-read loci (12.7% annotated, 20.0% seen again in r2 / r3). No feature of the lone read lifts a bin above
+0.33 seen again: introns 0.16-0.22; shortest intron 0.13-0.21; longest intron 0.16-0.23; shortest end exon 0.17-0.21;
+soft clips 0.12-0.22; divergence 0.16-0.26; MAPQ 60 0.20; a transcript on the other strand 0.185 against 0.205; distance to
+the nearest transcript 0.18-0.24; aligned length 0.33 (< 1 kb, 919 loci) falling to 0.13 (> 4 kb). Every locus already has
+canonical splice motifs. **O5 FAILS on the exploration set itself; no rule was written, and the r2 table was not opened.**
+Calibration, main assembly of the same library by reads of the chain (annotated / seen again): 2 reads 0.300 / 0.681;
+3 reads 0.388 / 0.860; 4-5 0.474 / 0.953; 6-10 0.576 / 0.994; > 10 0.844 / 1.000. One read at an empty place: 0.127 / 0.200.
+The step from one read to two is the largest on the scale. A transcript present at about one read per library would be
+seen again in two more libraries about 85% of the time; 20% says most of these are either artifacts or molecules far
+rarer than one per library. The data here cannot tell those two apart.
+(`bench/o2_truth/one_read_features.py`; the calibration script is `depth.py` in the workspace.)
+
+## Second addendum before looking (2026-11-27): judge the LOCUS and its introns, and use the sample's other reads
+The exact chain may be the wrong judge for one read: long reads were seen again LESS often (0.13 over 4 kb against 0.33
+under 1 kb), which is what truncated ends would do to a real transcript. The goal is a real LOCUS.
+Measures per one-read locus (`bench/o2_truth/one_read_introns.py`), WTC11 r1 explored, r2 judged once:
+- introns seen again: every intron of the chain is in a primary read of r2 or r3 (any chain);
+- introns annotated: every intron is in the annotation;
+- in-sample support: how many OTHER primary reads of r1 itself share an intron with the chain, and whether every intron
+  has one (reads that disagree with each other on the full chain, so the two-read floor never met them).
+Calibration: the same measures on the main assembly's two-read chains.
+- **O6:** the class "every intron also in another read of the same sample" holds >= 500 loci on r2 whose introns are all
+  seen again at >= 0.90 of the rate of the main assembly's two-read chains, and all annotated at >= 0.90 of theirs.
+Prediction: holds on replication, borderline on annotation. If it holds it is a rule from one sample's own reads.
+
+## Result of the second addendum (job 4513408): O6 HOLDS
+| WTC11 | loci | all introns seen again | all introns annotated | exact chain annotated | exact or a contiguous part of an annotated chain |
+|---|---|---|---|---|---|
+| r1 (explored): every intron also in another own read | 1,917 | 0.810 | 0.636 | 0.122 | 0.550 |
+| r1: the other one-read loci | 7,059 | 0.25-0.32 | 0.21-0.27 | 0.128 | 0.206 |
+| r1: two-read chains of the main assembly | 11,118 | 0.896 | 0.543 | | |
+| **r2 (judged once)**: every intron also in another own read | 2,243 | 0.942 | 0.775 | 0.124 | 0.708 |
+| r2: the other one-read loci | 7,234 | 0.33-0.48 | 0.26-0.32 | 0.148 | 0.249 |
+| r2: two-read chains of the main assembly | 9,292 | 0.945 | 0.605 | | |
+The class is as reproducible as the two-read chains and its introns are MORE often all annotated. Its chain is rarely an
+annotated chain exactly (12%): six in ten are a contiguous part of one. These are real genes seen through reads that each
+stop somewhere else, so no two agree on a full chain; the locus is real, the model is a fragment.
+Built: tag `one_read_locus "supported"`, and `RUSTLE_ONE_READ_LOCI=supported` writes only those.
+
+## Third addendum before running: the supported class on other species (rule fixed, nothing tuned)
+`bench/o2_truth/one_read_score.py` on fly / mouse / zebrafish simulated, four mouse libraries, two gorillas.
+- **O7:** on at least 3 of the 4 mouse libraries the supported loci have all introns annotated at >= 0.90 of the rate of
+  the same library's two-read chains, and on each simulated set their chain is exact or a contiguous part of a true
+  chain for >= 0.90. Gorillas are reported as a check, not part of the claim.
+Prediction: holds.
+
+## Result of the third addendum (jobs 4513436, 4513677): O7 HOLDS on 4 of 4 mouse libraries and all 3 simulated sets
+Columns: loci; chain exact; exact or a contiguous part of an annotated chain; all introns annotated.
+| data | supported one-read loci | two-read chains of the main assembly | other one-read loci |
+|---|---|---|---|
+| fly simulated | 25; 0.200; 1.000; 1.000 | 625; 0.915; 0.960; 0.973 | 973; 0.958; 0.985; 0.985 |
+| mouse simulated | 144; 0.465; 1.000; 1.000 | 1,769; 0.881; 0.964; 0.970 | 2,143; 0.914; 0.970; 0.970 |
+| zebrafish simulated | 170; 0.282; 0.965; 0.971 | 1,366; 0.795; 0.908; 0.919 | 2,256; 0.879; 0.949; 0.954 |
+| mouse heart | 1,211; 0.173; 0.736; 0.842 | 4,863; 0.289; 0.425; 0.604 | 4,268; 0.257; 0.359; 0.414 |
+| mouse adrenal | 1,694; 0.140; 0.773; 0.870 | 5,404; 0.273; 0.454; 0.639 | 4,691; 0.229; 0.369; 0.427 |
+| mouse cortex | 1,461; 0.161; 0.636; 0.763 | 7,174; 0.206; 0.314; 0.544 | 5,499; 0.161; 0.229; 0.276 |
+| mouse ES | 1,304; 0.100; 0.474; 0.574 | 8,027; 0.121; 0.227; 0.368 | 6,144; 0.101; 0.155; 0.174 |
+| gorilla OR6737 (check) | 4,276; 0.078; 0.491; 0.531 | 18,219; 0.165; 0.393; 0.440 | 21,241; 0.039; 0.070; 0.074 |
+| gorilla KB3781 (check) | 1,665; 0.094; 0.540; 0.593 | 11,423; 0.157; 0.360; 0.419 | 7,698; 0.061; 0.114; 0.121 |
+On every real library the supported loci have all introns annotated more often than the two-read chains the assembler
+already emits (ratio 1.2-1.6), and are 2-7 times better than the other one-read loci. Their EXACT chain is annotated
+less often than a two-read chain's (0.08-0.17 against 0.12-0.29): they are fragments of real transcripts.
+(The first ES submission failed on a flag the driver does not have; rerun without it.)
+
+## Decision (user, 2026-11-27): the supported one-read loci go INTO `PREFIX.gtf` by default
+`all`: after the main assembly, `stage_oneloci` adds them (tag `one_read_locus "supported"`); `RUSTLE_ONE_READ_LOCI=0` = off.
+`assemble` named alone and `PREFIX.final.gtf` are unchanged. The floor-1 run it needs is the one the one-read tier reuses.
+Check (job 4515330), exact intron chains of `PREFIX.gtf` before -> after:
+| data | chains | correct | precision | loci added |
+|---|---|---|---|---|
+| fly simulated (whole `all`) | 7,221 -> 7,246 | 6,783 -> 6,788 | 0.9393 -> 0.9368 | 25 |
+| mouse heart | 22,638 -> 23,849 | 13,086 -> 13,295 | 0.5781 -> 0.5575 | 1,211 |
+| WTC11 r2 | 33,878 -> 36,121 | 20,095 -> 20,374 | 0.5932 -> 0.5640 | 2,243 |
+The cost in exact-chain precision (0.02-0.03 on real libraries) is the fragments; filter on the tag to get the assembly
+before. No warning, `PREFIX.final.gtf` made, the one-read tier reused the run, a second `all` redid nothing and kept the
+count. cargo test 1,591 passed. NOT measured: the effect of the added loci on families and the later stages (they ran).
+Every `PREFIX.gtf` made with `all` before this date lacks these loci: rerun or filter before comparing.
