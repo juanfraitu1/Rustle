@@ -1,4 +1,4 @@
-# docs/ index — every document, one line each (generated 2026-11-25)
+# docs/ index — every document, one line each (generated 2026-11-27)
 
 Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or archiving a document. Archived files keep their names; only the directory changed, so grepping a filename still finds it. Verdicts of archived studies are in the register rows that cite them; pre-registrations are kept verbatim (the commit that introduced each one is the proof it preceded the result).
 
@@ -6,19 +6,19 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 
 | file | title | last commit | cited by |
 |---|---|---|---|
-| [`ADVISOR_QUESTIONS.md`](ADVISOR_QUESTIONS.md) | The advisor's standing questions — and what the codebase can answer | 2026-11-25 | memory ×1 |
+| [`ADVISOR_QUESTIONS.md`](ADVISOR_QUESTIONS.md) | The advisor's standing questions — and what the codebase can answer | 2026-11-26 | memory ×3 |
 | [`AUDIT_ROUNDS_2026-11.md`](AUDIT_ROUNDS_2026-11.md) | Audit rounds, November 2026 (ponytail-audit, goal: 100 rounds) | 2026-11-23 | memory ×1 |
-| [`DATA.md`](DATA.md) | Datasets — what they are, where they came from, how to rebuild them | 2026-11-19 | register ×1, memory ×1 |
+| [`DATA.md`](DATA.md) | Datasets — what they are, where they came from, how to rebuild them | 2026-11-26 | register ×1, memory ×1 |
 | [`LEDGER_GENERAL.md`](LEDGER_GENERAL.md) | Ledger: general (handoffs, pending lists, register drafts, overviews) | 2026-11-18 | — |
 | [`LEDGER_O1.md`](LEDGER_O1.md) | Ledger: O1 (family definition, assembler, locus units) | 2026-11-18 | register ×1, memory ×2 |
 | [`LEDGER_O2.md`](LEDGER_O2.md) | Ledger: O2 (copy assignment of tied reads) | 2026-11-23 | register ×1, memory ×1 |
 | [`LEDGER_O3.md`](LEDGER_O3.md) | Ledger: O3 (copies the reference lacks) | 2026-11-18 | — |
 | [`MODULE_STATUS.md`](MODULE_STATUS.md) | Module status — what is SHIPPED vs what was TRIED | 2026-11-19 | — |
-| [`MULTICOPY_MODE.md`](MULTICOPY_MODE.md) | Multi-copy mode: assembling the copies of known gene families | 2026-11-25 | memory ×2 |
-| [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) | REGISTER OF NEGATIVE RESULTS (full: archive/2026-11/NEGATIVE_RESULTS_REGISTER.md:1) | 2026-11-25 | memory ×4 |
+| [`MULTICOPY_MODE.md`](MULTICOPY_MODE.md) | Multi-copy mode: assembling the copies of known gene families | 2026-11-26 | memory ×4 |
+| [`NEGATIVE_RESULTS_REGISTER.md`](NEGATIVE_RESULTS_REGISTER.md) | REGISTER OF NEGATIVE RESULTS (full: archive/2026-11/NEGATIVE_RESULTS_REGISTER.md:1) | 2026-11-26 | memory ×5 |
 | [`O2_FAMILY_BENCHMARK.md`](O2_FAMILY_BENCHMARK.md) | O2: known gene families across tools, on planted and real reads | 2026-11-24 | register ×1, memory ×2 |
 | [`PARKED.md`](PARKED.md) | Parked items (to pick up later, on any cluster) | 2026-11-19 | memory ×2 |
-| [`PERFORMANCE.md`](PERFORMANCE.md) | Pipeline performance: where the time goes and the switches that change it | 2026-11-15 | — |
+| [`PERFORMANCE.md`](PERFORMANCE.md) | Pipeline performance: where the time goes and the switches that change it | 2026-11-26 | — |
 | [`README.md`](README.md) | docs/ — what is where | 2026-11-16 | memory ×3 |
 | [`REFERENCE.md`](REFERENCE.md) | REFERENCE — glossary, data locations, and a worked example | 2026-11-23 | — |
 | [`SCRIPT_INVENTORY.md`](SCRIPT_INVENTORY.md) | Script inventory (2026-11-02) | 2026-11-16 | — |
@@ -26,16 +26,50 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 | [`copy_assignment_definition.md`](copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-18 | register ×1 |
 | [`seeded_family_definition.md`](seeded_family_definition.md) | The seeded multi-copy family: definition, properties, certificate | 2026-11-08 | — |
 
-## Open studies and current handoff (348)
+## Open studies and current handoff (383)
 
 | file | title | last commit | cited by |
 |---|---|---|---|
+| [`PREREG_missing_copy_conflicts_2026-11-27.md`](PREREG_missing_copy_conflicts_2026-11-27.md) | PREREG: the missing-copy detector counting conflicting sequences, on fresh seeds (register 1986) | uncommitted | register ×1, memory ×1 |
+| [`EICHLER_FILTER_WHAT_IT_DOES_2026-11-26.md`](EICHLER_FILTER_WHAT_IT_DOES_2026-11-26.md) | The Eichler lab's 10-point filter: what it is, what it needs, and what it does not do (2026-11-26) | 2026-11-26 | memory ×2 |
+| [`MISSING_COPY_PLANTED_2026-11-26.md`](MISSING_COPY_PLANTED_2026-11-26.md) | A planted sample with copies the reference lacks, and a first detector (rows 1982, 1983) | uncommitted | register ×1, memory ×1 |
+| [`PREREG_cluster_filter_2026-11-26.md`](PREREG_cluster_filter_2026-11-26.md) | PREREG: the 10-point lead between CLUSTERS of copies, on one reference (row 1974, 2026-11-26) | 2026-11-26 | register ×1, memory ×1 |
+| [`PREREG_cluster_filter_denovo_2026-11-26.md`](PREREG_cluster_filter_denovo_2026-11-26.md) | PREREG: the cluster-level 10-point lead with clusters from the run itself (row 1975, 2026-11-26) | 2026-11-26 | register ×1, memory ×1 |
+| [`PREREG_cluster_sequences_2026-11-26.md`](PREREG_cluster_sequences_2026-11-26.md) | PREREG: recurring differences among tied reads as a warning for the cluster verdict (row 1978, 2026-11-26) | uncommitted | register ×1, memory ×1 |
+| [`PREREG_eichler_haplotypes_2026-11-26.md`](PREREG_eichler_haplotypes_2026-11-26.md) | PREREG: the Eichler lab's 10-point filter run as the paper describes it, on an individual's own haplotypes (row 1972, 20 | 2026-11-26 | register ×1, memory ×1 |
+| [`PREREG_member_coverage_2026-11-26.md`](PREREG_member_coverage_2026-11-26.md) | PREREG: how much of the source transcript a member place reproduces (register 1981) | uncommitted | register ×1, memory ×1 |
+| [`PREREG_members_defaults_2026-11-26.md`](PREREG_members_defaults_2026-11-26.md) | PREREG: should `members` default to 0.9 of the best score with the repeat filter on? (row 1967, 2026-11-26) | 2026-11-26 | register ×1, memory ×1 |
+| [`PREREG_members_tandem_2026-11-26.md`](PREREG_members_tandem_2026-11-26.md) | PREREG: a repeat filter for `members` that keeps tandem arrays (row 1968, 2026-11-26) | 2026-11-26 | register ×1 |
+| [`PREREG_missing_copy_detector_2026-11-26.md`](PREREG_missing_copy_detector_2026-11-26.md) | PREREG: a missing-copy detector that reads every read of a locus (register 1983) | uncommitted | register ×1, memory ×1 |
+| [`PREREG_missing_copy_plant_2026-11-26.md`](PREREG_missing_copy_plant_2026-11-26.md) | STEP 0 + PREREG: a planted sample with copies the reference lacks (register 1982) | uncommitted | register ×1, memory ×1 |
+| [`PREREG_own_evidence_seeding_2026-11-26.md`](PREREG_own_evidence_seeding_2026-11-26.md) | PREREG: own-evidence seeding, a precision rule for the assembly with secondaries (row 1984, 2026-11-26) | uncommitted | register ×1, memory ×1 |
+| [`PREREG_paralog_sites_2026-11-26.md`](PREREG_paralog_sites_2026-11-26.md) | PREREG: are the recurring differences of a tied sequence the bases of another copy? (row 1979, 2026-11-26) | uncommitted | register ×1, memory ×1 |
+| [`PREREG_real_downsample_2026-11-26.md`](PREREG_real_downsample_2026-11-26.md) | PREREG: do near ties recover real transcripts at low depth? Real reads, downsampled (row 1964, 2026-11-26) | 2026-11-26 | register ×1 |
+| [`PREREG_rename_and_abundance_2026-11-26.md`](PREREG_rename_and_abundance_2026-11-26.md) | PREREG: two shortcomings of primary-only assemblers at tied reads (rows 1969 and 1970, 2026-11-26) | 2026-11-26 | register ×1, memory ×1 |
+| [`PREREG_secondary_only_loci_2026-11-26.md`](PREREG_secondary_only_loci_2026-11-26.md) | PREREG: can a locus that only secondary alignments support be real? (row 1971, 2026-11-26) | 2026-11-26 | register ×1, memory ×1 |
+| [`PREREG_thin_beside_deep_2026-11-26.md`](PREREG_thin_beside_deep_2026-11-26.md) | PREREG: another test of "borrowing across the family": a thin copy beside a deep sibling (row 1980, 2026-11-26) | uncommitted | register ×1, memory ×1 |
+| [`PREREG_thin_isoform_support_2026-11-26.md`](PREREG_thin_isoform_support_2026-11-26.md) | PREREG: relatives' reads as support for thin isoforms, measured over a whole gorilla sample (row 1965, 2026-11-26) | 2026-11-26 | register ×1 |
+| [`STEP0_thin_isoform_reasons_2026-11-26.md`](STEP0_thin_isoform_reasons_2026-11-26.md) | Step 0: why are annotated isoforms with reads of their own not assembled? (row 1966, 2026-11-26) | 2026-11-26 | register ×1, memory ×1 |
 | [`MULTIMAPPERS_ACROSS_ASSEMBLERS_2026-11-25.md`](MULTIMAPPERS_ACROSS_ASSEMBLERS_2026-11-25.md) | How the comparison assemblers treat multi-mapping reads, and what Rustle does differently (2026-11-25) | 2026-11-25 | memory ×1 |
+| [`PREREG_anchored_pool_2026-11-25.md`](PREREG_anchored_pool_2026-11-25.md) | PREREG: can secondaries at 0.9 or more of the best score help seed real loci? AS and ms (row 1961, 2026-11-25) | 2026-11-26 | register ×1, memory ×1 |
+| [`PREREG_as10_baseline_2026-11-25.md`](PREREG_as10_baseline_2026-11-25.md) | PREREG: the 10-AS filter as the baseline, and the classes that follow from it (row 1954, 2026-11-25) | 2026-11-25 | register ×1 |
+| [`PREREG_assign_two_questions_2026-11-25.md`](PREREG_assign_two_questions_2026-11-25.md) | PREREG r1949: assigning reads to copies, as two questions, at today's defaults (2026-11-25) | 2026-11-25 | register ×1, memory ×1 |
+| [`PREREG_exact_tie_pool_2026-11-25.md`](PREREG_exact_tie_pool_2026-11-25.md) | PREREG r1951: the seeding pool on exact `ms` ties only (2026-11-25) | 2026-11-25 | register ×1, memory ×1 |
 | [`PREREG_flair_allow_paralogs_2026-11-25.md`](PREREG_flair_allow_paralogs_2026-11-25.md) | PREREG: FLAIR with its own multimapper option, `--allow_paralogs` (row 1946, 2026-11-25) | 2026-11-25 | register ×1 |
+| [`PREREG_flair_tuned_and_real_2026-11-25.md`](PREREG_flair_tuned_and_real_2026-11-25.md) | PREREG: a tuned FLAIR, and FLAIR's paralog option on a real sample (row 1948, 2026-11-25) | 2026-11-25 | register ×1 |
+| [`PREREG_intron_ties_pool_2026-11-25.md`](PREREG_intron_ties_pool_2026-11-25.md) | PREREG: admit to the seeding pool the alignments that tie on `ms` and lose on AS only by their introns (row 1953, 2026-1 | 2026-11-25 | register ×1 |
 | [`PREREG_isoquant_use_secondary_2026-11-25.md`](PREREG_isoquant_use_secondary_2026-11-25.md) | PREREG: IsoQuant with `--use_secondary`, and bambu's supplementary alignments (row 1947, 2026-11-25) | 2026-11-25 | register ×1 |
-| [`STEP0_graph_assembly_2026-11-25.md`](STEP0_graph_assembly_2026-11-25.md) | STEP 0: ASSEMBLY IN THE FAMILY GRAPH'S COORDINATES (register 1944, 2026-11-25) | uncommitted | register ×1, memory ×1 |
-| [`STEP0_graph_ties_2026-11-25.md`](STEP0_graph_ties_2026-11-25.md) | STEP 0: ARE A READ'S TIED PLACES A PROPERTY OF ITS LOCUS? (register 1943, 2026-11-25) | uncommitted | register ×1, memory ×1 |
-| [`STEP0_vg_mpmap_2026-11-25.md`](STEP0_vg_mpmap_2026-11-25.md) | STEP 0: READS MAPPED TO THE FAMILY GRAPH WITH VG'S SPLICE-AWARE MAPPER (register 1945, 2026-11-25) | uncommitted | register ×1, memory ×1 |
+| [`PREREG_pair_similarity_2026-11-25.md`](PREREG_pair_similarity_2026-11-25.md) | PREREG: are the member places on "another gene" unlisted paralogues? (row 1957, 2026-11-25) | 2026-11-25 | register ×1 |
+| [`PREREG_place_classes_2026-11-25.md`](PREREG_place_classes_2026-11-25.md) | PREREG: what are the real-sample member places that are not on a listed relative? (row 1956, 2026-11-25) | 2026-11-25 | register ×1 |
+| [`PREREG_processed_copy_label_2026-11-25.md`](PREREG_processed_copy_label_2026-11-25.md) | PREREG: a label for processed copies from high-score multimappers (row 1962, 2026-11-25) | 2026-11-26 | register ×1 |
+| [`PREREG_read_kind_2026-11-25.md`](PREREG_read_kind_2026-11-25.md) | PREREG r1950: can evidence across reads tell a one-origin read from a several-copy read? (2026-11-25) | 2026-11-25 | register ×1, memory ×1 |
+| [`PREREG_seed_ratio_and_relatives_2026-11-25.md`](PREREG_seed_ratio_and_relatives_2026-11-25.md) | PREREG: a lower seeding threshold, and the relatives layer at 0.7-0.9 (rows 1959 and 1960, 2026-11-25) | 2026-11-26 | register ×1, memory ×1 |
+| [`PREREG_silent_copies_pattern_2026-11-25.md`](PREREG_silent_copies_pattern_2026-11-25.md) | PREREG: do secondary alignments find silent copies, and can those be told from the rest? (row 1955, 2026-11-25) | 2026-11-25 | register ×1 |
+| [`PREREG_support_tier_2026-11-25.md`](PREREG_support_tier_2026-11-25.md) | PREREG: two tiers of the multi-copy mode, by whether a primary alignment carries the transcript (row 1952, 2026-11-25) | 2026-11-25 | register ×2 |
+| [`PREREG_two_step_seeding_2026-11-25.md`](PREREG_two_step_seeding_2026-11-25.md) | PREREG: seed with uniquely placed primaries first, then bring in the tied reads (row 1963, 2026-11-25) | 2026-11-26 | register ×1 |
+| [`STEP0_graph_assembly_2026-11-25.md`](STEP0_graph_assembly_2026-11-25.md) | STEP 0: ASSEMBLY IN THE FAMILY GRAPH'S COORDINATES (register 1944, 2026-11-25) | 2026-11-25 | register ×1, memory ×1 |
+| [`STEP0_graph_ties_2026-11-25.md`](STEP0_graph_ties_2026-11-25.md) | STEP 0: ARE A READ'S TIED PLACES A PROPERTY OF ITS LOCUS? (register 1943, 2026-11-25) | 2026-11-25 | register ×1, memory ×1 |
+| [`STEP0_vg_mpmap_2026-11-25.md`](STEP0_vg_mpmap_2026-11-25.md) | STEP 0: READS MAPPED TO THE FAMILY GRAPH WITH VG'S SPLICE-AWARE MAPPER (register 1945, 2026-11-25) | 2026-11-25 | register ×1, memory ×1 |
 | [`PREREG_guided_tworead_2026-11-24.md`](PREREG_guided_tworead_2026-11-24.md) | PREREG: guided mode, chains of guide introns at a two-read floor (row 1939, 2026-11-24) | 2026-11-24 | register ×1 |
 | [`PREREG_minimap2_sweep_2026-11-24.md`](PREREG_minimap2_sweep_2026-11-24.md) | PREREG: can a minimap2 parameter change remove or decide the near-tied reads (row 1940, 2026-11-24) | 2026-11-24 | register ×1, memory ×1 |
 | [`PREREG_ms_seed_pool_2026-11-24.md`](PREREG_ms_seed_pool_2026-11-24.md) | PREREG: the seeding pool on `ms` instead of AS (row 1942, 2026-11-24) | 2026-11-25 | register ×1 |
@@ -385,14 +419,14 @@ Regenerate with `python3 tools/docs_index.py > docs/INDEX.md` after adding or ar
 |---|---|---|---|
 | [`copy_assignment_definition.md`](archive/2026-11/copy_assignment_definition.md) | Copy assignment (O2): definition, decision rule, abstention, certificate | 2026-11-18 | register ×1 |
 | [`THESIS_OBJECTIVES.md`](archive/2026-11/THESIS_OBJECTIVES.md) | Thesis objectives — the current three | 2026-11-18 | — |
-| [`NEGATIVE_RESULTS_REGISTER.md`](archive/2026-11/NEGATIVE_RESULTS_REGISTER.md) | REGISTER OF NEGATIVE RESULTS | 2026-11-18 | register ×1720, memory ×4 |
+| [`NEGATIVE_RESULTS_REGISTER.md`](archive/2026-11/NEGATIVE_RESULTS_REGISTER.md) | REGISTER OF NEGATIVE RESULTS | 2026-11-18 | register ×1720, memory ×5 |
 | [`MEMORY_DIGEST.md`](archive/2026-11/MEMORY_DIGEST.md) | Memory digest — the long form of the memory index | 2026-11-18 | — |
 | [`LEDGER_O3.md`](archive/2026-11/LEDGER_O3.md) | Ledger: O3 (copies the reference lacks) | 2026-11-18 | — |
 | [`LEDGER_O2.md`](archive/2026-11/LEDGER_O2.md) | Ledger: O2 (copy assignment of tied reads) | 2026-11-18 | register ×1, memory ×1 |
 | [`LEDGER_O1.md`](archive/2026-11/LEDGER_O1.md) | Ledger: O1 (family definition, assembler, locus units) | 2026-11-18 | register ×1, memory ×2 |
 | [`LEDGER_GENERAL.md`](archive/2026-11/LEDGER_GENERAL.md) | Ledger: general (handoffs, pending lists, register drafts, overviews) | 2026-11-18 | — |
 | [`CHAPTER_O1_O2_COMPOSITION_DRAFT.md`](archive/2026-11/CHAPTER_O1_O2_COMPOSITION_DRAFT.md) | O1 → O2 by composition: families of transcribed loci, and assignment among exactly those loci (draft, 2026-09-05) | 2026-11-18 | — |
-| [`ADVISOR_QUESTIONS.md`](archive/2026-11/ADVISOR_QUESTIONS.md) | The advisor's standing questions — and what the codebase can answer | 2026-11-18 | memory ×1 |
+| [`ADVISOR_QUESTIONS.md`](archive/2026-11/ADVISOR_QUESTIONS.md) | The advisor's standing questions — and what the codebase can answer | 2026-11-18 | memory ×3 |
 | [`PREREG_strand_vote_dup_zmw_2026-11-04.md`](archive/2026-11/PREREG_strand_vote_dup_zmw_2026-11-04.md) | PREREG r1525: ship the strand vote; narrow the duplicate rule to different ZMWs | 2026-11-04 | register ×1 |
 | [`PREREG_family_mode_tied_seed_2026-11-04.md`](archive/2026-11/PREREG_family_mode_tied_seed_2026-11-04.md) | PREREG r1523: family-wide assembly mode (tied-seed members + fused-model cuts), judged on the r1521 panel | 2026-11-04 | register ×1 |
 | [`PREREG_base_family_misses_2026-11-04.md`](archive/2026-11/PREREG_base_family_misses_2026-11-04.md) | PREREG r1524: recover the base-mode family misses (strand vote, pass-1 drop, catalog-family cut) | 2026-11-04 | register ×1 |
