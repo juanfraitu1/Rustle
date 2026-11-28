@@ -1177,6 +1177,22 @@ f1_run() {  # f1_run OUT_PREFIX [ENV=VALUE...]: the floor-1 assembly of the one-
   env "$@" RUSTLE_DUP_COUNT="${RP_DUP_COUNT_USER:-0}" RUSTLE_MIN_CHAIN_READS=1 RUSTLE_ASSEMBLY_LAYERS=off RUSTLE_ONEREAD=0 RUSTLE_SEED_POOL="$SEED_POOL" RUSTLE_SEED_AS_RATIO="$SEED_RATIO" bash "$0" assemble --bam "$BAM" --fasta "$FASTA" \
     --out "$o" --threads "$THREADS" ${BIN:+--bin "$BIN"} ${CONTIG:+--contig "$CONTIG"} ${AS_TABLE:+--as-table "$AS_TABLE"}
 }
+# Supported ends (row 1992). RUSTLE_SUPPORTED_ENDS unset = 3 (the 3' end; default since 2026-11-28, user), 5 | both = opt-in
+# (the 5' end gains on human and mouse and loses against ape RefSeq starts), 0 = off. After the main assembly of `all` each chosen end
+# of a spliced transcript of $OUT.gtf moves inward to the most extended read end that max(2, 10%) of the chain's reads reach within
+# 10 bp (tools/end_choice.py; tag ends_moved). Chains do not change. $OUT.gtf keeps its time; $OUT.final.gtf is not touched.
+stage_ends() {
+  # RUSTLE_ALT_ENDS=1 (row 1993, OPT-IN; unset = 0): a chain whose MAIN 3' end (>= half of its reads, polyA signal, not A-rich)
+  # lies >= 50 bp inside the first model's end also gets a second model there (id .a3, alt_end "3"): two transcripts, one chain.
+  local which=${RUSTLE_SUPPORTED_ENDS:-3} alt=${RUSTLE_ALT_ENDS:-0}
+  case "$alt" in 0|1) ;; *) echo "[rustle_pipeline] RUSTLE_ALT_ENDS must be 0 or 1 (got '$alt')" >&2; exit 2 ;; esac
+  case "$which" in 0) [ "$alt" = 1 ] || return 0 ;; 3|5|both) ;; *) echo "[rustle_pipeline] RUSTLE_SUPPORTED_ENDS must be 0, 3, 5 or both (got '$RUSTLE_SUPPORTED_ENDS')" >&2; exit 2 ;; esac
+  [ -s "$OUT.gtf" ] || return 0
+  if grep -q 'ends_moved "\|alt_end "' "$OUT.gtf"; then return 0; fi
+  if ${RUSTLE_PYTHON:-python3} "$RP_DRIVER_DIR/end_choice.py" "$OUT.gtf" "$BAM" "$OUT.ends.tmp.gtf" "$which" "$THREADS" $([ "$alt" = 1 ] && echo "$FASTA") > "$OUT.ends.log" 2>&1 && [ -s "$OUT.ends.tmp.gtf" ]; then
+    touch -r "$OUT.gtf" "$OUT.ends.tmp.gtf"; mv -f "$OUT.ends.tmp.gtf" "$OUT.gtf"; say "assemble: $(tail -1 "$OUT.ends.log") -> $OUT.gtf (RUSTLE_SUPPORTED_ENDS=0 = off)"
+  else rm -f "$OUT.ends.tmp.gtf"; say "assemble: WARNING the supported ends failed (see $OUT.ends.log); $OUT.gtf keeps the assembler's ends"; fi
+}
 # One-read transcripts in `all` (rows 1987, 1990; user 2026-11-27). After the main assembly, from the floor-1 assembly (the one the
 # one-read tier reuses), tools/one_read_loci.py:
 #  - INTO $OUT.gtf, rule A of row 1990 (tag one_read_chain "clean"; RUSTLE_ONE_READ_CHAINS=0 = off): a chain one read has, that no
@@ -2228,6 +2244,8 @@ merged_env() {
   if [ "$SEED_POOL" = good ] && [ "$SEED_RATIO" != 0.98 ]; then printf 'seed_ratio=%s\n' "$SEED_RATIO"; fi
   if [ "${RUSTLE_ONE_READ_LOCI:-}" = 0 ]; then printf 'one_read_loci=0\n'; fi
   if [ "${RUSTLE_ONE_READ_CHAINS:-}" = 0 ]; then printf 'one_read_chains=0\n'; fi
+  if [ "${RUSTLE_SUPPORTED_ENDS:-3}" != 3 ]; then printf 'supported_ends=%s\n' "$RUSTLE_SUPPORTED_ENDS"; fi
+  if [ "${RUSTLE_ALT_ENDS:-0}" != 0 ]; then printf 'alt_ends=%s\n' "$RUSTLE_ALT_ENDS"; fi
   if [ -n "$CONTIG" ]; then printf 'contig=%s\n' "$CONTIG"; fi
   # the SEDEF sidecar the families stage picks up when RUSTLE_SEDEF_BED is unset (round-4 audit)
   if [ -z "${RUSTLE_SEDEF_BED+x}" ] && [ -s "$FASTA.sedef.bed" ]; then stat -L -c "sedef_sidecar %s %Y" "$FASTA.sedef.bed"; fi
@@ -2562,7 +2580,7 @@ stage_all() {
 }
 case "$STAGE" in
   merged) stage_merged;;
-  assemble) rp_oneloci=${RP_ONELOCI:-0}; export RP_ONELOCI=0; stage_assemble; if [ "$rp_oneloci" = 1 ]; then stage_oneloci; fi; if [ -n "${GUIDE:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_guided; fi; if [ -n "${NAMES:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_names; fi;; guided) stage_guided;; names) stage_names;; eqclasses) stage_eqclasses;; famwise) stage_famwise;; psi) stage_psi;; multicopy) stage_multicopy;; siblings) stage_siblings;; oneread) stage_oneread || exit $?;; flairlike) stage_flairlike;; altends) stage_altends;; trunc5) stage_trunc5;; chainscore) stage_chainscore;; shiftdrop) stage_shiftdrop;; shortexons) stage_shortexons;; capstarts) stage_capstarts;; earlyends) stage_earlyends;; repeatloci) stage_repeatloci;; exonmap) stage_exonmap;; relatives) stage_relatives;; sdcore) stage_sdcore;; famreps) stage_famreps;; families) stage_families;; candidates) stage_candidates;; catalog) stage_catalog;;
+  assemble) rp_oneloci=${RP_ONELOCI:-0}; export RP_ONELOCI=0; stage_assemble; if [ "$rp_oneloci" = 1 ]; then stage_ends; stage_oneloci; fi; if [ -n "${GUIDE:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_guided; fi; if [ -n "${NAMES:-}" ] && [ -z "${RP_ALL:-}" ]; then stage_names; fi;; guided) stage_guided;; names) stage_names;; eqclasses) stage_eqclasses;; famwise) stage_famwise;; psi) stage_psi;; multicopy) stage_multicopy;; siblings) stage_siblings;; oneread) stage_oneread || exit $?;; flairlike) stage_flairlike;; altends) stage_altends;; trunc5) stage_trunc5;; chainscore) stage_chainscore;; shiftdrop) stage_shiftdrop;; shortexons) stage_shortexons;; capstarts) stage_capstarts;; earlyends) stage_earlyends;; repeatloci) stage_repeatloci;; exonmap) stage_exonmap;; relatives) stage_relatives;; sdcore) stage_sdcore;; famreps) stage_famreps;; families) stage_families;; candidates) stage_candidates;; catalog) stage_catalog;;
   assign) stage_assign;; o2) stage_o2;; o2bench) stage_o2bench;; members) stage_members;; provenance) stage_provenance;; flag) stage_flag;; flag_scan) stage_flag_scan;; index) stage_index;;
   # `all`'s background flag stage: the scan, then align + verdict, whose wall goes to PREFIX.flag.time
   flag_bg) stage_flag_scan; export RP_FLAG_SCAN_DONE=1; fb0=$SECONDS; stage_flag; printf 'wall_s\t%s\n' "$(( SECONDS - fb0 ))" > "$OUT.flag.time.tmp";;
