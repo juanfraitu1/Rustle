@@ -65,7 +65,7 @@
 #             multi-copy families with the near-tied multimappers (= stage multicopy on the run's assembly, made with
 #             --seed-pool good as `all` does -> PREFIX.multicopy.gtf), then the provenance test labels every locus by
 #             the EM over the tied reads (bench/o2_families/em_filter.py; rows 1905-1908): o2_status = expressed /
-#             shared / homology_only (under RUSTLE_O2_MIN_EM = 2 reads by EM) -> PREFIX.o2.gtf, PREFIX.o2.em.tsv.
+#             shared / homology_only (under RUSTLE_O2_MIN_EM reads by EM; unset = 1 since 2026-11-27, user, row 1991; 2 = before) -> PREFIX.o2.gtf, PREFIX.o2.em.tsv.
 #             Since 2026-11-23 (user, register 1921) the alignment scores are inside that EM: every alignment
 #             within 10 ms of a read's best is a candidate with weight exp(-gap / RUSTLE_O2_EM_WEIGHT), default 1;
 #             RUSTLE_O2_EM_WEIGHT=0 = the counts-only EM of before (scores decide exact ties only).
@@ -160,7 +160,8 @@
 #                              PREFIX.multicopy.tsv lists them. Transcripts also carry counts that do not multiply over
 #                              indistinguishable copies (reads_em, reads_tieadj, tie_group); PREFIX.multicopy.groups.tsv = the tie
 #                              groups with the range of expressed copies (row 1871). No other product changes.
-#                              (`all` adds the SUPPORTED one-read loci to PREFIX.gtf by default, see stage_oneloci; here:)
+#                              (`all` adds the clean one-read chains to PREFIX.gtf and writes the supported one-read loci to
+#                              PREFIX.oneloci.gtf by default, see stage_oneloci; the option here overwrites that side file:)
 #                              RUSTLE_ONE_READ_LOCI=1 (opt-in, row 1987): also PREFIX.oneloci.gtf = PREFIX.gtf + every spliced
 #                              one-read transcript at an empty place whose lone read has no rival alignment (as StringTie -L
 #                              admits one spliced read; 0.84-0.94 correct on simulated reads, 13% annotated on a human library).
@@ -1176,28 +1177,45 @@ f1_run() {  # f1_run OUT_PREFIX [ENV=VALUE...]: the floor-1 assembly of the one-
   env "$@" RUSTLE_DUP_COUNT="${RP_DUP_COUNT_USER:-0}" RUSTLE_MIN_CHAIN_READS=1 RUSTLE_ASSEMBLY_LAYERS=off RUSTLE_ONEREAD=0 RUSTLE_SEED_POOL="$SEED_POOL" RUSTLE_SEED_AS_RATIO="$SEED_RATIO" bash "$0" assemble --bam "$BAM" --fasta "$FASTA" \
     --out "$o" --threads "$THREADS" ${BIN:+--bin "$BIN"} ${CONTIG:+--contig "$CONTIG"} ${AS_TABLE:+--as-table "$AS_TABLE"}
 }
-# One read as the seed of a locus (row 1987; default of `all` since 2026-11-27, user). After the main assembly of `all`, the spliced
-# one-read transcripts of the floor-1 assembly at places $OUT.gtf leaves empty are added to $OUT.gtf when one primary read carries
-# the chain, no other alignment of that read is within 10 ms, and EVERY intron of the chain is also in another primary read
-# (tools/one_read_loci.py; tag one_read_locus "supported"). Such loci are as reproducible as two-read chains (introns seen again
-# in replicates 0.94 against 0.945) and their introns are more often all annotated (mouse 0.57-0.87 against 0.37-0.64), but most
-# are FRAGMENTS of a transcript (exact chain annotated 8-17%). RUSTLE_ONE_READ_LOCI=0 = off. The floor-1 run is the one the
-# one-read tier reuses. $OUT.gtf keeps its time, so nothing downstream is redone for it. A failure leaves $OUT.gtf as it was.
+# One-read transcripts in `all` (rows 1987, 1990; user 2026-11-27). After the main assembly, from the floor-1 assembly (the one the
+# one-read tier reuses), tools/one_read_loci.py:
+#  - INTO $OUT.gtf, rule A of row 1990 (tag one_read_chain "clean"; RUSTLE_ONE_READ_CHAINS=0 = off): a chain one read has, that no
+#    read contradicts (every read sharing an intron has the same chain or a contiguous part), that no read or transcript contains,
+#    with an ORF >= 900 nt, no early stop and >= 3 introns, and whose read has no other alignment within 10 ms (row 1991: without
+#    this test a silent family copy could get such a chain from a tied read). Held out: 0.36-0.48 exact against 0.12-0.35 for two-read chains;
+#    cost <= 0.003 of exact-chain precision. $OUT.gtf keeps its time, so nothing downstream is redone for it.
+#  - SIDE FILE $OUT.oneloci.gtf = $OUT.gtf + the one-read loci of row 1987 (tag one_read_locus "supported"; RUSTLE_ONE_READ_LOCI=0
+#    = off): at places the assembly leaves empty, every intron also in another read. Real genes, mostly fragments (exact chain
+#    8-17%), which is why they are not in $OUT.gtf (they cost 0.008-0.029 there).
+# A failure of either leaves $OUT.gtf as it was.
 stage_oneloci() {
-  [ "${RUSTLE_ONE_READ_LOCI:-supported}" != 0 ] && [ -s "$OUT.gtf" ] || return 0
-  if grep -q 'one_read_locus "' "$OUT.gtf"; then return 0; fi
+  local chains=${RUSTLE_ONE_READ_CHAINS:-1} loci=${RUSTLE_ONE_READ_LOCI:-supported}
+  case "$chains" in 0|1) ;; *) echo "[rustle_pipeline] RUSTLE_ONE_READ_CHAINS must be 0 or 1 (got '$chains')" >&2; exit 2 ;; esac
+  [ -s "$OUT.gtf" ] || return 0
+  if grep -q 'one_read_chain "' "$OUT.gtf"; then chains=0; fi
+  if [ "$loci" != 0 ] && [ -s "$OUT.oneloci.gtf" ] && [ ! "$OUT.oneloci.gtf" -ot "$OUT.gtf" ]; then loci=0; fi
+  if [ "$chains" = 0 ] && [ "$loci" = 0 ]; then return 0; fi
   local py=${RUSTLE_PYTHON:-python3} d="$OUT.oneread.d" gate1=() f1set f1; mkdir -p "$d"
   [ "${RUSTLE_ONEREAD_GATE:-1}" = 0 ] || gate1=(RUSTLE_GATE_MIN_READS=1)
   f1set=$(f1_settings "${RUSTLE_ONEREAD_GATE:-1}" 0); f1=$(f1_shared "$d" "$f1set"); [ -n "$f1" ] || f1=$(f1_shared "$OUT.multicopy.d" "$f1set")
-  if ( if [ -z "$f1" ]; then rm -f "$d/f1.gtf" "$d/f1.settings"; f1_run "$d/f1" "${gate1[@]}" && printf '%s\n' "$f1set" > "$d/f1.settings" || exit 1; f1="$d/f1.gtf"; fi
-       $py "$RP_DRIVER_DIR/multicopy_rescue.py" candidates "$OUT.gtf" "$f1" "$d/oneloci.cand.gtf" || exit 1
-       table="${AS_TABLE:-}"; tbam="$BAM"; seed_score_table
-       $py "$RP_DRIVER_DIR/one_read_loci.py" "$OUT.gtf" "$d/oneloci.cand.gtf" "$BAM" "$table" "$OUT.oneloci.tmp.gtf" "$THREADS" supported ) > "$OUT.oneloci.log" 2>&1 \
-     && [ -s "$OUT.oneloci.tmp.gtf" ]; then
-    touch -r "$OUT.gtf" "$OUT.oneloci.tmp.gtf"; mv -f "$OUT.oneloci.tmp.gtf" "$OUT.gtf"
-    say "assemble: one-read loci: $(tail -1 "$OUT.oneloci.log") -> $OUT.gtf (RUSTLE_ONE_READ_LOCI=0 = off)"
-  else
-    rm -f "$OUT.oneloci.tmp.gtf"; say "assemble: WARNING the one-read loci failed (see $OUT.oneloci.log); $OUT.gtf is the assembly without them"
+  if [ -z "$f1" ]; then
+    rm -f "$d/f1.gtf" "$d/f1.settings"
+    if f1_run "$d/f1" "${gate1[@]}" > "$OUT.oneloci.log" 2>&1; then printf '%s\n' "$f1set" > "$d/f1.settings"; f1="$d/f1.gtf"
+    else say "assemble: WARNING the one-read transcripts failed in the floor-1 assembly (see $OUT.oneloci.log); $OUT.gtf is the assembly without them"; return 0; fi
+  fi
+  local table="${AS_TABLE:-}" tbam="$BAM"; ( seed_score_table ) >> "$OUT.oneloci.log" 2>&1 || true
+  [ -n "$table" ] || { table="$OUT.molecules.tsv"; [ -s "$BAM.as_table.tsv" ] && table="$BAM.as_table.tsv"; }
+  if [ "$chains" = 1 ]; then
+    if [ -s "$table" ] && $py "$RP_DRIVER_DIR/one_read_loci.py" clean "$OUT.gtf" "$f1" "$BAM" "$FASTA" "$OUT.onechains.tmp.gtf" "$THREADS" 3 "$table" >> "$OUT.oneloci.log" 2>&1 && [ -s "$OUT.onechains.tmp.gtf" ]; then
+      touch -r "$OUT.gtf" "$OUT.onechains.tmp.gtf"; mv -f "$OUT.onechains.tmp.gtf" "$OUT.gtf"
+      say "assemble: $(tail -1 "$OUT.oneloci.log") -> $OUT.gtf (RUSTLE_ONE_READ_CHAINS=0 = off)"
+    else rm -f "$OUT.onechains.tmp.gtf"; say "assemble: WARNING the one-read chains failed (see $OUT.oneloci.log); $OUT.gtf is the assembly without them"; fi
+  fi
+  if [ "$loci" != 0 ]; then
+    if ( $py "$RP_DRIVER_DIR/multicopy_rescue.py" candidates "$OUT.gtf" "$f1" "$d/oneloci.cand.gtf" || exit 1
+         $py "$RP_DRIVER_DIR/one_read_loci.py" "$OUT.gtf" "$d/oneloci.cand.gtf" "$BAM" "$table" "$OUT.oneloci.gtf" "$THREADS" supported ) >> "$OUT.oneloci.log" 2>&1; then
+      say "assemble: one-read loci (side file): $(tail -1 "$OUT.oneloci.log") -> $OUT.oneloci.gtf"
+    else say "assemble: WARNING the one-read loci failed (see $OUT.oneloci.log); no $OUT.oneloci.gtf"; fi
   fi
 }
 stage_oneread() {
@@ -1842,7 +1860,7 @@ stage_candidates() {
 stage_o2() {
   # RUSTLE_O2_EXTEND=1: the multi-copy extension first (near-tied multimappers seed the copies, floor-1 rescue inside families)
   # then the provenance test (register 1905 / 1906): a locus keeps its transcripts only when the EM over the tied reads leaves
-  # it >= RUSTLE_O2_MIN_EM (2) reads -> PREFIX.o2.gtf (+ PREFIX.o2.em.tsv). The stage's own tie tables are not needed for it.
+  # it >= RUSTLE_O2_MIN_EM reads (unset = 1 since 2026-11-27, row 1991: family copies with two reads were lost at 2) -> PREFIX.o2.gtf (+ PREFIX.o2.em.tsv). The stage's own tie tables are not needed for it.
   # Default since 2026-11-22 (user: "lets readd it by default"); RUSTLE_O2_EXTEND=0 turns it off.
   # RUSTLE_O2_EM_WEIGHT (default 1, user 2026-11-23, register 1921): alignment scores inside the EM; 0 = counts-only. A failure of the extension
   # is reported and leaves the family report on the base assembly: it never fails the stage (or `all`).
@@ -1853,7 +1871,7 @@ stage_o2() {
     local tab=$OUT.molecules.tsv; [ -s "$tab" ] || tab=$BAM.as_table.tsv
     if ! ( RUSTLE_MULTICOPY_EQ=${RUSTLE_MULTICOPY_EQ:-0} stage_multicopy ); then
       say "o2: the multi-copy extension FAILED (see $OUT.multicopy.log); the report is on $OUT.gtf"; ext=0
-    elif ! "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/../bench/o2_families/em_filter.py" "$OUT.multicopy.gtf" "$BAM" "$tab" "$OUT.o2.tmp" --min-em "${RUSTLE_O2_MIN_EM:-2}" $([ "${RUSTLE_O2_DROP:-0}" = 1 ] || echo --label) $([ "${RUSTLE_O2_EM_WEIGHT:-1}" = 0 ] || echo --weighted "${RUSTLE_O2_EM_WEIGHT:-1}") $([ "${RUSTLE_O2_SHARES:-0}" != 1 ] || [ "${RUSTLE_O2_EM_WEIGHT:-1}" = 0 ] || echo --shares "$OUT.o2.shares.tsv.gz") --ties "$OUT.o2.ties.tsv.gz" --threads "$JOB_THREADS" > "$OUT.o2.em.log" 2>&1; then
+    elif ! "${RUSTLE_PYTHON:-python3}" "$RP_DRIVER_DIR/../bench/o2_families/em_filter.py" "$OUT.multicopy.gtf" "$BAM" "$tab" "$OUT.o2.tmp" --min-em "${RUSTLE_O2_MIN_EM:-1}" $([ "${RUSTLE_O2_DROP:-0}" = 1 ] || echo --label) $([ "${RUSTLE_O2_EM_WEIGHT:-1}" = 0 ] || echo --weighted "${RUSTLE_O2_EM_WEIGHT:-1}") $([ "${RUSTLE_O2_SHARES:-0}" != 1 ] || [ "${RUSTLE_O2_EM_WEIGHT:-1}" = 0 ] || echo --shares "$OUT.o2.shares.tsv.gz") --ties "$OUT.o2.ties.tsv.gz" --threads "$JOB_THREADS" > "$OUT.o2.em.log" 2>&1; then
       say "o2: the provenance test FAILED (see $OUT.o2.em.log); the report is on $OUT.gtf"; rm -f "$OUT.o2.tmp".*; ext=0
     else
       mv -f "$OUT.o2.tmp.gtf" "$OUT.o2.gtf"; mv -f "$OUT.o2.tmp.em.tsv" "$OUT.o2.em.tsv"
@@ -2209,6 +2227,7 @@ merged_env() {
   if [ "${RP_ASM_OWN:-0}" = 1 ]; then printf 'seed_pool_main=own mapq=%s\n' "${RUSTLE_SEED_OWN_MAPQ:-0}"; fi
   if [ "$SEED_POOL" = good ] && [ "$SEED_RATIO" != 0.98 ]; then printf 'seed_ratio=%s\n' "$SEED_RATIO"; fi
   if [ "${RUSTLE_ONE_READ_LOCI:-}" = 0 ]; then printf 'one_read_loci=0\n'; fi
+  if [ "${RUSTLE_ONE_READ_CHAINS:-}" = 0 ]; then printf 'one_read_chains=0\n'; fi
   if [ -n "$CONTIG" ]; then printf 'contig=%s\n' "$CONTIG"; fi
   # the SEDEF sidecar the families stage picks up when RUSTLE_SEDEF_BED is unset (round-4 audit)
   if [ -z "${RUSTLE_SEDEF_BED+x}" ] && [ -s "$FASTA.sedef.bed" ]; then stat -L -c "sedef_sidecar %s %Y" "$FASTA.sedef.bed"; fi
